@@ -1,10 +1,10 @@
-﻿// ==UserScript==
+// ==UserScript==
 // MCI internal tooling
 // Copyright (c) 2025 Middle Creek Insurance. All rights reserved.
 // Not authorized for redistribution or resale.
 // @name        Smart Lookup (MCI)
 // @namespace    mci-tools
-// @version      4.3.0
+// @version      4.3.1
 // @description  ALT+Right-Click: pinned chooser for Address/Name/Policy. Address: Wake/Maps/Vexcel combos. Name: LinkedIn/Google/Facebook. Policy: Erie/NatGen/Progressive/NFIP
 // @match        *://*/*
 // @match        file://*/*
@@ -230,7 +230,7 @@
       .replace(/[,\u2013\u2014-]\s*(first\s+named\s+insured|named\s+insured|insured|policyholder|applicant|contact|primary)\b.*$/i, "")
       .replace(/\s*\((first\s+named\s+insured|named\s+insured|insured|policyholder|applicant|primary)\)\s*$/i, "")
       .trim();
-    s = s.split(/\s+[-â€“â€”]\s+|\s*\/\s*|\s*\|\s*|\s*Â·\s*/)[0].trim();
+    s = s.split(/\s+[-–—]\s+|\s*\/\s*|\s*\|\s*|\s*·\s*/)[0].trim();
     const m = s.match(/^\s*([A-Z][\p{L}'-]+(?:\s+[A-Z][\p{L}'-]+){1,3})\b/u);
     if (m) return m[1];
     const tokens = s.split(" ").filter(Boolean);
@@ -288,7 +288,7 @@
       sessionStorage.setItem(K_VEX_AWAIT, "1");
     } catch(_) {}
 
-    toast(`Vexcel: loading map for â€œ${addr}â€...`, 2600);
+    toast(`Vexcel: loading map for “${addr}”...`, 2600);
 
     GM_openInTab(
       VEX_ORIGIN + "/#/app/home?address=" + encodeURIComponent(addr) + "&mci=1&ts=" + encodeURIComponent(String(ts)),
@@ -473,7 +473,7 @@
         <div class="row">
           <div class="lbl">Open:</div>
           <select id="mci-hc-select"></select>
-          <button id="mci-hc-close" title="Close">âœ•</button>
+          <button id="mci-hc-close" title="Close">✖</button>
         </div>
         <div class="sub" id="mci-hc-sub"></div>
       `;
@@ -527,7 +527,7 @@
 
     function show(options, payload, subtitle){
       ensure();
-      sel.innerHTML = `<option value="">Chooseâ€¦</option>` + options.map(o=>`<option value="${o.value}">${o.label}</option>`).join("");
+      sel.innerHTML = `<option value="">Choose…</option>` + options.map(o=>`<option value="${o.value}">${o.label}</option>`).join("");
       sel._mciPayload = payload;
       sub.textContent = subtitle || "";
       el.style.display="block";
@@ -638,14 +638,14 @@
   function updateTabIndicator(){
     const txt=getSelectedOrHoverText();
     if(!txt){ document.title = baseTitle; return; }
-    let dot="âš«", label="";
+    let dot="⚫", label="";
 
-    if(isLikelyAddress(txt)){ dot="ðŸŸ©"; label=`Address: ${txt}`; }
-    else if(isLikelyName(extractLeadingName(txt))){ dot="ðŸ”µ"; label=`Name: ${txt}`; }
+    if(isLikelyAddress(txt)){ dot="🟩"; label=`Address: ${txt}`; }
+    else if(isLikelyName(extractLeadingName(txt))){ dot="🔵"; label=`Name: ${txt}`; }
     else {
       const pol = extractPolicy(txt);
       if(pol){
-        dot="ðŸŸ "; label=`Policy: ${pol}`;
+        dot="🟠"; label=`Policy: ${pol}`;
       }
     }
     setTab(dot,label);
@@ -709,7 +709,7 @@
         !!document.querySelector("input[type='password'], input[name*='user' i], input[name*='login' i]");
       if (isErieLogin) {
         try { sessionStorage.setItem(K_ERIE_POL, pol); sessionStorage.setItem(K_ERIE_AWAIT, "1"); } catch(_) {}
-        toast("Erie: login detected â€” automation paused. Log in, then refresh.", 4500);
+        toast("Erie: login detected — automation paused. Log in, then refresh.", 4500);
         return;
       }
 
@@ -880,7 +880,7 @@ const visible = el => {
 
           // SAFE GATE: If we're on login, do nothing and let the user sign in
           if (isLoginPage) {
-            toast("NatGen: login detected â€” automation paused. Log in, then refresh.", 4500);
+            toast("NatGen: login detected — automation paused. Log in, then refresh.", 4500);
             return;
           }
 
@@ -920,7 +920,7 @@ const visible = el => {
       })();
     })();
   }
-  // NFIP (TorrentFlood) â€” quick search on Dashboard/Agency
+  // NFIP (TorrentFlood) — quick search on Dashboard/Agency
   if (location.hostname === "nationalgeneral.torrentflood.com") {
     (function nfipAuto(){
       const tok = tokenOKFromLocation();
@@ -986,7 +986,7 @@ const visible = el => {
 
         // SAFE GATE: If login, pause and let user sign in
         if (isLoginPage) {
-          toast("NFIP: login detected â€” automation paused. Log in, then refresh.", 4500);
+          toast("NFIP: login detected — automation paused. Log in, then refresh.", 4500);
           return;
         }
 
@@ -1019,7 +1019,7 @@ const visible = el => {
 
 
 
-  // PROGRESSIVE (FAO) â€” safe automation: waits for login instead of looping
+  // PROGRESSIVE (FAO) — safe automation: waits for login instead of looping
   if (location.hostname === "www.foragentsonly.com") {
     (function progressiveAuto(){
       if (window.top !== window.self) return;
@@ -1285,7 +1285,7 @@ const visible = el => {
             location.hash = '#/app/home?address=' + encodeURIComponent(ADDR);
           }
 
-          addOverlay('Loading map for â€œ' + ADDR + 'â€â€¦');
+          addOverlay('Loading map for “' + ADDR + '”…');
 
           if (document.readyState !== 'complete') {
             await new Promise(res => window.addEventListener('load', res, {once:true}));
@@ -1303,7 +1303,7 @@ const visible = el => {
             await sleep(200);
           }
 
-          updateOverlay("Finalizingâ€¦");
+          updateOverlay("Finalizing…");
           const input = document.querySelector('#searchText');
           if (input && visible(input)) {
             try { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ADDR); }
