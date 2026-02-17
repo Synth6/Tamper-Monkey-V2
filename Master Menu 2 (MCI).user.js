@@ -1,7 +1,7 @@
-﻿// ==UserScript==
+// ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      5.8.1
+// @version      5.8.2
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -376,8 +376,8 @@
     IS_QQ ? {
       label: "QQ Helpers",
       items: [
-        { type: "button", id: "mci_pdf_open", text: "ðŸ“„ Open PDFs (Smart)", className: "mci-btn primary" },
-        { type: "button", id: "mci_fix_names", text: "ðŸ§¾Show Full File Names", className: "mci-btn purple" },
+        { type: "button", id: "mci_pdf_open", text: "📄 Open PDFs (Smart)", className: "mci-btn primary" },
+        { type: "button", id: "mci_fix_names", text: "🧾Show Full File Names", className: "mci-btn purple" },
         { type: "rowControls" }
       ]
     } : null,
@@ -387,8 +387,8 @@
       items: [
         {
           type: "pair",
-          left:  { id: "mci_copy",  text: "âœ‚ï¸Copy",  className: "mci-btn blue" },
-          right: { id: "mci_paste", text: "ðŸ“‹Paste", className: "mci-btn green" }
+          left:  { id: "mci_copy",  text: "✂️Copy",  className: "mci-btn blue" },
+          right: { id: "mci_paste", text: "📋Paste", className: "mci-btn green" }
         }
       ]
     },
@@ -399,7 +399,7 @@
         {
           type: "panel",
           panelId: "mci_export_panel",
-          toggle: { id: "mci_export_toggle", text: "ðŸš— Erie Export Quote â–¸", className: "mci-btn blue" },
+          toggle: { id: "mci_export_toggle", text: "🚗 Erie Export Quote ▸", className: "mci-btn blue" },
           items: [
             { type: "button", id: "mci_export_auto", text: "Auto Quote", className: "mci-btn brand" },
             { type: "button", id: "mci_export_home", text: "Home Quote", className: "mci-btn brand" }
@@ -414,7 +414,7 @@
         {
           type: "panel",
           panelId: "mci_fd_panel",
-          toggle: { id: "mci_fd_toggle", text: "ðŸ“¥ File Downloader â–¸", className: "mci-btn blue" },
+          toggle: { id: "mci_fd_toggle", text: "📥 File Downloader ▸", className: "mci-btn blue" },
           items: [
             { type: "button", id: "mci_fd_erie", text: "Erie / NatGen", className: "mci-btn purple" },
             {
@@ -438,15 +438,15 @@
     {
       label: "QQC Extractor",
       items: [
-        { type: "button", id: "mci_open_qqc", text: "ðŸ“‚ Get Customer Data", className: "mci-btn purple" }
+        { type: "button", id: "mci_open_qqc", text: "📂 Get Customer Data", className: "mci-btn purple" }
       ]
     },
 
     {
       label: "Menu",
       items: [
-        { type: "button", id: "mci_cashCenter", text: "ðŸ’µ Cash Payment Center", className: "mci-btn brand" },
-        { type: "button", id: "mci_fax",        text: "ðŸ“  Fax",               className: "mci-btn brand" }
+        { type: "button", id: "mci_cashCenter", text: "💵 Cash Payment Center", className: "mci-btn brand" },
+        { type: "button", id: "mci_fax",        text: "📠 Fax",               className: "mci-btn brand" }
       ]
     },
 
@@ -457,11 +457,11 @@
           type: "custom",
           html:
             '<div class="mci-footer-note shortcuts v2">' +
-              '<div class="tip">ðŸ’¡ <b>Tip:</b> Hover text, then press the key</div>' +
+              '<div class="tip">💡 <b>Tip:</b> Hover text, then press the key</div>' +
               '<div class="group"><div class="list">' +
                 '<span><b>SMART LOOKUP</b></span>' +
                 '<div><span class="kbd">ALT</span> + <span class="kbd">Right-Click</span></div>' +
-                '<div>Name â†’ Address â†’ Policy #</div>' +
+                '<div>Name → Address → Policy #</div>' +
               '</div></div>' +
               '<hr style="border:none;border-top:1px dashed rgba(255,255,255,.2);margin:8px 0;">' +
               '<div class="group"><div class="list">' +
@@ -535,7 +535,7 @@
   function renderRowControls() {
     return (
       '<div class="qq-row-controls">' +
-        '<button class="mci-btn green" id="mci_row_highlight" style="flex:1" type="button">ðŸŸ¡ Row Highlighter</button>' +
+        '<button class="mci-btn green" id="mci_row_highlight" style="flex:1" type="button">🟡 Row Highlighter</button>' +
         '<label class="color-chip" title="Pick highlight color">' +
           '<input type="color" id="mci_row_color" value="' + escHtml(storedRowColor) + '" />' +
         "</label>" +
@@ -670,7 +670,7 @@
       '<div id="' + MENU_ID + '">' +
         '<div class="mci-head">' +
           '<div class="mci-head-top">' +
-            '<button id="mci_remove_header" class="mci-close-btn" title="Remove Menu">âŒ</button>' +
+            '<button id="mci_remove_header" class="mci-close-btn" title="Remove Menu">❌</button>' +
             '<span class="mci-title">MCI Toolbox</span>' +
           "</div>" +
           '<div class="mci-head-meta">' +
@@ -825,8 +825,8 @@
       });
     }
 
-    wirePanel("mci_fd_toggle", "mci_fd_panel", "File Downloader â–¾", "ðŸ“¥ File Downloader â–¸");
-    wirePanel("mci_export_toggle", "mci_export_panel", "ðŸš— Export Quote â–¾", "ðŸš— Erie Export Quote â–¸");
+    wirePanel("mci_fd_toggle", "mci_fd_panel", "File Downloader ▾", "📥 File Downloader ▸");
+    wirePanel("mci_export_toggle", "mci_export_panel", "🚗 Export Quote ▾", "🚗 Erie Export Quote ▸");
 
     /*************************
      * WIRE BUTTON ACTIONS    *
@@ -868,12 +868,12 @@
     // Cross-site tools (your separate script listens)
     onClick("mci_copy", function () {
       window.dispatchEvent(new CustomEvent("mci:copy"));
-      toast("Copy requestedâ€¦");
+      toast("Copy requested…");
     });
 
     onClick("mci_paste", function () {
       window.dispatchEvent(new CustomEvent("mci:paste"));
-      toast("Paste requestedâ€¦");
+      toast("Paste requested…");
     });
 
     // QQC extractor
@@ -893,7 +893,7 @@
         else toast("Auto export script not found on this page.");
       } catch (e) {
         console.warn("[MCI Toolbox] Auto export error:", e);
-        toast("Error starting Auto export â€“ see console.");
+        toast("Error starting Auto export – see console.");
       }
     });
 
@@ -904,21 +904,21 @@
         else toast("Home export script not found on this page.");
       } catch (e) {
         console.warn("[MCI Toolbox] Home export error:", e);
-        toast("Error starting Home export â€“ see console.");
+        toast("Error starting Home export – see console.");
       }
     });
 
     // File downloader triggers
     onClick("mci_fd_erie", function () {
       $s("#mci_fd_panel").classList.remove("open");
-      $s("#mci_fd_toggle").textContent = "ðŸ“¥ File Downloader â–¸";
+      $s("#mci_fd_toggle").textContent = "📥 File Downloader ▸";
       triggerFileDownloader("erie-natgen");
       toast("Erie/NatGen downloader triggered.");
     });
 
     onClick("mci_fd_prog_res", function () {
       $s("#mci_fd_panel").classList.remove("open");
-      $s("#mci_fd_toggle").textContent = "ðŸ“¥ File Downloader â–¸";
+      $s("#mci_fd_toggle").textContent = "📥 File Downloader ▸";
       try {
         window.dispatchEvent(new CustomEvent("mci:progressive-residential"));
         window.dispatchEvent(new CustomEvent("mci:progressive-downloader")); // back-compat
@@ -928,21 +928,21 @@
 
     onClick("mci_fd_prog_com", function () {
       $s("#mci_fd_panel").classList.remove("open");
-      $s("#mci_fd_toggle").textContent = "ðŸ“¥ File Downloader â–¸";
+      $s("#mci_fd_toggle").textContent = "📥 File Downloader ▸";
       try { window.dispatchEvent(new CustomEvent("mci:progressive-commercial")); } catch (e) {}
       toast("Progressive Commercial triggered.");
     });
 
     onClick("mci_fd_flood_beyond", function () {
       $s("#mci_fd_panel").classList.remove("open");
-      $s("#mci_fd_toggle").textContent = "ðŸ“¥ File Downloader â–¸";
+      $s("#mci_fd_toggle").textContent = "📥 File Downloader ▸";
       try { window.dispatchEvent(new CustomEvent("mci:flood-beyond")); } catch (e) {}
       toast("Beyond Floods triggered.");
     });
 
     onClick("mci_fd_flood_nfip", function () {
       $s("#mci_fd_panel").classList.remove("open");
-      $s("#mci_fd_toggle").textContent = "ðŸ“¥ File Downloader â–¸";
+      $s("#mci_fd_toggle").textContent = "📥 File Downloader ▸";
       try { window.dispatchEvent(new CustomEvent("mci:flood-nfip")); } catch (e) {}
       toast("NFIP Flood triggered.");
     });
@@ -950,7 +950,7 @@
     onClick("mci_fd_ncjua", function () {
       // close sub panel + menu
       $s("#mci_fd_panel").classList.remove("open");
-      $s("#mci_fd_toggle").textContent = "ðŸ“¥ File Downloader â–¸";
+      $s("#mci_fd_toggle").textContent = "📥 File Downloader ▸";
       setMenuOpen(false);
 
       triggerFileDownloader("ncjua");
