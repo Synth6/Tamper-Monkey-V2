@@ -1,5 +1,5 @@
 ﻿// ==UserScript==
-// @name         MCI â€“ Erie Home â†’ MCI Home Form
+// @name         MCI – Erie Home → MCI Home Form
 // @namespace    http://tampermonkey.net/
 // @version      0.7
 // @description  Export Erie Home quote data to the MCI Home Quote HTML form, walking Customer â†’ Dwelling â†’ Coverages, then opening the form.
@@ -588,3 +588,4 @@
   }
 
 })();
+
