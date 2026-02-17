@@ -1,8 +1,8 @@
 ﻿// ==UserScript==
-// @name         NCIC â†” NC SOS Owner Capture
+// @name         NCIC ↔ NC SOS Owner Capture
 // @namespace    mci-tools
 // @version      1.6
-// @description  From NCIC app: click SOS â†’ open SOS search, prefill business name, auto-search. On results: your click on a company auto-clicks "More information". On the profile page: scrape Company officials OR Registered agent + Registered mailing address and POST back to NCIC /api/sos_officials. Includes ON/OFF toggle via custom event.
+// @description  From NCIC app: click SOS → open SOS search, prefill business name, auto-search. On results: your click on a company auto-clicks "More information". On the profile page: scrape Company officials OR Registered agent + Registered mailing address and POST back to NCIC /api/sos_officials. Includes ON/OFF toggle via custom event.
 // @match        http://localhost:5000/*
 // @match        http://127.0.0.1:5000/*
 // @match        http://192.168.1.203:5000/*
@@ -467,4 +467,5 @@
     return;
   }
 })();
+
 
