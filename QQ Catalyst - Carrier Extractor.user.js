@@ -5,7 +5,7 @@
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
 // @version      1.6.0
-// @description  Extract from NatGen/Erie and autofill QQ Catalyst. Alt+Q: Extractor. Alt+P: Autofill. Shared Save/Load.
+// @description  Extract from NatGen/Erie and autofill QQ Catalyst. Alt+Q: Extractor.
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
 // @match        https://agentexchange.com/*
@@ -1858,3 +1858,4 @@ try {
     } catch { }
   })();
 })();
+
