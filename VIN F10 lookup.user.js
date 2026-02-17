@@ -1,7 +1,7 @@
-﻿// ==UserScript==
+// ==UserScript==
 // @name         VIN F10 lookup
 // @namespace    mci-tools
-// @version      1.32
+// @version      1.33
 // @description  Press F10 to open NHTSA VIN Decoder. Prefers clipboard; also works with selection, inputs, hover, URL. PDF/local files get a paste-prompt fallback.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -12,23 +12,25 @@
 // @match        *://*/*
 // @match        file://*/*
 // @run-at       document-start
-// @allFrames    true
+// @all-frames   true
 // @grant        none
-// @updateURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/VIN%20F10%20lookup.user.js
+// @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/VIN%20F10%20lookup.user.js
 // @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/VIN%20F10%20lookup.user.js
 // ==/UserScript==
 
-(function() {
+(function () {
   "use strict";
 
   // --- Config ------------------------------------------------------
   const HOTKEY = "F10";
-  const PREFER_CLIPBOARD_FIRST = true;     // â† set to false to try page-first
+  const PREFER_CLIPBOARD_FIRST = true; // set to false to try page-first
   const SHOW_TOASTS = true;
 
   const VIN_RE = /\b([A-HJ-NPR-Z0-9]{17})\b/i; // excludes I,O,Q
+
+  // ✅ FIXED: Updated NHTSA decoder endpoint
   const NHTSA_DECODER_URL = (vin) =>
-    `https://vpic.nhtsa.dot.gov/decoder/Decoder?Vin=${encodeURIComponent(vin)}&Decode=Submit`;
+    `https://vpic.nhtsa.dot.gov/decoder/VinDecoder?VIN=${encodeURIComponent(vin)}&ModelYear=`;
 
   // --- Hover tracking (HTML pages only) ----------------------------
   let lastHover = null;
@@ -37,7 +39,7 @@
   // --- Helpers -----------------------------------------------------
   function extractVinFromText(text) {
     if (!text) return null;
-    const m = text.toUpperCase().match(VIN_RE);
+    const m = String(text).toUpperCase().match(VIN_RE);
     return m ? m[1] : null;
   }
   function getSelectionText() {
@@ -45,7 +47,7 @@
     return sel ? String(sel).trim() : "";
   }
   function attrMaybeVin(el, name) {
-    const v = el?.getAttribute?.(name);
+    const v = el && el.getAttribute ? el.getAttribute(name) : null;
     return v ? extractVinFromText(v) : null;
   }
   function urlParamMaybeVin(href) {
@@ -57,7 +59,7 @@
       }
       const fromPath = extractVinFromText(u.pathname);
       if (fromPath) return fromPath;
-    } catch {}
+    } catch { }
     return null;
   }
   function findVinNear(node, maxHops = 5) {
@@ -65,10 +67,12 @@
     while (cur && hops <= maxHops) {
       const t = extractVinFromText(cur.textContent || "");
       if (t) return t;
+
       for (const a of ["data-vin", "title", "aria-label", "alt", "value"]) {
         const vv = attrMaybeVin(cur, a);
         if (vv) return vv;
       }
+
       if (cur.tagName === "A") {
         const href = cur.getAttribute("href");
         if (href) {
@@ -76,7 +80,9 @@
           if (vinFromUrl) return vinFromUrl;
         }
       }
-      cur = cur.parentElement; hops++;
+
+      cur = cur.parentElement;
+      hops++;
     }
     return null;
   }
@@ -87,8 +93,8 @@
       const u = new URL(href);
       const src = u.searchParams.get("src") || u.searchParams.get("file");
       if (src && /\.pdf(?:$|\?)/i.test(src)) return true;
-    } catch {}
-    if (href.startsWith("file:///")) return true;
+    } catch { }
+    if (href.indexOf("file:///") === 0) return true;
     return false;
   }
   function showPastePrompt(onSubmit) {
@@ -149,11 +155,11 @@
 
   function openVin(vin) {
     window.open(NHTSA_DECODER_URL(vin), "_blank");
-    toast(`VIN: ${vin} â†’ NHTSA`, true);
+    toast(`VIN: ${vin} → NHTSA`, true);
   }
 
   async function tryClipboard() {
-    if (!navigator.clipboard?.readText) return null;
+    if (!navigator.clipboard || !navigator.clipboard.readText) return null;
     try {
       const txt = await navigator.clipboard.readText();
       return extractVinFromText(txt);
@@ -178,14 +184,14 @@
     if (vinFromSel) { e.preventDefault(); openVin(vinFromSel); return; }
 
     // 2) If typing area, use its value
-    const tag = e.target?.tagName?.toLowerCase();
-    if (tag === "input" || tag === "textarea" || e.target?.isContentEditable) {
+    const tag = e.target && e.target.tagName ? e.target.tagName.toLowerCase() : "";
+    if (tag === "input" || tag === "textarea" || (e.target && e.target.isContentEditable)) {
       const vinFromField = extractVinFromText(e.target.value || "");
       if (vinFromField) { e.preventDefault(); openVin(vinFromField); return; }
     }
 
     // 3) Hover/nearby
-    const target = lastHover || document.elementFromPoint?.(window.innerWidth/2, window.innerHeight/2) || document.body;
+    const target = lastHover || (document.elementFromPoint ? document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2) : null) || document.body;
     const vinFromHover = findVinNear(target, 6);
     if (vinFromHover) { e.preventDefault(); openVin(vinFromHover); return; }
 
@@ -214,8 +220,3 @@
   }, true);
 
 })();
-
-
-
-
-
