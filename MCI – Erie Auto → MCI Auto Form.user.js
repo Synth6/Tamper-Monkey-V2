@@ -1,5 +1,5 @@
 ﻿// ==UserScript==
-// @name         MCI â€“ Erie Auto â†’ MCI Auto Form
+// @name         MCI – Erie Auto → MCI Auto Form
 // @namespace    http://tampermonkey.net/
 // @version      1.1
 // @description  Export Erie Auto quote data (Customer, Drivers, Vehicles, Coverages) to MCI Auto Quote HTML form with one-click flow
@@ -697,3 +697,4 @@
   }
 
 })();
+
