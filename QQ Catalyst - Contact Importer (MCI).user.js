@@ -2,7 +2,7 @@
 // MCI internal tooling
 // Copyright (c) 2025 Middle Creek Insurance. All rights reserved.
 // Not authorized for redistribution or resale.
-// @name         QQ Catalyst - Contact Importer (MCI)
+// @name         Not Used -QQ Catalyst - Contact Importer (MCI)
 // @namespace    mci-tools
 // @version      1.0.1
 // @description  Reads payload created by carrier extractors and autofills QQ Catalyst (New Contact popup + Details). (Legacy mini UI removed.)
@@ -769,3 +769,4 @@
   })();
 
 })();
+
