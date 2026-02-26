@@ -1,11 +1,11 @@
-﻿// ==UserScript==
+// ==UserScript==
 // MCI internal tooling
 // Copyright (c) 2025 Middle Creek Insurance. All rights reserved.
 // Not authorized for redistribution or resale.
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
-// @version      1.6.0
-// @description  Extract from NatGen/Erie and autofill QQ Catalyst. Alt+Q: Extractor.
+// @version      1.6.6
+// @description  Extract from carriers and build QQC payload. Alt+Q: Extractor. (Erie Commercial Mendix fixed v2 + Website)
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
 // @match        https://agentexchange.com/*
@@ -31,7 +31,103 @@
   const PAGE_WINDOW = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
   const STORAGE_KEY = 'QQC_PAYLOAD_V2';
   const PENDING_KEY = 'QQC_PENDING_V1';
-  const QQ_CONTACTS_URL = 'https://app.qqcatalyst.com/Contacts/Customer/Index';
+  const QQ_SAFE_URLS = [
+      'https://app.qqcatalyst.com/Contacts/CustomerList',
+      'https://app.qqcatalyst.com/Contacts/Customer/Index',
+      'https://app.qqcatalyst.com/'
+  ];
+
+      // ---------- Master Menu Bridge (exporter registry + message listener) ----------
+  const QQ_CONTACTS_URL = QQ_SAFE_URLS[0]; // fix undefined reference in your existing send code
+
+  function detectCarrierKeyFromHost(host) {
+    host = (host || location.hostname || '').toLowerCase();
+    if (host.includes('agentexchange.com')) return 'erie';
+    if (host.includes('customerdatamanagement.agentexchange.com')) return 'erie';
+    if (host.includes('natgenagency.com') || host.includes('nationalgeneral.torrentflood.com')) return 'natgen';
+    if (host.includes('natgen.beyondfloods.com') || host.includes('beyondfloods.com')) return 'beyondfloods';
+    if (host.includes('quoting.foragentsonly.com') || host.includes('foragentsonly.com')) return 'progressive';
+    if (host.includes('ncjuanciua.org') || host.includes('ncjua-nciua.org') || host.includes('insure.ncjuanciua.org')) return 'ncjua';
+    return null;
+  }
+
+  const THIS_EXPORTER_KEY = detectCarrierKeyFromHost(location.hostname);
+
+  function ensureExporterPanelOpen() {
+    try { mountExtractorPanel(); } catch (e) { console.warn('[QQC Extractor] mountExtractorPanel failed', e); }
+  }
+
+  async function exporterGetCustomerData() {
+    ensureExporterPanelOpen();
+    // trigger the same auto-detect flow your panel uses
+    try {
+      const p = sanitizePayloadObject((await autoDetect()) || {});
+      lastExtracted = p;
+      try { await GM_setValue(STORAGE_KEY, p); } catch {}
+      try { extractorSetUI(p); } catch {}
+      extractorStatus(`Detected from ${p.carrier || 'page'}.`);
+      return p;
+    } catch (e) {
+      console.error('[QQC Extractor] getCustomerData error', e);
+      extractorStatus('Auto-detect failed.');
+      return null;
+    }
+  }
+
+  async function exporterSendToQQ() {
+    // mimic clicking "Send to QQ Catalyst" (but without relying on undefined vars)
+    const p = await exporterGetCustomerData();
+    if (!p) return false;
+    try {
+      await GM_setValue(STORAGE_KEY, p);
+      await GM_setValue(PENDING_KEY, { payload: p, ts: Date.now(), stage: 'popup' });
+    } catch {}
+    openQQSafe();
+    extractorStatus('Sending to QQ...');
+    return true;
+  }
+
+  // Expose a shared registry the Master Menu expects
+  try {
+    const w = PAGE_WINDOW || window;
+    w.MCI_EXPORTERS = w.MCI_EXPORTERS || {};
+    if (THIS_EXPORTER_KEY) {
+      w.MCI_EXPORTERS[THIS_EXPORTER_KEY] = {
+        openUI: () => ensureExporterPanelOpen(),
+        getCustomerData: () => exporterGetCustomerData(),
+        sendToQQ: () => exporterSendToQQ()
+      };
+      // helpful debug
+      w.MCI_EXPORTERS[THIS_EXPORTER_KEY].__mci = { version: 'bridge-1', host: location.hostname };
+    }
+  } catch (e) {
+    console.warn('[QQC Extractor] Failed to attach MCI_EXPORTERS bridge', e);
+  }
+
+  // Listen for the Menu's postMessage fallback
+  window.addEventListener('message', async (ev) => {
+    const d = ev && ev.data;
+    if (!d || typeof d !== 'object') return;
+
+    // Menu sends: { mci:"mciExporter", carrier:key, action:"openUI|getCustomerData|sendToQQ" }
+    if (d.mci === 'mciExporter') {
+      const key = d.carrier;
+      const action = d.action;
+      if (!key || !action) return;
+      if (THIS_EXPORTER_KEY && key !== THIS_EXPORTER_KEY) return;
+
+      if (action === 'openUI') ensureExporterPanelOpen();
+      if (action === 'getCustomerData') await exporterGetCustomerData();
+      if (action === 'sendToQQ') await exporterSendToQQ();
+    }
+  }, false);
+
+    function openQQSafe() {
+        // Always try the safest first
+        const url = QQ_SAFE_URLS[0];
+        try { window.open(url, '_blank', 'noopener'); }
+        catch { window.open(url, '_blank'); }
+    }
 
   // State
   let extractorPanel = null;
@@ -1025,51 +1121,168 @@ function extractProgressiveFAO() {
     return !!document.querySelector('a.party-view-email-value, a.mx-link.mx-name-actionButton4.party-view-email-value');
   }
   function isErieMendix() {
-    return /customerdatamanagement\.agentexchange\.com$/i.test(location.hostname);
+    // Erie Commercial (Mendix SPA) and related Mendix customer data apps
+    return /commercial\.agentexchange\.com$/i.test(location.hostname) ||
+           /customerdatamanagement\.agentexchange\.com$/i.test(location.hostname) ||
+           (/(?:^|\.)agentexchange\.com$/i.test(location.hostname) && !!document.querySelector('.mx-dataview, .mx-layoutgrid, .mx-name-txt_TellAboutCustomer'));
   }
   async function extractErieMendix() {
-    const businessName = T(S('span.mx-name-txt_legalName2'));
-    const eye = S('a.mx-link[cssselectorhelper="UnMask"]');
-    if (eye) eye.click();
-    const einEl = await waitFor(() => S('span.mx-name-lbl_SsnValue4'), { timeout: 8000 });
-    let ein = '';
-    if (einEl) {
-      await waitForText(einEl, t => /\d{2}-\d{7}/.test(t) || (t.replace(/[^\d]/g, '').length === 9), { timeout: 4000 });
-      const txt = T(einEl);
-      const m = txt.match(/(\d{2}-\d{7})/);
-      ein = (m ? m[1] : txt).replace(/[^\d-]/g, '');
-    }
-    const addrBlockRaw = T(S('.address-list .address-edit-addressline2 .mx-name-lbl_MailAddress2'));
-    const addrLines = addrBlockRaw.replace(/\r/g, '').split('\n').map(s => s.trim()).filter(Boolean);
-    let line1 = '', city = '', state = '', zip = '';
-    if (addrLines.length) {
-      line1 = addrLines[0];
-      const tail = addrLines[addrLines.length - 1];
-      const csz = parseCityStateZip(tail);
-      city = csz.city; state = csz.state; zip = csz.zip;
-    }
-    const primaryPhone = (T(S('.phone-list .mx-name-lbl_MailAddress2')) || '').replace(/[^\d]/g, '');
-    // Email can be in a span or an anchor depending on view
-    let primaryEmail = '';
-    const anchorEmail = document.querySelector('a.party-view-email-value, a.mx-link.mx-name-actionButton4.party-view-email-value');
-    const anchorText = (anchorEmail?.textContent || '').trim();
-    const emailRe = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
-    if (emailRe.test(anchorText)) {
-      primaryEmail = anchorText.match(emailRe)[0];
+    // Erie Commercial Mendix SPA (commercial.agentexchange.com) & related Mendix views.
+    // URL often stays at /index.html while customer data swaps in the DOM, so we extract
+    // from the currently-rendered "Tell us about the Customer" card.
+    // NOTE: This page is a SPA; do NOT rely on URL changes.
+
+    function norm(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
+    function q(root, sel) { try { return (root || document).querySelector(sel); } catch (e) { return null; } }
+    function qa(root, sel) { try { return Array.from((root || document).querySelectorAll(sel)); } catch (e) { return []; } }
+
+    // Scope everything to the visible customer card so we don't grab hidden templates or other widgets.
+    var root = q(document, '.named-insured-data');
+    if (!root) root = q(document, '.mx-name-dvw_Customer .named-insured-data');
+    if (!root) root = q(document, '.mx-name-dvw_Customer');
+    if (!root) return null;
+
+    // Ensure sensitive fields are unmasked if available
+    try {
+      var eye = q(root, 'a.mx-link[cssselectorhelper="UnMask"]') || q(document, 'a.mx-link[cssselectorhelper="UnMask"]');
+      if (eye) eye.click();
+    } catch (e) {}
+
+    // Business name (Legal name)
+    var businessName = norm(q(root, '.mx-name-txt_BusinessName2 .form-control-static') && q(root, '.mx-name-txt_BusinessName2 .form-control-static').textContent);
+
+    // EIN (Federal ID)
+    var ein = norm(q(root, '.mx-name-txt_TaxNumber .form-control-static') && q(root, '.mx-name-txt_TaxNumber .form-control-static').textContent);
+    if (ein && ein !== '--') {
+      var digits = ein.replace(/[^0-9]/g, '');
+      if (digits.length === 9) ein = digits.substring(0, 2) + '-' + digits.substring(2);
     } else {
-      const spanEmail = T(S('.email-list .mx-name-lbl_MailAddress2'));
-      primaryEmail = spanEmail || '';
+      ein = '';
     }
+
+    // Address
+    var line1 = norm(q(root, '.mx-name-txt_AddressLine1 .form-control-static') && q(root, '.mx-name-txt_AddressLine1 .form-control-static').textContent);
+    var csz = norm(q(root, 'span.mx-name-text1') && q(root, 'span.mx-name-text1').textContent); // e.g. DURHAM, North Carolina 27703-6049
+    var city = '', state = '', zip = '';
+    if (csz) {
+      var parts = csz.split(',');
+      city = norm(parts[0] || '');
+      var rest = norm(parts.slice(1).join(','));
+      var mZip = rest.match(/(\d{5})(?:-\d{4})?\b/);
+      if (mZip) zip = mZip[1];
+
+      var restNoZip = norm(rest.replace(/\d{5}(?:-\d{4})?\b/, '').replace(/\s+/g, ' '));
+      var map = {
+        'North Carolina': 'NC', 'South Carolina': 'SC', 'Virginia': 'VA', 'Georgia': 'GA', 'Tennessee': 'TN',
+        'Alabama': 'AL', 'Florida': 'FL', 'Kentucky': 'KY', 'West Virginia': 'WV', 'Maryland': 'MD',
+        'Pennsylvania': 'PA', 'Ohio': 'OH'
+      };
+      if (/^[A-Z]{2}$/.test(restNoZip)) state = restNoZip;
+      else {
+        var cap = restNoZip.split(/\s+/).map(function (x) { return x ? (x.charAt(0).toUpperCase() + x.slice(1).toLowerCase()) : x; }).join(' ');
+        state = map[cap] || map[restNoZip] || restNoZip;
+      }
+    }
+
+    // Phone + Email: pick list items by label text inside the contact list (more reliable than global selectors)
+    var primaryPhone = '';
+    var primaryEmail = '';
+    try {
+      var lis = qa(root, '.mx-name-lst_CustomerContactPoint2 li');
+      lis.forEach(function (li) {
+        var label = norm(q(li, 'span.form-related-label') && q(li, 'span.form-related-label').textContent).toLowerCase();
+        var val = norm(q(li, '.form-control-static') && q(li, '.form-control-static').textContent);
+        if (!val || val === '--') return;
+        if (!primaryPhone && label.indexOf('phone') >= 0) primaryPhone = val;
+        if (!primaryEmail && label.indexOf('email') >= 0) primaryEmail = val;
+      });
+      // Fallbacks if list structure changes
+      if (!primaryPhone) primaryPhone = norm(q(root, '.mx-name-cnt_ContactTypeCode2 .form-control-static') && q(root, '.mx-name-cnt_ContactTypeCode2 .form-control-static').textContent);
+      if (!primaryEmail) primaryEmail = norm(q(root, '.mx-name-cnt_ContactTypeCodeEmail2 .form-control-static') && q(root, '.mx-name-cnt_ContactTypeCodeEmail2 .form-control-static').textContent);
+      if (primaryEmail === '--') primaryEmail = '';
+    } catch (e) {}
+
+    // Website (input value if present)
+    var website = '';
+    try {
+      var w = q(document, '.mx-name-txt_CustomerWebsite input') || q(document, 'input[id*="txt_CustomerWebsite"]');
+      if (w && w.value) website = norm(w.value);
+      if (!website) {
+        var wr = q(document, '.mx-name-txt_CustomerWebsite .form-control-static');
+        if (wr) website = norm(wr.textContent);
+      }
+    } catch (e) {}
+
+
+    // Audit contact (workers comp) — contains a real person name + direct phone/email.
+    // Katy may not always fill this out, but when present it's perfect for QQ's required First/Last
+    // and for QQ "Additional Contacts".
+    var auditFirst = '', auditMiddle = '', auditLast = '', auditPhone = '', auditEmail = '', auditTitle = '';
+    try {
+      var aroot = q(document, '.mx-name-cnt_AuditContactTile_WC') || q(document, '.mx-name-cnt_AuditContact');
+      if (aroot) {
+        var af = q(aroot, '.mx-name-txt_AuditContact_FirstName input');
+        var am = q(aroot, '.mx-name-txt_AuditContact_MiddleName input');
+        var al = q(aroot, '.mx-name-txt_AuditContact_LastName input');
+        var at = q(aroot, '.mx-name-txt_AuditContact_Title input');
+        auditFirst = norm(af && (af.value || af.getAttribute('value')));
+        auditMiddle = norm(am && (am.value || am.getAttribute('value')));
+        auditLast = norm(al && (al.value || al.getAttribute('value')));
+        auditTitle = norm(at && (at.value || at.getAttribute('value')));
+
+        // Phone/email in audit contact are inputs, not form-control-static
+        var ap = q(aroot, '.mx-name-txt_PhoneContactPoint input');
+        var ae = q(aroot, '.mx-name-txt_EmailContactPoint input');
+        auditPhone = norm(ap && (ap.value || ap.getAttribute('value')));
+        auditEmail = norm(ae && (ae.value || ae.getAttribute('value')));
+      }
+    } catch (e) {}
+
+    // If the "business contact points" didn't provide phone/email, fall back to audit contact
+    if (!primaryPhone && auditPhone) primaryPhone = auditPhone;
+    if (!primaryEmail && auditEmail) primaryEmail = auditEmail;
+
+    // Provide a real person name when available (QQ popup can require First + Last)
+    var firstName = auditFirst || '';
+    var middleName = auditMiddle || '';
+    var lastName = auditLast || '';
+
+    // Fallback placeholders if QQ requires names and we truly have none.
+    if (!firstName && !lastName && businessName) { firstName = '.'; lastName = 'Business'; }
+    // If we still don't have core fields, it's likely not the customer page yet
+    if (!businessName && !ein && !primaryPhone && !primaryEmail && !line1 && !csz) return null;
+
+    // Return payload using the keys the rest of the system expects (primaryPhone/primaryEmail).
     return {
-      carrier: 'Erie-Mendix', sourceUrl: location.href,
-      businessName,
-      primaryPhone, phoneType: formatPhone(primaryPhone),
-      primaryEmail: primaryEmail && primaryEmail !== '-' ? primaryEmail : '',
-      ein,
-      contactType: 'Customers', customerType: 'Commercial',
-      address: { line1, line2: '', city, state, zip }
+      carrier: 'Erie',
+      source: 'erie-mendix',
+      contactType: 'Customers',
+      customerType: 'Commercial',
+      firstName: firstName,
+      middleName: middleName,
+      lastName: lastName,
+      businessName: businessName,
+      primaryPhone: primaryPhone,
+      primaryEmail: primaryEmail,
+      // keep legacy aliases for older consumers (harmless)
+      phone: primaryPhone,
+      email: primaryEmail,
+      website: website,
+      ein: ein,
+      additionalContacts: (auditFirst || auditLast || auditPhone || auditEmail) ? [{
+        firstName: auditFirst,
+        middleName: auditMiddle,
+        lastName: auditLast,
+        relationship: 'Audit Contact',
+        phoneType: 'Work',
+        primaryPhone: auditPhone,
+        primaryEmail: auditEmail,
+        title: auditTitle
+      }] : [],
+      address: { line1: line1, line2: '', city: city, state: state, zip: zip }
     };
   }
+
 
   async function autoDetect() {
     if (hasErieProfileEmailAnchor()) return await extractErieProfile();
@@ -1858,4 +2071,3 @@ try {
     } catch { }
   })();
 })();
-
