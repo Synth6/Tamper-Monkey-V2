@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      5.8.2
+// @version      5.8.3
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -310,6 +310,14 @@
   }
 
   function rowHighlightHandler(ev) {
+    const target = ev.target;
+    if (target && target.closest(
+      '.transactions.arrow, .action-south, [title="Show Transactions"], [data-url*="TransactionsList"], ' +
+      'a, button, input, select, textarea, label, [role="button"], [onclick]'
+    )) {
+      return;
+    }
+
     ev.stopPropagation();
     const row = ev.currentTarget;
     const color = localStorage.getItem(HIGHLIGHT_COLOR_KEY) || DEFAULT_ROW_COLOR;
@@ -979,6 +987,47 @@
     return root;
   }
 
+  /***************************
+   * Extractor function to pick carrier
+   */
+  function triggerContactMapper(mode) {
+    mode = mode || "auto";
+
+    const host = location.hostname.toLowerCase();
+
+    // carrier detection
+    let key = null;
+    if (host.includes("agentexchange.com")) key = "erie";
+    else if (host.includes("natgenagency.com") || host.includes("nationalgeneral.torrentflood.com")) key = "natgen";
+    else if (host.includes("foragents.progressive.com")) key = "progressive";
+    else if (host.includes("beyondfloods.com")) key = "beyondfloods";
+    else if (host.includes("ncjuanciua.org") || host.includes("insure.ncjuanciua.org")) key = "ncjua";
+    // add more as we create them…
+
+    if (!key) {
+      toast("No exporter for this site yet.");
+      return;
+    }
+
+    // prefer direct API (same page)
+    const exp = (window.MCI_EXPORTERS && window.MCI_EXPORTERS[key]) ? window.MCI_EXPORTERS[key] : null;
+
+    if (exp) {
+      if (mode === "send") exp.sendToQQ();
+      else if (mode === "get") exp.getCustomerData();
+      else exp.openUI(); // auto
+      return;
+    }
+
+    // fallback: postMessage (works even when sandboxed)
+    window.postMessage({
+      mci: "mciExporter",
+      carrier: key,
+      action: (mode === "send") ? "sendToQQ" : (mode === "get") ? "getCustomerData" : "openUI"
+    }, "*");
+
+    toast("Exporter not detected on this page (is it installed/enabled?)");
+  }
   /*************************
    * BOOT                  *
    *************************/
