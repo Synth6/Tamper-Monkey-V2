@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      5.8.3
+// @version      5.8.4
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -1000,6 +1000,7 @@
     if (host.includes("agentexchange.com")) key = "erie";
     else if (host.includes("natgenagency.com") || host.includes("nationalgeneral.torrentflood.com")) key = "natgen";
     else if (host.includes("foragents.progressive.com")) key = "progressive";
+    else if (host.includes("quoting.foragentsonly.com") || host.includes("foragentsonly.com")) key = "progressive";
     else if (host.includes("beyondfloods.com")) key = "beyondfloods";
     else if (host.includes("ncjuanciua.org") || host.includes("insure.ncjuanciua.org")) key = "ncjua";
     // add more as we create them…
