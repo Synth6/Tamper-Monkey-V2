@@ -1,7 +1,7 @@
-﻿// ==UserScript==
+// ==UserScript==
 // @name         Copy Paste (MCI)
 // @namespace    mci-tools
-// @version      1.1
+// @version      1.2
 // @description  Copy/Paste profile engine for Erie / NatGen / Progressive. Triggered by MCI Master Menu via window events.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -91,6 +91,12 @@
   const splitDOB = v => { const d = onlyDigits(v); return [d.slice(0, 2), d.slice(2, 4), d.slice(4, 8)]; };
   const fmtDOB = v => { const p = splitDOB(v); return (p[0] && p[1] && p[2]) ? (p[0] + "/" + p[1] + "/" + p[2]) : ""; };
   const looksMasked = v => /[*]/.test(String(v || ""));
+  function normalizeGender(v) {
+    const s = String(v || "").trim().toLowerCase();
+    if (s === "female" || s === "f") return "F";
+    if (s === "male" || s === "m") return "M";
+    return "";
+  }
 
   function getVal(el) {
     if (!el) return "";
@@ -238,6 +244,7 @@
         lastName: "#FirstNamedInsured_LastName",
         suffix: "#FirstNamedInsured_Suffix",
         dob: "#txtDateOfBirth_1, [id^='txtDateOfBirth_']",
+        gender: "label[data-bind*='getGender']",
         ssn: "#SSNText_1, [id^='SSNText_']",
         email: "#FirstNamedInsured_EmailAddress, [id$='_EmailAddress']",
         phone: "#FirstNamedInsuredNumber_0, [id^='FirstNamedInsuredNumber_']",
@@ -463,6 +470,7 @@
     }
 
     if (data.dob) data.dob = fmtDOB(data.dob);
+    if (data.gender) data.gender = normalizeGender(data.gender);
 
     if (data.phone) {
       const d = onlyDigits(data.phone);
