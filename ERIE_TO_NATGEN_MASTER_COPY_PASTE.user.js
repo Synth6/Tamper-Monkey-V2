@@ -6221,4 +6221,257 @@
 
     console.log('[NatGenMaster] Loaded', root.__natGenMaster);
   })();
+
+  (function initNatGenFillThisPageButton() {
+    const root = getNatGenRootWindow();
+    const CONTAINER_ID = 'natgenFillThisPageWrap';
+    const FILL_BUTTON_ID = 'natgenFillThisPageButton';
+    const CLEAR_BUTTON_ID = 'natgenFillThisPageClearButton';
+    const STYLE_ID = 'natgenFillThisPageButtonStyle';
+    const ERIE_EXTRACTOR_TOGGLE_KEY = 'mci_pref_erie_extractor_enabled';
+    const ERIE_EXTRACTOR_TOGGLE_EVENT = 'mci:erie-extractor-toggle';
+
+    if (root.__natGenFillThisPageButtonState && typeof root.__natGenFillThisPageButtonState.refresh === 'function') {
+      root.__natGenFillThisPageButtonState.refresh();
+      return;
+    }
+
+    function getErieExtractorEnabledForNatGen() {
+      let raw = null;
+      try {
+        raw = localStorage.getItem(ERIE_EXTRACTOR_TOGGLE_KEY);
+      } catch (e) {
+        return true;
+      }
+
+      if (raw == null) return true;
+
+      const normalized = String(raw).trim().toLowerCase();
+      if (!normalized) return true;
+
+      if (normalized === 'false' || normalized === '0' || normalized === 'off' || normalized === 'no') {
+        return false;
+      }
+      if (normalized === 'true' || normalized === '1' || normalized === 'on' || normalized === 'yes') {
+        return true;
+      }
+
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed === false || parsed === 0) return false;
+        if (parsed === true || parsed === 1) return true;
+      } catch (e) {}
+
+      return true;
+    }
+
+    function getNatGenPageFillConfig() {
+      const pathname = String((window.location && window.location.pathname) || '').toLowerCase();
+
+      if (pathname.indexOf('/quote/quotenamedinsured.aspx') >= 0) {
+        return {
+          runnerName: 'runNatGenNamedInsured',
+          title: 'Fill Named Insured'
+        };
+      }
+      if (pathname.indexOf('/quote/quotedriver.aspx') >= 0) {
+        return {
+          runnerName: 'runNatGenDrivers',
+          title: 'Fill Drivers'
+        };
+      }
+      if (pathname.indexOf('/quote/quoteauto.aspx') >= 0) {
+        return {
+          runnerName: 'runNatGenVehicleProbe',
+          title: 'Fill Vehicle Page'
+        };
+      }
+      if (pathname.indexOf('/quote/quotecoverages.aspx') >= 0 || pathname.indexOf('/quote/quotecoveragesv2.aspx') >= 0) {
+        return {
+          runnerName: 'runNatGenCoverages',
+          title: 'Fill Coverages'
+        };
+      }
+
+      return null;
+    }
+
+    function hasNatGenSharedPayload() {
+      try {
+        return !!getNatGenSharedPayload();
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function removeNatGenFillThisPageButton() {
+      const existing = document.getElementById(CONTAINER_ID);
+      if (existing && existing.parentNode) {
+        existing.parentNode.removeChild(existing);
+      }
+    }
+
+    function ensureNatGenFillThisPageButton() {
+      let styleEl = document.getElementById(STYLE_ID);
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = STYLE_ID;
+        styleEl.textContent = [
+          '#' + CONTAINER_ID + ' {',
+          '  position: fixed;',
+          '  right: 14px;',
+          '  bottom: 14px;',
+          '  z-index: 2147483647;',
+          '  display: inline-flex;',
+          '  align-items: stretch;',
+          '  border-radius: 6px;',
+          '  overflow: hidden;',
+          '  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);',
+          '  opacity: 0.95;',
+          '}',
+          '#' + CONTAINER_ID + ':hover {',
+          '  opacity: 1;',
+          '}',
+          '#' + CLEAR_BUTTON_ID + ',',
+          '#' + FILL_BUTTON_ID + ' {',
+          '  border: 0;',
+          '  margin: 0;',
+          '  font-size: 12px;',
+          '  line-height: 1.2;',
+          '  color: #ffffff;',
+          '  cursor: pointer;',
+          '  height: 30px;',
+          '}',
+          '#' + CLEAR_BUTTON_ID + ' {',
+          '  padding: 0 9px;',
+          '  background: #b91c1c;',
+          '  border-right: 1px solid rgba(255,255,255,0.18);',
+          '}',
+          '#' + CLEAR_BUTTON_ID + ':hover {',
+          '  background: #991b1b;',
+          '}',
+          '#' + FILL_BUTTON_ID + ' {',
+          '  padding: 0 12px;',
+          '  background: #111827;',
+          '}',
+          '#' + FILL_BUTTON_ID + ':hover {',
+          '  background: #1f2937;',
+          '}',
+          '#' + FILL_BUTTON_ID + ':disabled {',
+          '  opacity: 0.7;',
+          '  cursor: wait;',
+          '}'
+        ].join('\n');
+        (document.head || document.documentElement).appendChild(styleEl);
+      }
+
+      const config = getNatGenPageFillConfig();
+      if (!config) return null;
+
+      let container = document.getElementById(CONTAINER_ID);
+      let clearButton = document.getElementById(CLEAR_BUTTON_ID);
+      let fillButton = document.getElementById(FILL_BUTTON_ID);
+
+      if (!container) {
+        container = document.createElement('div');
+        container.id = CONTAINER_ID;
+
+        clearButton = document.createElement('button');
+        clearButton.id = CLEAR_BUTTON_ID;
+        clearButton.type = 'button';
+        clearButton.textContent = 'X';
+        clearButton.title = 'Clear Stored Data';
+        clearButton.addEventListener('click', function () {
+          try {
+            if (typeof root.clearMciSharedPayload === 'function') {
+              root.clearMciSharedPayload();
+            } else if (typeof window.clearMciSharedPayload === 'function') {
+              window.clearMciSharedPayload();
+            } else {
+              try { localStorage.removeItem('mciMasterPayload'); } catch (e) {}
+            }
+          } catch (e) {
+            console.error('[NatGenMaster] Clear Stored Data failed', e);
+          }
+
+          removeNatGenFillThisPageButton();
+        });
+
+        fillButton = document.createElement('button');
+        fillButton.id = FILL_BUTTON_ID;
+        fillButton.type = 'button';
+        fillButton.textContent = 'Fill This Page';
+        fillButton.addEventListener('click', function () {
+          const clickConfig = getNatGenPageFillConfig();
+          const runnerName = clickConfig ? clickConfig.runnerName : '';
+          const runner = runnerName && typeof root[runnerName] === 'function' ? root[runnerName] : null;
+          if (!runner) return;
+
+          let result;
+          fillButton.disabled = true;
+          try {
+            result = runner();
+          } catch (e) {
+            console.error('[NatGenMaster] Fill This Page failed', e);
+            fillButton.disabled = false;
+            return;
+          }
+
+          if (result && typeof result.then === 'function') {
+            result
+              .catch(function (e) {
+                console.error('[NatGenMaster] Fill This Page failed', e);
+              })
+              .finally(function () {
+                fillButton.disabled = false;
+              });
+          } else {
+            fillButton.disabled = false;
+          }
+        });
+
+        container.appendChild(clearButton);
+        container.appendChild(fillButton);
+        (document.body || document.documentElement).appendChild(container);
+      }
+
+      fillButton.title = config.title;
+      return fillButton;
+    }
+
+    function refreshNatGenFillThisPageButton() {
+      const config = getNatGenPageFillConfig();
+      const enabled = getErieExtractorEnabledForNatGen();
+      const hasPayload = hasNatGenSharedPayload();
+      const hasRunner = !!(config && typeof root[config.runnerName] === 'function');
+
+      if (!config || !enabled || !hasPayload || !hasRunner) {
+        removeNatGenFillThisPageButton();
+        return;
+      }
+
+      ensureNatGenFillThisPageButton();
+    }
+
+    root.__natGenFillThisPageButtonState = {
+      refresh: refreshNatGenFillThisPageButton
+    };
+
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener(ERIE_EXTRACTOR_TOGGLE_EVENT, function () {
+        window.setTimeout(refreshNatGenFillThisPageButton, 0);
+      });
+      window.addEventListener('storage', function (event) {
+        if (!event || event.key === ERIE_EXTRACTOR_TOGGLE_KEY) {
+          refreshNatGenFillThisPageButton();
+        }
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', refreshNatGenFillThisPageButton, { once: true });
+    } else {
+      refreshNatGenFillThisPageButton();
+    }
+  })();
 })();
