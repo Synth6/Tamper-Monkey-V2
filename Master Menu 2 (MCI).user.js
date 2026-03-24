@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      5.8.4
+// @version      5.8.6
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -68,6 +68,8 @@
   const TRIGGER_ID = "mciSlideTrigger";
 
   const PREF_HOVER_KEY = "mci_pref_hover_open";
+  const PREF_ERIE_EXTRACTOR_ENABLED_KEY = "mci_pref_erie_extractor_enabled";
+  const EVENT_ERIE_EXTRACTOR_TOGGLE = "mci:erie-extractor-toggle";
 
   const GLOBAL_STYLE_ID = "mci-global-style";
 
@@ -366,6 +368,125 @@
     try { window.postMessage({ __mci: "run-file-downloader", detail: detail }, "*"); } catch (e) {}
   }
 
+  function getErieExtractorEnabled() {
+    try {
+      const raw = localStorage.getItem(PREF_ERIE_EXTRACTOR_ENABLED_KEY);
+      if (raw == null) return true;
+      return raw === "true";
+    } catch (e) {
+      return true;
+    }
+  }
+
+  function setErieExtractorEnabled(enabled) {
+    try {
+      localStorage.setItem(PREF_ERIE_EXTRACTOR_ENABLED_KEY, enabled ? "true" : "false");
+    } catch (e) {}
+  }
+
+  function getErieExtractorToggleLabel(enabled) {
+    return "Erie Extractor: " + (enabled ? "On" : "Off");
+  }
+
+  function refreshErieExtractorToggleButton() {
+    const host = document.getElementById(HOST_ID);
+    const root = host && host.shadowRoot;
+    if (!root) return;
+
+    const btn = root.querySelector("#mci_erie_extractor_toggle");
+    if (!btn) return;
+
+    const enabled = getErieExtractorEnabled();
+    btn.textContent = getErieExtractorToggleLabel(enabled);
+    btn.setAttribute("data-on", enabled ? "1" : "0");
+  }
+
+  let erieExtractorToggleSyncWired = false;
+  function wireErieExtractorToggleSyncListeners() {
+    if (erieExtractorToggleSyncWired) return;
+    erieExtractorToggleSyncWired = true;
+
+    window.addEventListener("storage", function (event) {
+      if (!event || event.key !== PREF_ERIE_EXTRACTOR_ENABLED_KEY) return;
+      refreshErieExtractorToggleButton();
+    });
+
+    function onErieExtractorToggleEvent() {
+      refreshErieExtractorToggleButton();
+    }
+
+    document.addEventListener(EVENT_ERIE_EXTRACTOR_TOGGLE, onErieExtractorToggleEvent);
+    window.addEventListener(EVENT_ERIE_EXTRACTOR_TOGGLE, onErieExtractorToggleEvent);
+  }
+
+  function broadcastErieExtractorToggle(enabled) {
+    const detail = {
+      source: "mci-menu",
+      enabled: !!enabled,
+      storageKey: PREF_ERIE_EXTRACTOR_ENABLED_KEY
+    };
+    try { window.postMessage({ __mci: "erie-extractor-toggle", detail: detail }, "*"); } catch (e) {}
+    try { document.dispatchEvent(new CustomEvent(EVENT_ERIE_EXTRACTOR_TOGGLE, { detail: detail })); } catch (e2) {}
+    try { window.dispatchEvent(new CustomEvent(EVENT_ERIE_EXTRACTOR_TOGGLE, { detail: detail })); } catch (e3) {}
+    try { if (window.top && window.top !== window) window.top.dispatchEvent(new CustomEvent(EVENT_ERIE_EXTRACTOR_TOGGLE, { detail: detail })); } catch (e4) {}
+  }
+
+  function isOnNatGenQuotePage(pathPart) {
+    const path = String(location.pathname || "").toLowerCase();
+    return !!IS_NG && path.indexOf(String(pathPart || "").toLowerCase()) >= 0;
+  }
+
+  function resolveCallableGlobal(fnName) {
+    if (!fnName) return null;
+
+    const roots = [PAGE_WINDOW, window];
+    try {
+      if (window.top && window.top !== window) roots.push(window.top);
+    } catch (e) {}
+
+    for (let i = 0; i < roots.length; i += 1) {
+      const root = roots[i];
+      if (!root) continue;
+      try {
+        const fn = root[fnName];
+        if (typeof fn === "function") return { root: root, fn: fn };
+      } catch (e2) {}
+    }
+
+    return null;
+  }
+
+  function runNatGenFillLauncher(opts) {
+    const pagePath = opts && opts.pagePath ? opts.pagePath : "";
+    const fnName = opts && opts.fnName ? opts.fnName : "";
+    const wrongPageMsg = opts && opts.wrongPageMsg ? opts.wrongPageMsg : "Open the correct NatGen page first.";
+    const missingFnMsg = opts && opts.missingFnMsg ? opts.missingFnMsg : "NatGen filler script not found on this page.";
+
+    if (!isOnNatGenQuotePage(pagePath)) {
+      toast(wrongPageMsg);
+      return;
+    }
+
+    const target = resolveCallableGlobal(fnName);
+    if (!target) {
+      toast(missingFnMsg);
+      return;
+    }
+
+    try {
+      const res = target.fn.call(target.root);
+      if (res && typeof res.then === "function") {
+        res.catch(function (e) {
+          console.warn("[MCI Toolbox] NatGen launcher error:", e);
+          toast("Error starting NatGen filler - see console.");
+        });
+      }
+    } catch (e) {
+      console.warn("[MCI Toolbox] NatGen launcher error:", e);
+      toast("Error starting NatGen filler - see console.");
+    }
+  }
+
   /*************************
    * CONFIG UI DSL          *
    *************************/
@@ -373,6 +494,7 @@
   // - button: {type:"button", id, text, className, onClick}
   // - pair:   {type:"pair", left:{...button}, right:{...button}}
   // - split:  {type:"split", className, left:{...}, right:{...}}
+  // - group:  {type:"group", className, items:[...buttons]}
   // - panel:  {type:"panel", toggle:{...button}, panelId, items:[...]}
   // - custom: {type:"custom", html}  (for your shortcuts card etc.)
   // - rowControls: QQ row highlighter + color input compact row
@@ -404,13 +526,46 @@
     {
       label: "Quote Export",
       items: [
+        { type: "button", id: "mci_erie_extractor_toggle", text: getErieExtractorToggleLabel(getErieExtractorEnabled()), className: "mci-btn erie-toggle" },
         {
           type: "panel",
           panelId: "mci_export_panel",
           toggle: { id: "mci_export_toggle", text: "🚗 Erie Export Quote ▸", className: "mci-btn blue" },
           items: [
-            { type: "button", id: "mci_export_auto", text: "Auto Quote", className: "mci-btn brand" },
-            { type: "button", id: "mci_export_home", text: "Home Quote", className: "mci-btn brand" }
+            {
+              type: "panel",
+              panelId: "mci_natgen_fillers_panel",
+              className: "mci-subsection mci-subsection-ng",
+              toggle: { id: "mci_natgen_fillers_toggle", text: "National General", className: "mci-btn ng-parent" },
+              items: [
+                {
+                  type: "group",
+                  className: "mci-btn-group ng-group",
+                  items: [
+                    { type: "button", id: "mci_ng_fill_named", text: "Nmd", title: "Fill Named Insured", className: "mci-btn ng-named" },
+                    { type: "button", id: "mci_ng_fill_drivers", text: "Drv", title: "Fill Drivers", className: "mci-btn ng-drivers" },
+                    { type: "button", id: "mci_ng_fill_vehicles", text: "Veh", title: "Fill Vehicles", className: "mci-btn ng-vehicles" },
+                    { type: "button", id: "mci_ng_fill_coverages", text: "Cov", title: "Fill Coverages", className: "mci-btn ng-coverages" }
+                  ]
+                }
+              ]
+            },
+            {
+              type: "panel",
+              panelId: "mci_jones_forms_panel",
+              className: "mci-subsection mci-subsection-jones",
+              toggle: { id: "mci_jones_forms_toggle", text: "Jones Forms", className: "mci-btn jones-parent" },
+              items: [
+                {
+                  type: "group",
+                  className: "mci-btn-group jones-group",
+                  items: [
+                    { type: "button", id: "mci_export_auto", text: "Auto", title: "Auto Quote Form", className: "mci-btn jones-auto" },
+                    { type: "button", id: "mci_export_home", text: "Home", title: "Home Quote Form", className: "mci-btn jones-home" }
+                  ]
+                }
+              ]
+            },
           ]
         }
       ]
@@ -530,12 +685,23 @@
   }
 
   function renderPanel(panel) {
+    const wrapperClass = "mci-downloader" + (panel.className ? (" " + panel.className) : "");
     return (
-      '<div class="mci-downloader">' +
+      '<div class="' + escHtml(wrapperClass) + '">' +
         renderButton(panel.toggle) +
         '<div class="mci-downloader-panel" id="' + escHtml(panel.panelId) + '">' +
           panel.items.map(renderItem).join("") +
         "</div>" +
+      "</div>"
+    );
+  }
+
+  function renderGroup(group) {
+    const cls = group.className || "mci-btn-group";
+    const items = Array.isArray(group.items) ? group.items : [];
+    return (
+      '<div class="' + escHtml(cls) + '" role="group">' +
+        items.map(renderButton).join("") +
       "</div>"
     );
   }
@@ -556,6 +722,7 @@
     if (item.type === "button") return renderButton(item);
     if (item.type === "pair") return renderPair(item);
     if (item.type === "split") return renderSplit(item);
+    if (item.type === "group") return renderGroup(item);
     if (item.type === "panel") return renderPanel(item);
     if (item.type === "custom") return item.html || "";
     if (item.type === "rowControls") return renderRowControls();
@@ -594,6 +761,7 @@
     }
 
     const root = host.shadowRoot;
+    wireErieExtractorToggleSyncListeners();
     if (root.getElementById(MENU_ID)) return root;
 
     if (IS_QQ) ensureGlobalStyles();
@@ -641,6 +809,27 @@
         '.mci-btn.blue{background:#2563eb}.mci-btn.blue:hover{background:#2b6ef5}' +
         '.mci-btn.purple{background:#7b68ee}.mci-btn.purple:hover{background:#6c5ce7}' +
         '.mci-btn.brand{background:#1e40af}.mci-btn.brand:hover{background:#1e3a8a}' +
+        '.mci-btn.ng-parent{background:#1e3a8a;padding:4px 8px!important;font-weight:600;opacity:.9}' +
+        '.mci-btn.ng-parent:hover{background:#1e40af;opacity:.97;transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.34)!important;filter:brightness(1.05)!important}' +
+        '.mci-btn.jones-parent{background:#5b21b6;padding:4px 8px!important;font-weight:600;opacity:.9}' +
+        '.mci-btn.jones-parent:hover{background:#6d28d9;opacity:.97;transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.34)!important;filter:brightness(1.05)!important}' +
+        '.mci-disclosure-toggle{position:relative;padding-right:22px!important}' +
+        '.mci-disclosure-toggle::after{content:"";position:absolute;right:8px;top:50%;width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:6px solid rgba(255,255,255,.92);transform:translateY(-50%) rotate(0deg);transform-origin:35% 50%;transition:transform .16s ease,opacity .16s ease;opacity:.88}' +
+        '.mci-disclosure-toggle[data-open="1"]::after{transform:translateY(-50%) rotate(90deg);opacity:1}' +
+        '.mci-btn.ng-named{background:#2563eb}.mci-btn.ng-named:hover{background:#2b6ef5}' +
+        '.mci-btn.ng-drivers{background:#2f9e58}.mci-btn.ng-drivers:hover{background:#36ad61}' +
+        '.mci-btn.ng-vehicles{background:#d97706}.mci-btn.ng-vehicles:hover{background:#ea860c}' +
+        '.mci-btn.ng-coverages{background:#0f766e}.mci-btn.ng-coverages:hover{background:#0d857c}' +
+        '.mci-btn.jones-auto{background:#1d4ed8}.mci-btn.jones-auto:hover{background:#2563eb}' +
+        '.mci-btn.jones-home{background:#4f7b2f}.mci-btn.jones-home:hover{background:#5a8a35}' +
+        '.mci-btn.erie-toggle{position:relative;padding-right:52px!important;background:#334155}' +
+        '.mci-btn.erie-toggle:hover{background:#3f4f63}' +
+        '.mci-btn.erie-toggle::before{content:"";position:absolute;right:10px;top:50%;transform:translateY(-50%);width:34px;height:18px;border-radius:999px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25)}' +
+        '.mci-btn.erie-toggle::after{content:"";position:absolute;right:27px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:50%;background:#cbd5e1;transition:right .16s ease,background .16s ease}' +
+        '.mci-btn.erie-toggle[data-on="1"]{background:#1f7a3d}' +
+        '.mci-btn.erie-toggle[data-on="1"]:hover{background:#258d47}' +
+        '.mci-btn.erie-toggle[data-on="1"]::before{background:rgba(17,94,39,.75);border-color:rgba(167,243,208,.55)}' +
+        '.mci-btn.erie-toggle[data-on="1"]::after{right:11px;background:#dcfce7}' +
 
         '.mci-btn-pair{display:flex;gap:8px}.mci-btn-pair .mci-btn{flex:1;margin:0!important}' +
 
@@ -654,10 +843,18 @@
         '.divider{margin:12px 10px 10px;border-top:1px dashed rgba(255,255,255,.25);position:relative;height:0}' +
         '.divider::after{content:attr(data-label);position:absolute;left:50%;transform:translate(-50%,-55%);background:#1a1c22;padding:0 6px;color:#9fb4d8;font-size:11px;letter-spacing:.2px}' +
 
-        '.mci-downloader{display:flex;flex-direction:column;gap:8px}' +
+        '.mci-downloader{display:flex;flex-direction:column;gap:6px}' +
         '.mci-downloader .mci-btn{margin:0!important}' +
-        '.mci-downloader-panel{display:none;flex-direction:column;gap:8px}' +
+        '.mci-downloader-panel{display:none;flex-direction:column;gap:6px}' +
         '.mci-downloader-panel.open{display:flex}' +
+        '.mci-downloader-panel#mci_export_panel.open{gap:8px}' +
+        '.mci-downloader.mci-subsection{padding:5px 6px;border-radius:10px;gap:5px;overflow:hidden}' +
+        '.mci-downloader.mci-subsection-ng{background:rgba(30,58,138,.28);border:1px solid rgba(96,165,250,.24)}' +
+        '.mci-downloader.mci-subsection-jones{background:rgba(91,33,182,.24);border:1px solid rgba(167,139,250,.24)}' +
+        '.mci-downloader.mci-subsection .mci-downloader-panel{padding-top:1px;gap:6px}' +
+        '.mci-btn-group{display:flex;gap:6px;width:100%;max-width:100%;min-width:0}' +
+        '.mci-btn-group .mci-btn{flex:1 1 0;width:auto!important;min-width:0;display:flex;align-items:center;justify-content:center;height:30px;min-height:30px;margin:0!important;padding:4px 6px!important;text-align:center;border-radius:6px}' +
+        '.mci-downloader-panel .mci-btn-group{margin-top:0}' +
 
         '.qq-row-controls{display:flex;gap:8px;align-items:center}' +
         '#mci_row_color{width:26px;height:29px;border:none;padding:0;background:none;cursor:pointer}' +
@@ -817,19 +1014,34 @@
     }, true);
 
     applyHoverUi();
+    wirePanel("mci_natgen_fillers_toggle", "mci_natgen_fillers_panel", null, null, { disclosure: true });
+    wirePanel("mci_jones_forms_toggle", "mci_jones_forms_panel", null, null, { disclosure: true });
 
     /*************************
      * PANEL TOGGLES (generic)
      *************************/
-    function wirePanel(toggleId, panelId, openText, closedText) {
+    function wirePanel(toggleId, panelId, openText, closedText, opts) {
+      opts = opts || {};
       const t = $s("#" + toggleId);
       const p = $s("#" + panelId);
       if (!t || !p) return;
 
+      if (opts.disclosure) {
+        t.classList.add("mci-disclosure-toggle");
+        t.setAttribute("data-open", "0");
+        t.setAttribute("aria-expanded", "false");
+      }
+
       t.addEventListener("click", function () {
         const open = p.classList.toggle("open");
-        if (open) t.textContent = openText;
-        else t.textContent = closedText;
+        if (opts.disclosure) {
+          t.setAttribute("data-open", open ? "1" : "0");
+          t.setAttribute("aria-expanded", open ? "true" : "false");
+        }
+        if (typeof openText === "string" && typeof closedText === "string") {
+          if (open) t.textContent = openText;
+          else t.textContent = closedText;
+        }
       });
     }
 
@@ -916,6 +1128,42 @@
       }
     });
 
+    onClick("mci_ng_fill_named", function () {
+      runNatGenFillLauncher({
+        pagePath: "/quote/quotenamedinsured.aspx",
+        fnName: "testNatGenNamed",
+        wrongPageMsg: "Open NatGen Named Insured page before running this.",
+        missingFnMsg: "NatGen Named Insured filler not found (expected: testNatGenNamed)."
+      });
+    });
+
+    onClick("mci_ng_fill_drivers", function () {
+      runNatGenFillLauncher({
+        pagePath: "/quote/quotedriver.aspx",
+        fnName: "testNatGenDrivers",
+        wrongPageMsg: "Open NatGen Drivers page before running this.",
+        missingFnMsg: "NatGen Drivers filler not found (expected: testNatGenDrivers)."
+      });
+    });
+
+    onClick("mci_ng_fill_vehicles", function () {
+      runNatGenFillLauncher({
+        pagePath: "/quote/quoteauto.aspx",
+        fnName: "testNatGenVehicles",
+        wrongPageMsg: "Open NatGen Vehicles page before running this.",
+        missingFnMsg: "NatGen Vehicles filler not found (expected: testNatGenVehicles)."
+      });
+    });
+
+    onClick("mci_ng_fill_coverages", function () {
+      runNatGenFillLauncher({
+        pagePath: "/quote/quotecoverages",
+        fnName: "runNatGenCoverages",
+        wrongPageMsg: "Open NatGen Coverages page before running this.",
+        missingFnMsg: "NatGen Coverages filler not found (expected: runNatGenCoverages)."
+      });
+    });
+
     // File downloader triggers
     onClick("mci_fd_erie", function () {
       $s("#mci_fd_panel").classList.remove("open");
@@ -966,6 +1214,16 @@
     });
 
     // Menu links
+    refreshErieExtractorToggleButton();
+
+    onClick("mci_erie_extractor_toggle", function () {
+      const enabled = !getErieExtractorEnabled();
+      setErieExtractorEnabled(enabled);
+      refreshErieExtractorToggleButton();
+      broadcastErieExtractorToggle(enabled);
+      toast("Erie extractor " + (enabled ? "enabled." : "disabled."));
+    });
+
     onClick("mci_cashCenter", function () {
       window.open(
         "https://script.google.com/macros/s/AKfycbyna22X-JzASUbS4pR6IdvPrtd_m_lYzUAXqbwxHAVBqYRHvkOCehY1uzY3wC_4gavu/exec",
