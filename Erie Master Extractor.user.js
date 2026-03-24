@@ -4,6 +4,8 @@
 // @version      0.1.0
 // @description  Erie-only master extractor for Personal Lines Auto. Collects page-by-page data into one normalized JSON payload.
 // @match        https://www.agentexchange.com/PersonalLinesWeb/g/*
+// @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Erie%20Master%20Extractor.user.js
+// @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Erie%20Master%20Extractor.user.js
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_deleteValue
