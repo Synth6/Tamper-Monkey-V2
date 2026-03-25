@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Erie Master Extractor
 // @namespace    https://middlecreekinsurance.com/
-// @version      0.1.0
+// @version      0.1.1
 // @description  Erie-only master extractor for Personal Lines Auto. Collects page-by-page data into one normalized JSON payload.
 // @match        https://www.agentexchange.com/PersonalLinesWeb/g/*
 // @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Erie%20Master%20Extractor.user.js
@@ -2510,6 +2510,13 @@
 
     resetPayload() {
       if (!confirm('Reset Erie master payload?')) return;
+
+      Actions.harvestState.running = false;
+      Actions.harvestState.total = 0;
+      Actions.harvestState.current = 0;
+      Actions.harvestState.harvested = 0;
+      Actions.harvestState.skipped = 0;
+
       Storage.resetPayload();
       UI.refresh();
       UI.toast('Payload reset');
@@ -2517,16 +2524,801 @@
 
     showSummary() {
       const p = Storage.loadPayload();
-      alert([
-        'Erie Master Extractor',
-        'Version: ' + APP.version,
-        'Visited pages: ' + (p.meta.visitedPages || []).join(', '),
-        'Named insureds: ' + (p.namedInsureds || []).length,
-        'Drivers: ' + (p.drivers || []).length,
-        'Vehicles: ' + (p.vehicles || []).length,
-        'Policy coverages: ' + (p.coverages && p.coverages.policy && p.coverages.policy.policyCoverages || []).length,
-        'Vehicle coverage groups: ' + (p.coverages && p.coverages.vehicleCoverages || []).length
-      ].join('\n'));
+      Summary.showPopup(p);
+    }
+  };
+
+  // -----------------------------
+  // Summary formatter / popup
+  // -----------------------------
+  const Summary = {
+    line(label, value) {
+      const v = U.cleanString(value);
+      return label + ': ' + (v || '-');
+    },
+
+    joinAddress(addr) {
+      if (!addr) return '';
+      return [
+        U.cleanString(addr.line1),
+        U.cleanString(addr.line2),
+        U.cleanString(addr.city),
+        U.cleanString(addr.state),
+        U.cleanString(addr.zip)
+      ].filter(Boolean).join(', ');
+    },
+
+    vehicleLabel(v) {
+      return [
+        U.cleanString(v.year),
+        U.cleanString(v.make),
+        U.cleanString(v.model)
+      ].filter(Boolean).join(' ') || U.cleanString(v.vehicleId) || 'Vehicle';
+    },
+
+    coverageLabel(c) {
+      const code = U.cleanString(c && c.coverageCode || '');
+      const desc = U.cleanString(c && c.coverageDescription || '');
+      const limit = U.cleanString(c && c.coverageLimit || '');
+      return [
+        code || desc || 'Coverage',
+        limit ? ('- ' + limit) : ''
+      ].filter(Boolean).join(' ');
+    },
+
+    escHtml(value) {
+      return U.safeString(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    },
+
+    escAttr(value) {
+      return Summary.escHtml(U.safeString(value)).replace(/\r?\n/g, '&#10;');
+    },
+
+    fieldRow(label, value, opts) {
+      const v = U.cleanString(value);
+      const allowBlank = !!(opts && opts.allowBlank);
+      if (!v && !allowBlank) return '';
+      return `
+        <div class="eme-s-row">
+          <div class="eme-s-label">${Summary.escHtml(label)}</div>
+          <div class="eme-s-value">${Summary.escHtml(v || '-')}</div>
+          <button class="eme-s-copy" data-copy="${Summary.escAttr(v || '')}" ${v ? '' : 'disabled'}>Copy</button>
+        </div>
+      `;
+    },
+
+    section(title, innerHtml, opts) {
+      opts = opts || {};
+      const id = U.cleanString(opts.id || '').replace(/[^a-zA-Z0-9\-_]/g, '');
+      const collapsed = !!opts.collapsed;
+      const bodyId = id ? ('eme-body-' + id) : '';
+      const btnId = id ? ('eme-toggle-' + id) : '';
+
+      return `
+        <section class="eme-s-section${collapsed ? ' is-collapsed' : ''}" ${id ? `id="${Summary.escAttr(id)}"` : ''}>
+          <button
+            class="eme-s-section-title eme-s-toggle"
+            type="button"
+            ${bodyId ? `data-target="${Summary.escAttr(bodyId)}"` : ''}
+            ${btnId ? `id="${Summary.escAttr(btnId)}"` : ''}
+            aria-expanded="${collapsed ? 'false' : 'true'}"
+          >
+            <span>${Summary.escHtml(title)}</span>
+            <span class="eme-s-toggle-icon">${collapsed ? '&#9656;' : '&#9662;'}</span>
+          </button>
+          <div class="eme-s-section-body${collapsed ? ' is-hidden' : ''}" ${bodyId ? `id="${Summary.escAttr(bodyId)}"` : ''}>
+            ${innerHtml || '<div class="eme-s-empty">None</div>'}
+          </div>
+        </section>
+      `;
+    },
+
+    card(title, innerHtml) {
+      return `
+        <div class="eme-s-card">
+          <div class="eme-s-card-title">${Summary.escHtml(title)}</div>
+          <div class="eme-s-card-body">${innerHtml || '<div class="eme-s-empty">None</div>'}</div>
+        </div>
+      `;
+    },
+
+    build(p) {
+      p = p || {};
+      const lines = [];
+
+      const namedInsureds = Array.isArray(p.namedInsureds) ? p.namedInsureds : [];
+      const drivers = Array.isArray(p.drivers) ? p.drivers : [];
+      const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
+      const policyCoverages = Array.isArray(p.coverages && p.coverages.policy && p.coverages.policy.policyCoverages)
+        ? p.coverages.policy.policyCoverages
+        : [];
+      const vehicleCoverageGroups = Array.isArray(p.coverages && p.coverages.vehicleCoverages)
+        ? p.coverages.vehicleCoverages
+        : [];
+      const reportsRows = Array.isArray(p.reports && p.reports.rows) ? p.reports.rows : [];
+
+      lines.push('Erie Master Extractor');
+      lines.push('Version: ' + APP.version);
+      lines.push('');
+
+      lines.push('=== OVERVIEW ===');
+      lines.push('Visited pages: ' + ((p.meta && p.meta.visitedPages || []).join(', ') || '-'));
+      lines.push('Named insureds: ' + namedInsureds.length);
+      lines.push('Drivers: ' + drivers.length);
+      lines.push('Vehicles: ' + vehicles.length);
+      lines.push('Policy coverages: ' + policyCoverages.length);
+      lines.push('Vehicle coverage groups: ' + vehicleCoverageGroups.length);
+      lines.push('Reports rows: ' + reportsRows.length);
+      lines.push('');
+
+      lines.push('=== CUSTOMER ===');
+      lines.push(Summary.line('Full name', p.customer && p.customer.fullName));
+      lines.push(Summary.line('DOB', p.customer && p.customer.dob));
+      lines.push(Summary.line('Email', p.customer && p.customer.email));
+      lines.push(Summary.line('Mobile', p.customer && p.customer.phone && p.customer.phone.mobile));
+      lines.push(Summary.line('Home', p.customer && p.customer.phone && p.customer.phone.home));
+      lines.push(Summary.line('Work', p.customer && p.customer.phone && p.customer.phone.work));
+      lines.push(Summary.line('Mailing address', Summary.joinAddress(p.customer && p.customer.mailingAddress)));
+      lines.push(Summary.line('Residence address', Summary.joinAddress(p.customer && p.customer.residenceAddress)));
+      lines.push('');
+
+      lines.push('=== NAMED INSUREDS ===');
+      if (!namedInsureds.length) {
+        lines.push('- None');
+      } else {
+        namedInsureds.forEach(function (person, i) {
+          lines.push((i + 1) + '. ' + (U.cleanString(person.fullName) || '-'));
+          lines.push('   ' + Summary.line('DOB', person.dob));
+          lines.push('   ' + Summary.line('Relationship', person.relationshipToNamedInsured));
+          lines.push('   ' + Summary.line('License', person.license && person.license.number));
+          lines.push('   ' + Summary.line('License state', person.license && person.license.state));
+          lines.push('   ' + Summary.line('SSN', person.ssn));
+          lines.push('   ' + Summary.line('Email', person.email));
+          lines.push('   ' + Summary.line('Mobile', person.phone && person.phone.mobile));
+          lines.push('   ' + Summary.line('Home', person.phone && person.phone.home));
+          lines.push('   ' + Summary.line('Work', person.phone && person.phone.work));
+        });
+      }
+      lines.push('');
+
+      lines.push('=== DRIVERS ===');
+      if (!drivers.length) {
+        lines.push('- None');
+      } else {
+        drivers.forEach(function (driver, i) {
+          lines.push((i + 1) + '. ' + (U.cleanString(driver.fullName) || '-'));
+          lines.push('   ' + Summary.line('Role', driver.role));
+          lines.push('   ' + Summary.line('Relationship', driver.relationshipToNamedInsured));
+          lines.push('   ' + Summary.line('DOB', driver.dob));
+          lines.push('   ' + Summary.line('License', driver.license && driver.license.number));
+          lines.push('   ' + Summary.line('License state', driver.license && driver.license.state));
+          lines.push('   ' + Summary.line('Date first licensed', driver.license && driver.license.dateFirstLicensed));
+          lines.push('   ' + Summary.line('SSN', driver.ssn));
+          lines.push('   ' + Summary.line('Excluded', driver.isExcluded ? 'Yes' : 'No'));
+        });
+      }
+      lines.push('');
+
+      lines.push('=== VEHICLES ===');
+      if (!vehicles.length) {
+        lines.push('- None');
+      } else {
+        vehicles.forEach(function (vehicle, i) {
+          lines.push((i + 1) + '. ' + Summary.vehicleLabel(vehicle));
+          lines.push('   ' + Summary.line('VIN', vehicle.vin || vehicle.vinMaskedTail));
+          lines.push('   ' + Summary.line('Use', vehicle.use));
+          lines.push('   ' + Summary.line('Annual miles', vehicle.annualMiles));
+          lines.push('   ' + Summary.line('Commute miles', vehicle.commuteMiles));
+          lines.push('   ' + Summary.line('Ownership', vehicle.ownership));
+          lines.push('   ' + Summary.line('Primary operator', vehicle.primaryOperator));
+
+          const vehicleCoverages = Array.isArray(vehicle.coverages) ? vehicle.coverages : [];
+          if (vehicleCoverages.length) {
+            lines.push('   Coverages:');
+            vehicleCoverages.forEach(function (coverage) {
+              lines.push('     - ' + Summary.coverageLabel(coverage));
+            });
+          }
+        });
+      }
+      lines.push('');
+
+      lines.push('=== POLICY COVERAGES ===');
+      if (!policyCoverages.length) {
+        lines.push('- None');
+      } else {
+        policyCoverages.forEach(function (coverage, i) {
+          lines.push((i + 1) + '. ' + Summary.coverageLabel(coverage));
+        });
+      }
+      lines.push('');
+
+      lines.push('=== REPORTS ===');
+      if (!reportsRows.length) {
+        lines.push('- None');
+      } else {
+        reportsRows.forEach(function (row, i) {
+          lines.push((i + 1) + '. ' + [
+            U.cleanString(row.name) || 'Unknown',
+            U.cleanString(row.reportType) || 'Report',
+            U.cleanString(row.statusType) || ''
+          ].filter(Boolean).join(' - '));
+          lines.push('   ' + Summary.line('Report date', row.reportDate));
+          lines.push('   ' + Summary.line('Event date', row.eventDate));
+          lines.push('   ' + Summary.line('Amount', row.amount));
+          lines.push('   ' + Summary.line('Score', row.score));
+          lines.push('   ' + Summary.line('Tier', row.indicatedTier));
+        });
+      }
+
+      return lines.join('\n');
+    },
+
+    renderOverview(p) {
+      const namedInsureds = Array.isArray(p.namedInsureds) ? p.namedInsureds : [];
+      const drivers = Array.isArray(p.drivers) ? p.drivers : [];
+      const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
+      const policyCoverages = Array.isArray(p.coverages && p.coverages.policy && p.coverages.policy.policyCoverages)
+        ? p.coverages.policy.policyCoverages
+        : [];
+      const vehicleCoverageGroups = Array.isArray(p.coverages && p.coverages.vehicleCoverages)
+        ? p.coverages.vehicleCoverages
+        : [];
+      const reportsRows = Array.isArray(p.reports && p.reports.rows) ? p.reports.rows : [];
+
+      return Summary.section('Overview',
+        Summary.fieldRow('Visited pages', (p.meta && p.meta.visitedPages || []).join(', ')) +
+        Summary.fieldRow('Named insureds', String(namedInsureds.length), { allowBlank: true }) +
+        Summary.fieldRow('Drivers', String(drivers.length), { allowBlank: true }) +
+        Summary.fieldRow('Vehicles', String(vehicles.length), { allowBlank: true }) +
+        Summary.fieldRow('Policy coverages', String(policyCoverages.length), { allowBlank: true }) +
+        Summary.fieldRow('Vehicle coverage groups', String(vehicleCoverageGroups.length), { allowBlank: true }) +
+        Summary.fieldRow('Reports rows', String(reportsRows.length), { allowBlank: true })
+      , { id: 'overview', collapsed: true });
+    },
+
+    renderCustomer(p) {
+      return Summary.section('Customer',
+        Summary.fieldRow('Full name', p.customer && p.customer.fullName) +
+        Summary.fieldRow('DOB', p.customer && p.customer.dob) +
+        Summary.fieldRow('Email', p.customer && p.customer.email) +
+        Summary.fieldRow('Mobile', p.customer && p.customer.phone && p.customer.phone.mobile) +
+        Summary.fieldRow('Home', p.customer && p.customer.phone && p.customer.phone.home) +
+        Summary.fieldRow('Work', p.customer && p.customer.phone && p.customer.phone.work) +
+        Summary.fieldRow('Mailing address', Summary.joinAddress(p.customer && p.customer.mailingAddress)) +
+        Summary.fieldRow('Residence address', Summary.joinAddress(p.customer && p.customer.residenceAddress))
+      , { id: 'customer' });
+    },
+
+    renderNamedInsureds(p) {
+      const namedInsureds = Array.isArray(p.namedInsureds) ? p.namedInsureds : [];
+      if (!namedInsureds.length) {
+        return Summary.section('Named Insureds', '', { id: 'named-insureds' });
+      }
+
+      const html = namedInsureds.map(function (person, i) {
+        return Summary.card((i + 1) + '. ' + (U.cleanString(person.fullName) || 'Named Insured'),
+          Summary.fieldRow('DOB', person.dob) +
+          Summary.fieldRow('Relationship', person.relationshipToNamedInsured) +
+          Summary.fieldRow('License', person.license && person.license.number) +
+          Summary.fieldRow('License state', person.license && person.license.state) +
+          Summary.fieldRow('SSN', person.ssn) +
+          Summary.fieldRow('Email', person.email) +
+          Summary.fieldRow('Mobile', person.phone && person.phone.mobile) +
+          Summary.fieldRow('Home', person.phone && person.phone.home) +
+          Summary.fieldRow('Work', person.phone && person.phone.work)
+        );
+      }).join('');
+
+      return Summary.section('Named Insureds', html, { id: 'named-insureds' });
+    },
+
+    renderDrivers(p) {
+      const drivers = Array.isArray(p.drivers) ? p.drivers : [];
+      if (!drivers.length) {
+        return Summary.section('Drivers', '', { id: 'drivers' });
+      }
+
+      const html = drivers.map(function (driver, i) {
+        return Summary.card((i + 1) + '. ' + (U.cleanString(driver.fullName) || 'Driver'),
+          Summary.fieldRow('Role', driver.role) +
+          Summary.fieldRow('Relationship', driver.relationshipToNamedInsured) +
+          Summary.fieldRow('DOB', driver.dob) +
+          Summary.fieldRow('License', driver.license && driver.license.number) +
+          Summary.fieldRow('License state', driver.license && driver.license.state) +
+          Summary.fieldRow('Date first licensed', driver.license && driver.license.dateFirstLicensed) +
+          Summary.fieldRow('SSN', driver.ssn) +
+          Summary.fieldRow('Excluded', driver.isExcluded ? 'Yes' : 'No', { allowBlank: true })
+        );
+      }).join('');
+
+      return Summary.section('Drivers', html, { id: 'drivers' });
+    },
+
+    renderVehicles(p) {
+      const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
+      if (!vehicles.length) {
+        return Summary.section('Vehicles', '', { id: 'vehicles' });
+      }
+
+      const html = vehicles.map(function (vehicle, i) {
+        const vehicleCoverages = Array.isArray(vehicle.coverages) ? vehicle.coverages : [];
+        const coverageHtml = vehicleCoverages.length
+          ? `
+            <div class="eme-s-sublist">
+              <div class="eme-s-subtitle">Coverages</div>
+              ${vehicleCoverages.map(function (coverage) {
+                const label = Summary.coverageLabel(coverage);
+                return `
+                  <div class="eme-s-subrow">
+                    <div class="eme-s-value">${Summary.escHtml(label || '-')}</div>
+                    <button class="eme-s-copy" data-copy="${Summary.escAttr(label || '')}" ${label ? '' : 'disabled'}>Copy</button>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `
+          : '';
+
+        return Summary.card((i + 1) + '. ' + Summary.vehicleLabel(vehicle),
+          Summary.fieldRow('VIN', vehicle.vin || vehicle.vinMaskedTail) +
+          Summary.fieldRow('Use', vehicle.use) +
+          Summary.fieldRow('Annual miles', vehicle.annualMiles) +
+          Summary.fieldRow('Commute miles', vehicle.commuteMiles) +
+          Summary.fieldRow('Ownership', vehicle.ownership) +
+          Summary.fieldRow('Primary operator', vehicle.primaryOperator) +
+          coverageHtml
+        );
+      }).join('');
+
+      return Summary.section('Vehicles', html, { id: 'vehicles' });
+    },
+
+    renderPolicyCoverages(p) {
+      const policyCoverages = Array.isArray(p.coverages && p.coverages.policy && p.coverages.policy.policyCoverages)
+        ? p.coverages.policy.policyCoverages
+        : [];
+
+      if (!policyCoverages.length) {
+        return Summary.section('Policy Coverages', '', { id: 'policy-coverages' });
+      }
+
+      const html = policyCoverages.map(function (coverage, i) {
+        const label = Summary.coverageLabel(coverage);
+        return Summary.card((i + 1) + '. Policy Coverage',
+          Summary.fieldRow('Coverage', label)
+        );
+      }).join('');
+
+      return Summary.section('Policy Coverages', html, { id: 'policy-coverages' });
+    },
+
+    renderReports(p) {
+      const reportsRows = Array.isArray(p.reports && p.reports.rows) ? p.reports.rows : [];
+      if (!reportsRows.length) {
+        return Summary.section('Reports', '', { id: 'reports' });
+      }
+
+      const html = reportsRows.map(function (row, i) {
+        const title = [
+          U.cleanString(row.name) || 'Unknown',
+          U.cleanString(row.reportType) || 'Report',
+          U.cleanString(row.statusType) || ''
+        ].filter(Boolean).join(' - ');
+
+        return Summary.card((i + 1) + '. ' + title,
+          Summary.fieldRow('Report date', row.reportDate) +
+          Summary.fieldRow('Event date', row.eventDate) +
+          Summary.fieldRow('Amount', row.amount) +
+          Summary.fieldRow('Score', row.score) +
+          Summary.fieldRow('Tier', row.indicatedTier)
+        );
+      }).join('');
+
+      return Summary.section('Reports', html, { id: 'reports' });
+    },
+
+    renderWindowHtml(p) {
+      const rawText = Summary.build(p);
+      const rawJson = JSON.stringify(p, null, 2);
+
+      return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Erie Master Summary</title>
+  <style>
+    :root{
+      --bg:#0f1724;
+      --panel:#152235;
+      --panel2:linear-gradient(135deg, #2f73d8, #1e4fa3);
+      --text:#eef4ff;
+      --muted:#b8c7de;
+      --line:rgba(255,255,255,.12);
+      --blue:#007EF5;
+      --btn:#e8edf5;
+      --btnText:#111827;
+      --copy:#1f9d55;
+      --danger:#b83232;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:var(--bg);
+      color:var(--text);
+      font:13px/1.45 system-ui,Segoe UI,Arial,sans-serif;
+    }
+    .eme-wrap{
+      max-width:1200px;
+      margin:0 auto;
+      padding:16px;
+    }
+    .eme-top{
+      position:sticky;
+      top:0;
+      z-index:5;
+      background:rgba(15,23,36,.96);
+      backdrop-filter:blur(6px);
+      border-bottom:1px solid var(--line);
+      margin:-16px -16px 16px -16px;
+      padding:10px 14px;
+    }
+    .eme-title{
+      font-size:18px;
+      font-weight:700;
+      margin-bottom:2px;
+    }
+    .eme-sub{
+      color:var(--muted);
+      font-size:11px;
+      line-height:1.3;
+      margin-bottom:8px;
+    }
+    .eme-top-buttons{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+    }
+
+    .eme-jumpbar{
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      margin-top:8px;
+      padding-bottom:2px;
+    }
+
+    .eme-jump{
+      border:1px solid rgba(255,255,255,.15);
+      border-radius:4px;
+      padding:3px 7px; 
+      cursor:pointer;
+      font-size:10.5px; 
+      font-weight:600;
+      background:rgba(0,181,255,.3);
+      color:#dbe7ff;
+      line-height:1.2;
+      white-space:nowrap;
+    }
+
+    .eme-jump:hover{
+      background:rgba(255, 255, 255, 0.52);
+      color:#fff;
+    }
+
+    .eme-btn{
+      border:0;
+      border-radius:10px;
+      padding:9px 12px;
+      cursor:pointer;
+      font-size:12px;
+      font-weight:600;
+    }
+    .eme-btn-main{ background:var(--blue); color:#fff; }
+    .eme-btn-copy{ background:var(--copy); color:#fff; }
+    .eme-btn-light{ background:var(--btn); color:var(--btnText); }
+    .eme-grid{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:14px;
+    }
+    .eme-s-section{
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:14px;
+      overflow:hidden;
+    }
+    .eme-s-section-title{
+      width:100%;
+      background:var(--panel2);
+      padding:10px 12px;
+      font-weight:700;
+      font-size:14px;
+      border:0;
+      border-bottom:1px solid var(--line);
+      color:#fff;
+      text-align:left;
+    }
+    .eme-s-toggle{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      cursor:pointer;
+    }
+    .eme-s-toggle-icon{
+      color:var(--muted);
+      font-size:12px;
+      margin-left:10px;
+    }
+    .eme-s-section-body.is-hidden{
+      display:none;
+    }
+    .eme-s-section-body{
+      padding:12px;
+    }
+    .eme-s-card{
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:10px;
+      margin-bottom:10px;
+      background:rgba(255,255,255,.03);
+    }
+    .eme-s-card:last-child{ margin-bottom:0; }
+    .eme-s-card-title{
+      font-weight:700;
+      margin-bottom:8px;
+      color:#fff;
+    }
+    .eme-s-row,
+    .eme-s-subrow{
+      display:grid;
+      grid-template-columns:180px 1fr auto;
+      gap:10px;
+      align-items:start;
+      padding:6px 0;
+      border-bottom:1px dashed rgba(255,255,255,.08);
+    }
+
+    .eme-s-subrow{
+      display:grid;
+      grid-template-columns:1fr auto;
+    }
+
+    /* Adjust scroll margin for jump links to account for sticky header */
+    .eme-s-section {
+      scroll-margin-top: 85px;
+    }
+
+    .eme-s-row:last-child{ border-bottom:0; }
+    .eme-s-label{
+      color:var(--muted);
+      font-weight:600;
+    }
+    .eme-s-value{
+      color:#fff;
+      white-space:pre-wrap;
+      word-break:break-word;
+      user-select:text;
+    }
+    .eme-s-copy{
+      border:0;
+      border-radius:8px;
+      background:var(--btn);
+      color:var(--btnText);
+      padding:6px 9px;
+      cursor:pointer;
+      font-size:12px;
+      font-weight:600;
+    }
+    .eme-s-copy[disabled]{
+      opacity:.45;
+      cursor:default;
+    }
+    .eme-s-sublist{
+      margin-top:10px;
+      padding-top:10px;
+      border-top:1px solid rgba(255,255,255,.12);
+    }
+    .eme-s-subtitle{
+      font-weight:700;
+      margin-bottom:6px;
+      color:var(--muted);
+    }
+    .eme-s-empty{
+      color:var(--muted);
+    }
+    .eme-raw{
+      background:#0b1320;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:10px;
+      white-space:pre-wrap;
+      word-break:break-word;
+      color:#dfe9fb;
+      max-height:320px;
+      overflow:auto;
+      user-select:text;
+    }
+    .eme-toast{
+      position:fixed;
+      top:14px;
+      right:14px;
+      background:#111827;
+      color:#fff;
+      border-radius:10px;
+      padding:10px 12px;
+      box-shadow:0 8px 24px rgba(0,0,0,.35);
+      display:none;
+      z-index:50;
+    }
+    @media (max-width: 390px){
+      .eme-s-row,
+      .eme-s-subrow{
+        grid-template-columns:1fr;
+      }
+
+      .eme-s-subrow{
+        display:grid;
+        grid-template-columns:1fr auto;
+      }
+    }
+
+  </style>
+</head>
+<body>
+  <div class="eme-wrap">
+    <div class="eme-top">
+      <div class="eme-title">Erie Master Summary</div>
+      <div class="eme-sub">Click Summary again on the Erie page any time you want a fresh view.</div>
+
+      <div class="eme-jumpbar">
+        <button class="eme-jump" data-jump="overview">Overview</button>
+        <button class="eme-jump" data-jump="customer">Customer</button>
+        <button class="eme-jump" data-jump="named-insureds">Insureds</button>
+        <button class="eme-jump" data-jump="drivers">Drivers</button>
+        <button class="eme-jump" data-jump="vehicles">Vehicles</button>
+        <button class="eme-jump" data-jump="policy-coverages">Coverages</button>
+        <button class="eme-jump" data-jump="reports">Reports</button>
+      </div>
+    </div>
+
+    <div class="eme-grid">
+      ${Summary.renderOverview(p)}
+      ${Summary.renderCustomer(p)}
+      ${Summary.renderNamedInsureds(p)}
+      ${Summary.renderDrivers(p)}
+      ${Summary.renderVehicles(p)}
+      ${Summary.renderPolicyCoverages(p)}
+      ${Summary.renderReports(p)}
+
+    </div>
+  </div>
+
+  <div class="eme-toast" id="eme-toast">Copied</div>
+
+  <script>
+    (function () {
+      var rawText = ${JSON.stringify(rawText)};
+      var rawJson = ${JSON.stringify(rawJson)};
+
+      function showToast(msg) {
+        var el = document.getElementById('eme-toast');
+        if (!el) return;
+        el.textContent = msg || 'Copied';
+        el.style.display = 'block';
+        clearTimeout(showToast._t);
+        showToast._t = setTimeout(function () {
+          el.style.display = 'none';
+        }, 1200);
+      }
+
+      function copyText(text) {
+        if (!text) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () {
+            showToast('Copied');
+          }).catch(function () {
+            fallbackCopy(text);
+          });
+        } else {
+          fallbackCopy(text);
+        }
+      }
+
+      function fallbackCopy(text) {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try {
+          document.execCommand('copy');
+          showToast('Copied');
+        } catch (e) {}
+        ta.remove();
+      }
+
+      document.addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-copy]');
+        if (btn && !btn.disabled) {
+          copyText(btn.getAttribute('data-copy') || '');
+          return;
+        }
+
+                var jumpBtn = e.target.closest('[data-jump]');
+        if (jumpBtn) {
+          var sectionId = jumpBtn.getAttribute('data-jump');
+          var section = sectionId ? document.getElementById(sectionId) : null;
+          if (section) {
+            var toggle = section.querySelector('.eme-s-toggle');
+            var body = section.querySelector('.eme-s-section-body');
+            if (toggle && body && body.classList.contains('is-hidden')) {
+              body.classList.remove('is-hidden');
+              toggle.setAttribute('aria-expanded', 'true');
+              var iconOpen = toggle.querySelector('.eme-s-toggle-icon');
+              if (iconOpen) iconOpen.innerHTML = '&#9662;';
+            }
+            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+          return;
+        }
+
+        var toggleBtn = e.target.closest('.eme-s-toggle');
+        if (toggleBtn) {
+          var targetId = toggleBtn.getAttribute('data-target');
+          var bodyEl = targetId ? document.getElementById(targetId) : null;
+          if (!bodyEl) return;
+
+          var hidden = bodyEl.classList.contains('is-hidden');
+          bodyEl.classList.toggle('is-hidden', !hidden);
+          toggleBtn.setAttribute('aria-expanded', hidden ? 'true' : 'false');
+
+          var icon = toggleBtn.querySelector('.eme-s-toggle-icon');
+          if (icon) {
+            icon.innerHTML = hidden ? '&#9662;' : '&#9656;';
+          }
+          return;
+        }
+
+        if (e.target.id === 'eme-copy-all') {
+          copyText(rawText);
+          return;
+        }
+
+        if (e.target.id === 'eme-copy-json') {
+          copyText(rawJson);
+          return;
+        }
+
+        if (e.target.id === 'eme-close') {
+          window.close();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>`;
+    },
+
+    showPopup(p) {
+      p = p || {};
+      const popup = window.open('', 'erie-master-summary-window', 'width=520,height=820,resizable=yes,scrollbars=yes');
+      if (!popup) {
+        UI.toast('Popup blocked');
+        return;
+      }
+
+      popup.document.open();
+      popup.document.write(Summary.renderWindowHtml(p));
+      popup.document.close();
+      popup.focus();
     }
   };
 
@@ -2568,7 +3360,7 @@
           line-height:18px;
           border:1px solid rgba(255,255,255,.35);
           border-radius:6px;
-          background:transparent;
+          background:#f00;
           color:#eaf2ff;
           font-size:14px;
           font-weight:700;
@@ -2703,7 +3495,10 @@
       const settings = Storage.loadSettings();
       const hs = Actions.harvestState || {};
       const vinStats = Actions.getVinCollectionStats(p);
-      const needsHarvest = vinStats.total > vinStats.collected;
+      const hasVehicles = vinStats.total > 0;
+      const harvestComplete = hasVehicles && vinStats.collected === vinStats.total;
+      const needsHarvest = hasVehicles && vinStats.collected < vinStats.total;
+
       const harvestLine = hs.running
         ? ('VIN harvest: Running ' + (hs.current || 0) + '/' + (hs.total || 0) + ' (ok ' + (hs.harvested || 0) + ', skip ' + (hs.skipped || 0) + ')')
         : ('VINs collected: ' + vinStats.collected + '/' + vinStats.total);
@@ -2711,8 +3506,17 @@
       const harvestBtn = UI.panel && UI.panel.querySelector('#eme-harvest');
       if (harvestBtn) {
         harvestBtn.classList.remove('eme-secondary', 'eme-success');
-        harvestBtn.classList.add(needsHarvest ? 'eme-success' : 'eme-secondary');
-        harvestBtn.textContent = needsHarvest ? 'Harvest VINs' : 'Harvest VINs \u2713';
+
+        if (needsHarvest) {
+          harvestBtn.classList.add('eme-success');
+          harvestBtn.textContent = 'Harvest VINs';
+        } else if (harvestComplete) {
+          harvestBtn.classList.add('eme-secondary');
+          harvestBtn.textContent = 'Harvest VINs \u2713';
+        } else {
+          harvestBtn.classList.add('eme-secondary');
+          harvestBtn.textContent = 'Harvest VINs';
+        }
       }
 
       UI.status.textContent = [
