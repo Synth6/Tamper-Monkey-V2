@@ -3496,11 +3496,18 @@
       color:#dbe7ff;
       line-height:1.2;
       white-space:nowrap;
+      transition: all 0.15s ease;
     }
 
     .eme-jump:hover{
       background:rgba(255, 255, 255, 0.52);
       color:#fff;
+    }
+
+    .eme-jump.active {
+      background: #7c3aed !important; /* your purple */
+      color: #fff !important;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.3) inset;
     }
 
     .eme-btn{
@@ -3749,7 +3756,7 @@
           return;
         }
 
-                var jumpBtn = e.target.closest('[data-jump]');
+        var jumpBtn = e.target.closest('[data-jump]');
         if (jumpBtn) {
           var sectionId = jumpBtn.getAttribute('data-jump');
           var section = sectionId ? document.getElementById(sectionId) : null;
@@ -3798,6 +3805,55 @@
           window.close();
         }
       });
+
+      // === Scroll Spy ===
+      (function () {
+        var buttons = Array.from(document.querySelectorAll('.eme-jump'));
+
+        var sections = buttons.map(function (btn) {
+          return document.getElementById(btn.getAttribute('data-jump'));
+        }).filter(Boolean);
+
+        if (!sections.length) return;
+
+        function setActive(id) {
+          buttons.forEach(function (b) {
+            if (b.getAttribute('data-jump') === id) {
+              b.classList.add('active');
+            } else {
+              b.classList.remove('active');
+            }
+          });
+        }
+
+        var observer = new IntersectionObserver(function (entries) {
+          var top = null;
+
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              if (!top || entry.intersectionRatio > top.intersectionRatio) {
+                top = entry;
+              }
+            }
+          });
+
+          if (top) {
+            setActive(top.target.id);
+          }
+        }, {
+          root: null, // important: you're using full page scroll, not inner container
+          threshold: [0.3, 0.6, 0.9]
+        });
+
+        sections.forEach(function (sec) {
+          observer.observe(sec);
+        });
+
+        // default first
+        if (sections[0]) {
+          setActive(sections[0].id);
+        }
+      })();
     })();
   </script>
 </body>
