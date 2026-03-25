@@ -5,6 +5,8 @@
 // @description  Shared payload bridge across Erie and NatGen domains using Tampermonkey storage.
 // @match        https://www.agentexchange.com/PersonalLinesWeb/g/*
 // @match        https://natgenagency.com/Quote/*
+// @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/MCI%20Payload%20Bridge.user.js
+// @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/MCI%20Payload%20Bridge.user.js
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_deleteValue
