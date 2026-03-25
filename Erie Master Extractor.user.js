@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Erie Master Extractor
 // @namespace    https://middlecreekinsurance.com/
-// @version      0.1.1
+// @version      0.1.2
 // @description  Erie-only master extractor for Personal Lines Auto. Collects page-by-page data into one normalized JSON payload.
 // @match        https://www.agentexchange.com/PersonalLinesWeb/g/*
 // @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Erie%20Master%20Extractor.user.js
@@ -3073,6 +3073,9 @@
       font-weight:700;
       margin-bottom:8px;
       color:#fff;
+      background-color:rgba(0, 126, 245 ,.15);
+      padding:6px 6px;
+      border-radius: 10px 10px 0 0;
     }
     .eme-s-row,
     .eme-s-subrow{
@@ -3430,6 +3433,53 @@
           box-shadow:0 6px 18px rgba(0,0,0,.35);
           font:12px/1.35 system-ui,Segoe UI,Arial,sans-serif;
         }
+
+        #erie-master-extractor-panel .eme-head{
+          position:relative;
+          padding:10px 12px;
+          padding-right:74px;
+          background:#007EF5;
+          font-weight:700;
+        }
+
+        #erie-master-extractor-panel .eme-head-main{
+          display:block;
+        }
+
+        #erie-master-extractor-panel .eme-head-tools{
+          position:absolute;
+          top:30px;
+          right:8px;
+          display:flex;
+          gap:4px;
+        }
+
+        #erie-master-extractor-panel .eme-mini-btn{
+          width:24px;
+          height:22px;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          border:1px solid rgba(255,255,255,.28);
+          border-radius:6px;
+          background:rgba(75, 40, 172, 0.47);
+          color:#fff;
+          font-size:12px;
+          line-height:1;
+          padding:0;
+          cursor:pointer;
+        }
+
+        #erie-master-extractor-panel .eme-mini-btn:hover{
+          background:rgba(255,255,255,.26);
+        }
+        .eme-summary-btn {
+          background: #8b5cf6; /* nice purple */
+          color: #fff;
+        }
+        .eme-summary-btn:hover {
+          background: #7c3aed;
+        }
       `);
 
       const panel = document.createElement('div');
@@ -3437,8 +3487,16 @@
       panel.innerHTML = `
         <div class="eme-head">
           <button id="eme-close" class="eme-close" title="Turn off Erie extractor" aria-label="Turn off Erie extractor" type="button">&times;</button>
-          Erie Master Extractor
-          <div class="eme-sub">v${APP.version}</div>
+
+          <div class="eme-head-main">
+            <div>Erie Master Extractor</div>
+            <div class="eme-sub">v${APP.version}</div>
+          </div>
+
+          <div class="eme-head-tools">
+            <button id="eme-copy" class="eme-mini-btn" title="Copy JSON" aria-label="Copy JSON" type="button">📋</button>
+            <button id="eme-download" class="eme-mini-btn" title="Download JSON" aria-label="Download JSON" type="button">⬇️</button>
+          </div>
         </div>
         <div class="eme-body">
           <div class="eme-row">
@@ -3446,11 +3504,7 @@
             <button id="eme-harvest" class="eme-secondary">Harvest VINs</button>
           </div>
           <div class="eme-row">
-            <button id="eme-copy" class="eme-secondary">Copy JSON</button>
-            <button id="eme-download" class="eme-secondary">Download</button>
-          </div>
-          <div class="eme-row">
-            <button id="eme-summary" class="eme-secondary">Summary</button>
+            <button id="eme-summary" class="eme-summary-btn">Summary</button>
             <button id="eme-reset" class="eme-danger">Reset</button>
           </div>
           <div class="eme-row" style="align-items:center;">
