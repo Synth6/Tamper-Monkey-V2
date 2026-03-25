@@ -17,7 +17,7 @@
   'use strict';
 
   const APP = {
-    version: '0.1.0',
+    version: '0.1.3',
     carrier: 'Erie',
     lob: 'PersonalAuto'
   };
@@ -2996,9 +2996,9 @@
     .eme-jump{
       border:1px solid rgba(255,255,255,.15);
       border-radius:4px;
-      padding:3px 7px; 
+      padding:3px 7px;
       cursor:pointer;
-      font-size:10.5px; 
+      font-size:10.5px;
       font-weight:600;
       background:rgba(0,181,255,.3);
       color:#dbe7ff;
