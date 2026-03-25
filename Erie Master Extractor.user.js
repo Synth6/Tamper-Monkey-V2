@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Erie Master Extractor
 // @namespace    https://middlecreekinsurance.com/
-// @version      0.1.2
+// @version      0.1.3
 // @description  Erie-only master extractor for Personal Lines Auto. Collects page-by-page data into one normalized JSON payload.
 // @match        https://www.agentexchange.com/PersonalLinesWeb/g/*
 // @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Erie%20Master%20Extractor.user.js
@@ -3332,6 +3332,72 @@
     panel: null,
     status: null,
 
+          makeDraggable() {
+            if (!UI.panel) return;
+
+            const panel = UI.panel;
+            const header = panel.querySelector('.eme-head');
+            if (!header) return;
+
+            let dragging = false;
+            let startX = 0;
+            let startY = 0;
+            let startLeft = 0;
+            let startTop = 0;
+
+            header.style.cursor = 'move';
+
+            header.addEventListener('mousedown', function (e) {
+              if (!e) return;
+
+              // don't drag when clicking buttons
+              if (e.target.closest('button')) return;
+
+              dragging = true;
+              startX = e.clientX;
+              startY = e.clientY;
+
+              const rect = panel.getBoundingClientRect();
+              startLeft = rect.left;
+              startTop = rect.top;
+
+              panel.style.left = startLeft + 'px';
+              panel.style.top = startTop + 'px';
+              panel.style.right = 'auto';
+              panel.style.bottom = 'auto';
+
+              document.body.style.userSelect = 'none';
+              e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', function (e) {
+              if (!dragging) return;
+
+              const dx = e.clientX - startX;
+              const dy = e.clientY - startY;
+
+              let nextLeft = startLeft + dx;
+              let nextTop = startTop + dy;
+
+              const maxLeft = Math.max(0, window.innerWidth - panel.offsetWidth);
+              const maxTop = Math.max(0, window.innerHeight - panel.offsetHeight);
+
+              if (nextLeft < 0) nextLeft = 0;
+              if (nextTop < 0) nextTop = 0;
+              if (nextLeft > maxLeft) nextLeft = maxLeft;
+              if (nextTop > maxTop) nextTop = maxTop;
+
+              panel.style.left = nextLeft + 'px';
+              panel.style.top = nextTop + 'px';
+            });
+
+            document.addEventListener('mouseup', function () {
+              if (!dragging) return;
+              dragging = false;
+              document.body.style.userSelect = '';
+            });
+          },
+
     init() {
       GM_addStyle(`
         #erie-master-extractor-panel{
@@ -3520,6 +3586,7 @@
       document.body.appendChild(panel);
       UI.panel = panel;
       UI.status = panel.querySelector('#eme-status');
+      UI.makeDraggable();
 
       panel.querySelector('#eme-collect').addEventListener('click', Actions.collectCurrentPage);
       panel.querySelector('#eme-harvest').addEventListener('click', Actions.harvestVins);
