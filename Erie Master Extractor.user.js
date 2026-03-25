@@ -476,6 +476,60 @@
             noViolationsCount: 0
           }
         },
+        dwelling: {
+          policyType: '',
+          address: {
+            full: '',
+            line1: '',
+            line2: '',
+            city: '',
+            state: '',
+            zip: '',
+            zipPlus4: '',
+            county: ''
+          },
+          options: {
+            mailDeclarationToAgency: '',
+            swimmingPool: '',
+            alarm: '',
+            sprinklerSystem: '',
+            usedHighValueVendor: '',
+            homeCostEstimatorAction: '',
+            acvWindHailRoofSurfacing: ''
+          },
+          structure: {
+            yearBuilt: '',
+            squareFeet: '',
+            numberOfFamilies: '',
+            constructionType: '',
+            dwellingStyle: '',
+            protectionClass: ''
+          },
+          fireProtection: {
+            distanceToFireHydrant: '',
+            distanceToFireDepartment: ''
+          },
+          roof: {
+            installationYear: '',
+            material: '',
+            manuallyEnteredOtherRoofMaterial: ''
+          },
+          coverages: {
+            dwellingLossSettlement: '',
+            dwellingPerils: '',
+            personalPropertyLossSettlement: '',
+            personalPropertyPerils: '',
+            dwellingAmount: '',
+            otherStructuresAmount: '',
+            personalPropertyAmount: '',
+            lossOfUseAmount: ''
+          },
+          hiddenFlags: {
+            riskState: '',
+            hasWindHailExclusionEndorsement: '',
+            inquiryHasStormMitigation: ''
+          }
+        },
         raw: {
           customer: {},
           drivers: {},
@@ -564,6 +618,8 @@
       payload.meta.updatedAt = U.nowIso();
       const serialized = JSON.stringify(payload);
       GM_setValue(KEYS.payload, serialized);
+      const root = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+      root.__eriePayload = payload;
       Storage.syncSharedPayload(payload, 'savePayload', 0);
     },
 
@@ -1876,27 +1932,281 @@
 
     dwelling(ctx) {
       const vm = Readers.findDwellingVM();
-      const partial = {
-        meta: {
-          currentPageType: 'dwelling'
+
+      function radioValue(name) {
+        const checked = U.safeQuery('input[type="radio"][name="' + name + '"]:checked');
+        if (!checked) return '';
+
+        const raw = U.cleanString(checked.value);
+        if (/^(true|yes|y|1)$/i.test(raw)) return 'Yes';
+        if (/^(false|no|n|0)$/i.test(raw)) return 'No';
+
+        const label = checked.closest('label');
+        if (label) {
+          const labelText = U.cleanString(label.textContent || label.innerText || '');
+          if (labelText) return labelText;
+        }
+
+        const td = checked.closest('td');
+        if (td) {
+          const yesNoLabels = Array.from(td.querySelectorAll('label')).map(function (el) {
+            return U.cleanString(el.textContent || el.innerText || '');
+          }).filter(Boolean);
+          if (yesNoLabels.length) return raw;
+        }
+
+        return raw;
+      }
+
+      function checkboxValue(selector) {
+        const el = U.safeQuery(selector);
+        if (!el) return '';
+        return !!el.checked;
+      }
+
+      function textOrInputValue(selector) {
+        const el = U.safeQuery(selector);
+        if (!el) return '';
+        if ('value' in el) return U.cleanString(el.value);
+        return U.cleanString(el.textContent || el.innerText || '');
+      }
+
+      function selectValue(selector) {
+        const el = U.safeQuery(selector);
+        if (!el) return '';
+        if (el.tagName === 'SELECT') {
+          if (el.selectedIndex >= 0) {
+            return U.cleanString(el.options[el.selectedIndex].text || el.value || '');
+          }
+          return U.cleanString(el.value || '');
+        }
+        return U.cleanString(el.textContent || el.innerText || '');
+      }
+
+      function radioYesNo(name) {
+        const val = radioValue(name);
+        if (!val) return '';
+        if (/^(true|yes|y|1)$/i.test(val)) return 'Yes';
+        if (/^(false|no|n|0)$/i.test(val)) return 'No';
+        return val;
+      }
+
+      function addressBlock() {
+        let host = U.safeQuery('#LocationAddress');
+
+        if (!host) {
+          const rows = U.safeQueryAll('table.FormTable tr');
+          for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const firstCell = row.querySelector('td');
+            if (!firstCell) continue;
+
+            const labelText = U.cleanString(firstCell.textContent || firstCell.innerText || '');
+            if (labelText.indexOf('Location Address') !== -1) {
+              const cells = row.querySelectorAll('td');
+              if (cells.length > 1) {
+                host = cells[1].querySelector('.dataDisplay') || cells[1];
+                break;
+              }
+            }
+          }
+        }
+
+        if (!host) {
+          return {
+            full: '',
+            line1: '',
+            line2: '',
+            city: '',
+            state: '',
+            zip: '',
+            zipPlus4: ''
+          };
+        }
+
+        const raw = host.innerText || host.textContent || '';
+        const lines = raw
+          .split(/\n+/)
+          .map(function (s) { return U.cleanString(s); })
+          .filter(Boolean);
+
+        let line1 = '';
+        let line2 = '';
+        let city = '';
+        let state = '';
+        let zip = '';
+        let zipPlus4 = '';
+
+        if (lines.length) {
+          line1 = lines[0] || '';
+        }
+
+        if (lines.length >= 2) {
+          const cityLine = U.cleanString(lines[1] || '');
+          const stateLine = U.cleanString(lines[2] || '');
+          const zipLine = U.cleanString(lines[3] || '');
+          const plus4Line = U.cleanString(lines[4] || '');
+
+          if (cityLine && stateLine && zipLine) {
+            city = cityLine.replace(/,$/, '');
+            state = stateLine.toUpperCase();
+            zip = (zipLine.match(/\d{5}/) || [''])[0];
+            zipPlus4 = (plus4Line.match(/\d{4}/) || [''])[0];
+          } else {
+            const joined = U.cleanString(lines.slice(1).join(' '));
+            const m = joined.match(/^(.*?),\s*([A-Z]{2})\s+(\d{5})(?:\s*-\s*(\d{4}))?$/i);
+            if (m) {
+              city = U.cleanString(m[1]);
+              state = U.cleanString(m[2]).toUpperCase();
+              zip = U.cleanString(m[3]);
+              zipPlus4 = U.cleanString(m[4] || '');
+            }
+          }
+        }
+
+        let full = U.cleanString(raw);
+
+        if (!full) {
+          const cityStateZip = city && state && zip
+            ? city + ', ' + state + ' ' + zip + (zipPlus4 ? '-' + zipPlus4 : '')
+            : [city, state, zip].filter(Boolean).join(' ');
+
+          full = [line1, line2, cityStateZip]
+            .filter(Boolean)
+            .join(' ')
+            .replace(/\s+-\s+/g, ' - ');
+        }
+
+        return {
+          full: U.cleanString(full),
+          line1: line1,
+          line2: line2,
+          city: city,
+          state: state,
+          zip: zip,
+          zipPlus4: zipPlus4
+        };
+      }
+
+      const addr = addressBlock();
+
+      const domFields = {
+        homePolicyType: U.inputValue('#CurrentHomePolicy') || U.inputValue('#HomePolicyType'),
+        locationAddressText: addr.full,
+        locationAddressLine1: addr.line1,
+        locationAddressLine2: addr.line2,
+        locationCity: addr.city,
+        locationState: addr.state,
+        locationZip: addr.zip,
+        locationZipPlus4: addr.zipPlus4,
+        locationCounty: selectValue('#LocationAddress_CountyNumericCode') || selectValue('select[name="LocationAddress.CountyNumericCode"]'),
+        mailDeclarationToAgency: checkboxValue('#ShouldMailToAgent') || checkboxValue('input[name="ShouldMailToAgent"]'),
+
+        constructionYear: U.inputValue('#ConstructionYear') || U.inputValue('input[name="ConstructionYear"]'),
+        livingArea: U.inputValue('#txtLivingArea') || U.inputValue('input[name="LivingArea"]'),
+        numberOfFamilies: selectValue('#NumberOfFamilies') || selectValue('select[name="NumberOfFamilies"]'),
+        constructionType: selectValue('#ConstructionType') || selectValue('select[name="ConstructionType"]'),
+        dwellingStyle: selectValue('#MSBModalDropdown') || selectValue('#DwellingStyle') || selectValue('select[name="DwellingStyle"]'),
+        alarm: radioYesNo('HasAlarm') || radioYesNo('Alarm'),
+        sprinklerSystem: radioYesNo('HasSprinklers') || radioYesNo('HasSprinklerSystem') || radioYesNo('SprinklerSystem'),
+        swimmingPool: radioYesNo('HasSwimmingPool') || radioYesNo('SwimmingPool'),
+
+        distanceToFireHydrant: selectValue('#DistanceToFireHydrant') || selectValue('select[name="DistanceToFireHydrant"]'),
+        distanceToFireDepartment: selectValue('#DistanceToFireStation') || selectValue('select[name="DistanceToFireStation"]'),
+        protectionClass: selectValue('#ProtectionClass') || selectValue('select[name="ProtectionClass"]'),
+
+        roofInstallationYear: U.inputValue('#RoofInstallationYear') || U.inputValue('input[name="RoofInstallationYear"]'),
+        roofMaterial: selectValue('#roofMaterialTypeDropdown') || selectValue('select[name="RoofMaterialType"]'),
+        manuallyEnteredOtherRoofMaterial: U.inputValue('#txtManuallyEnteredOtherRoofMaterial') || U.inputValue('input[name="ManuallyEnteredOtherRoofMaterial"]'),
+        acvWindHailRoofSurfacing: selectValue('#HasRoofSurfacesWindHail') || selectValue('select[name="HasRoofSurfacesWindHail"]'),
+
+        dwellingLossSettlement: selectValue('#DwellingLossSettlement') || selectValue('select[name="DwellingLossSettlement"]'),
+        dwellingPerils: selectValue('#DwellingPerils') || selectValue('select[name="DwellingPerils"]'),
+
+        personalPropertyLossSettlement: selectValue('#PersonalPropertyLossSettlement') || selectValue('select[name="PersonalPropertyLossSettlement"]'),
+        personalPropertyPerils: selectValue('#PersonalPropertyPerils') || selectValue('select[name="PersonalPropertyPerils"]'),
+
+        usedHighValueVendor: checkboxValue('#UsedHighValueVendor'),
+        homeCostEstimatorAction: selectValue('#msbAction') || selectValue('select[name="msbAction"]'),
+
+        dwellingAmount: U.inputValue('#DwellingAmount') || U.inputValue('input[name="DwellingAmount"]'),
+        otherStructuresValue: U.inputValue('#OtherStructuresValue') || U.inputValue('input[name="OtherStructuresValue"]'),
+        personalPropertyValue: U.inputValue('#PersonalPropertyValue') || U.inputValue('input[name="PersonalPropertyValue"]'),
+        lossOfUseValue: U.inputValue('#LossOfUseValue') || U.inputValue('input[name="LossOfUseValue"]'),
+
+        riskState: U.inputValue('#RiskState'),
+        hasWindHailExclusionEndorsement: U.inputValue('#HasWindHailExclusionEndorsement'),
+        inquiryHasStormMitigation: U.inputValue('#InquiryHasStormMitigation')
+      };
+
+      const normalized = {
+        policyType: domFields.homePolicyType,
+        address: {
+          full: domFields.locationAddressText,
+          line1: domFields.locationAddressLine1,
+          line2: domFields.locationAddressLine2,
+          city: domFields.locationCity,
+          state: domFields.locationState,
+          zip: domFields.locationZip,
+          zipPlus4: domFields.locationZipPlus4,
+          county: domFields.locationCounty
         },
-        raw: {
-          dwelling: {}
+        options: {
+          mailDeclarationToAgency: domFields.mailDeclarationToAgency,
+          swimmingPool: domFields.swimmingPool,
+          alarm: domFields.alarm,
+          sprinklerSystem: domFields.sprinklerSystem,
+          usedHighValueVendor: domFields.usedHighValueVendor,
+          homeCostEstimatorAction: domFields.homeCostEstimatorAction,
+          acvWindHailRoofSurfacing: domFields.acvWindHailRoofSurfacing
+        },
+        structure: {
+          yearBuilt: domFields.constructionYear,
+          squareFeet: domFields.livingArea,
+          numberOfFamilies: domFields.numberOfFamilies,
+          constructionType: domFields.constructionType,
+          dwellingStyle: domFields.dwellingStyle,
+          protectionClass: domFields.protectionClass
+        },
+        fireProtection: {
+          distanceToFireHydrant: domFields.distanceToFireHydrant,
+          distanceToFireDepartment: domFields.distanceToFireDepartment
+        },
+        roof: {
+          installationYear: domFields.roofInstallationYear,
+          material: domFields.roofMaterial,
+          manuallyEnteredOtherRoofMaterial: domFields.manuallyEnteredOtherRoofMaterial
+        },
+        coverages: {
+          dwellingLossSettlement: domFields.dwellingLossSettlement,
+          dwellingPerils: domFields.dwellingPerils,
+          personalPropertyLossSettlement: domFields.personalPropertyLossSettlement,
+          personalPropertyPerils: domFields.personalPropertyPerils,
+          dwellingAmount: U.normalizeMoney(domFields.dwellingAmount),
+          otherStructuresAmount: U.normalizeMoney(domFields.otherStructuresValue),
+          personalPropertyAmount: U.normalizeMoney(domFields.personalPropertyValue),
+          lossOfUseAmount: U.normalizeMoney(domFields.lossOfUseValue)
+        },
+        hiddenFlags: {
+          riskState: domFields.riskState,
+          hasWindHailExclusionEndorsement: domFields.hasWindHailExclusionEndorsement,
+          inquiryHasStormMitigation: domFields.inquiryHasStormMitigation
         }
       };
 
-      partial.raw.dwelling.serverViewModelData = vm || null;
-      partial.raw.dwelling.domFields = {
-        homePolicyType: U.inputValue('#CurrentHomePolicy') || U.inputValue('#HomePolicyType'),
-        constructionYear: U.inputValue('#ConstructionYear'),
-        livingArea: U.inputValue('#txtLivingArea'),
-        dwellingAmount: U.inputValue('#DwellingAmount'),
-        personalPropertyValue: U.inputValue('#PersonalPropertyValue'),
-        lossOfUseValue: U.inputValue('#LossOfUseValue')
+      return {
+        meta: {
+          currentPageType: 'dwelling'
+        },
+        dwelling: normalized,
+        raw: {
+          dwelling: {
+            serverViewModelData: vm || null,
+            domFields: domFields
+          }
+        }
       };
-
-      return partial;
-    }
+    },
   };
 
   // -----------------------------
@@ -1910,7 +2220,7 @@
 
     mergeAddress(target, incoming) {
       if (!incoming) return;
-      const keys = ['line1', 'line2', 'city', 'state', 'zip', 'zipPlus4', 'county'];
+      const keys = ['full', 'line1', 'line2', 'city', 'state', 'zip', 'zipPlus4', 'county'];
       keys.forEach(function (k) {
         Merge.mergeScalar(target, k, incoming[k], {});
       });
@@ -2188,6 +2498,93 @@
       );
     },
 
+    mergeDwelling(payload, incoming) {
+      if (!incoming) return;
+
+      payload.dwelling = payload.dwelling || {};
+
+      Merge.mergeScalar(payload.dwelling, 'policyType', incoming.policyType, {});
+
+      payload.dwelling.address = payload.dwelling.address || {};
+      if (incoming.address) {
+        if (!incoming.address.full) {
+          incoming.address.full = [
+            incoming.address.line1,
+            incoming.address.line2,
+            incoming.address.city && incoming.address.state && incoming.address.zip
+              ? (incoming.address.city + ', ' + incoming.address.state + ' ' + incoming.address.zip + (incoming.address.zipPlus4 ? '-' + incoming.address.zipPlus4 : ''))
+              : [incoming.address.city, incoming.address.state, incoming.address.zip].filter(Boolean).join(' ')
+          ].filter(Boolean).join(' ');
+        }
+      }
+      Merge.mergeAddress(payload.dwelling.address, incoming.address || {});
+
+      payload.dwelling.options = payload.dwelling.options || {};
+      [
+        'mailDeclarationToAgency',
+        'swimmingPool',
+        'alarm',
+        'sprinklerSystem',
+        'usedHighValueVendor',
+        'homeCostEstimatorAction',
+        'acvWindHailRoofSurfacing'
+      ].forEach(function (k) {
+        Merge.mergeScalar(payload.dwelling.options, k, incoming.options && incoming.options[k], {});
+      });
+
+      payload.dwelling.structure = payload.dwelling.structure || {};
+      [
+        'yearBuilt',
+        'squareFeet',
+        'numberOfFamilies',
+        'constructionType',
+        'dwellingStyle',
+        'protectionClass'
+      ].forEach(function (k) {
+        Merge.mergeScalar(payload.dwelling.structure, k, incoming.structure && incoming.structure[k], {});
+      });
+
+      payload.dwelling.fireProtection = payload.dwelling.fireProtection || {};
+      [
+        'distanceToFireHydrant',
+        'distanceToFireDepartment'
+      ].forEach(function (k) {
+        Merge.mergeScalar(payload.dwelling.fireProtection, k, incoming.fireProtection && incoming.fireProtection[k], {});
+      });
+
+      payload.dwelling.roof = payload.dwelling.roof || {};
+      [
+        'installationYear',
+        'material',
+        'manuallyEnteredOtherRoofMaterial'
+      ].forEach(function (k) {
+        Merge.mergeScalar(payload.dwelling.roof, k, incoming.roof && incoming.roof[k], {});
+      });
+
+      payload.dwelling.coverages = payload.dwelling.coverages || {};
+      [
+        'dwellingLossSettlement',
+        'dwellingPerils',
+        'personalPropertyLossSettlement',
+        'personalPropertyPerils',
+        'dwellingAmount',
+        'otherStructuresAmount',
+        'personalPropertyAmount',
+        'lossOfUseAmount'
+      ].forEach(function (k) {
+        Merge.mergeScalar(payload.dwelling.coverages, k, incoming.coverages && incoming.coverages[k], {});
+      });
+
+      payload.dwelling.hiddenFlags = payload.dwelling.hiddenFlags || {};
+      [
+        'riskState',
+        'hasWindHailExclusionEndorsement',
+        'inquiryHasStormMitigation'
+      ].forEach(function (k) {
+        Merge.mergeScalar(payload.dwelling.hiddenFlags, k, incoming.hiddenFlags && incoming.hiddenFlags[k], {});
+      });
+    },
+    
     mergeMeta(payload, ctx, partial) {
       payload.meta.currentPageType = ctx.pageType || payload.meta.currentPageType;
       payload.meta.coverageSubType = ctx.coverageSubType || payload.meta.coverageSubType;
@@ -2249,6 +2646,7 @@
       if (partial.vehicles) Merge.mergeVehicles(payload, partial.vehicles);
       if (partial.coverages) Merge.mergeCoverages(payload, partial.coverages);
       if (partial.reports) Merge.mergeReports(payload, partial.reports);
+      if (partial.dwelling) Merge.mergeDwelling(payload, partial.dwelling);
 
       Merge.mergeRaw(payload, partial);
       Merge.audit(payload, ctx, partial);
@@ -2756,6 +3154,32 @@
         });
       }
 
+      lines.push('');
+      lines.push('=== DWELLING ===');
+      if (!p.dwelling) {
+        lines.push('- None');
+      } else {
+        lines.push(Summary.line('Policy type', p.dwelling.policyType));
+        lines.push(Summary.line('Full address', p.dwelling.address && p.dwelling.address.full));
+        lines.push(Summary.line('County', p.dwelling.address && p.dwelling.address.county));
+        lines.push(Summary.line('Year built', p.dwelling.structure && p.dwelling.structure.yearBuilt));
+        lines.push(Summary.line('Square feet', p.dwelling.structure && p.dwelling.structure.squareFeet));
+        lines.push(Summary.line('Construction type', p.dwelling.structure && p.dwelling.structure.constructionType));
+        lines.push(Summary.line('Dwelling style', p.dwelling.structure && p.dwelling.structure.dwellingStyle));
+        lines.push(Summary.line('Protection class', p.dwelling.structure && p.dwelling.structure.protectionClass));
+        lines.push(Summary.line('Fire hydrant distance', p.dwelling.fireProtection && p.dwelling.fireProtection.distanceToFireHydrant));
+        lines.push(Summary.line('Fire department distance', p.dwelling.fireProtection && p.dwelling.fireProtection.distanceToFireDepartment));
+        lines.push(Summary.line('Roof installation year', p.dwelling.roof && p.dwelling.roof.installationYear));
+        lines.push(Summary.line('Roof material', p.dwelling.roof && p.dwelling.roof.material));
+        lines.push(Summary.line('Swimming pool', p.dwelling.options && p.dwelling.options.swimmingPool));
+        lines.push(Summary.line('Alarm', p.dwelling.options && p.dwelling.options.alarm));
+        lines.push(Summary.line('Sprinkler system', p.dwelling.options && p.dwelling.options.sprinklerSystem));
+        lines.push(Summary.line('Dwelling amount', p.dwelling.coverages && p.dwelling.coverages.dwellingAmount));
+        lines.push(Summary.line('Other structures amount', p.dwelling.coverages && p.dwelling.coverages.otherStructuresAmount));
+        lines.push(Summary.line('Personal property amount', p.dwelling.coverages && p.dwelling.coverages.personalPropertyAmount));
+        lines.push(Summary.line('Loss of use amount', p.dwelling.coverages && p.dwelling.coverages.lossOfUseAmount));
+      }
+
       return lines.join('\n');
     },
 
@@ -2923,6 +3347,74 @@
       return Summary.section('Reports', html, { id: 'reports' });
     },
 
+    renderDwelling(p) {
+      const d = p && p.dwelling ? p.dwelling : null;
+      if (!d) {
+        return Summary.section('Dwelling', '', { id: 'dwelling' });
+      }
+
+      const addressParts = [];
+      if (d.address) {
+        if (U.cleanString(d.address.full)) {
+          addressParts.push(Summary.fieldRow('Full address', d.address.full));
+        } else {
+          addressParts.push(Summary.fieldRow('Address line 1', d.address.line1));
+          addressParts.push(Summary.fieldRow('Address line 2', d.address.line2));
+          addressParts.push(Summary.fieldRow('City', d.address.city));
+          addressParts.push(Summary.fieldRow('State', d.address.state));
+          addressParts.push(Summary.fieldRow('ZIP', d.address.zip));
+          addressParts.push(Summary.fieldRow('ZIP+4', d.address.zipPlus4));
+        }
+        addressParts.push(Summary.fieldRow('County', d.address.county));
+      }
+
+      const html =
+        Summary.card('Policy / Address',
+          Summary.fieldRow('Policy type', d.policyType) +
+          addressParts.join('') +
+          Summary.fieldRow('Mail declaration to agency', d.options && d.options.mailDeclarationToAgency === false ? 'No' : d.options && d.options.mailDeclarationToAgency === true ? 'Yes' : '')
+        ) +
+        Summary.card('Structure',
+          Summary.fieldRow('Year built', d.structure && d.structure.yearBuilt) +
+          Summary.fieldRow('Square feet', d.structure && d.structure.squareFeet) +
+          Summary.fieldRow('Number of families', d.structure && d.structure.numberOfFamilies) +
+          Summary.fieldRow('Construction type', d.structure && d.structure.constructionType) +
+          Summary.fieldRow('Dwelling style', d.structure && d.structure.dwellingStyle) +
+          Summary.fieldRow('Protection class', d.structure && d.structure.protectionClass)
+        ) +
+        Summary.card('Fire / Roof',
+          Summary.fieldRow('Distance to fire hydrant', d.fireProtection && d.fireProtection.distanceToFireHydrant) +
+          Summary.fieldRow('Distance to fire department', d.fireProtection && d.fireProtection.distanceToFireDepartment) +
+          Summary.fieldRow('Roof installation year', d.roof && d.roof.installationYear) +
+          Summary.fieldRow('Roof material', d.roof && d.roof.material) +
+          Summary.fieldRow('Other roof material', d.roof && d.roof.manuallyEnteredOtherRoofMaterial)
+        ) +
+        Summary.card('Options',
+          Summary.fieldRow('Swimming pool', d.options && d.options.swimmingPool) +
+          Summary.fieldRow('Alarm', d.options && d.options.alarm) +
+          Summary.fieldRow('Sprinkler system', d.options && d.options.sprinklerSystem) +
+          Summary.fieldRow('Used high value vendor', d.options && d.options.usedHighValueVendor === false ? 'No' : d.options && d.options.usedHighValueVendor === true ? 'Yes' : '') +
+          Summary.fieldRow('Home cost estimator action', d.options && d.options.homeCostEstimatorAction) +
+          Summary.fieldRow('ACV wind/hail roof surfacing', d.options && d.options.acvWindHailRoofSurfacing)
+        ) +
+        Summary.card('Coverages',
+          Summary.fieldRow('Dwelling loss settlement', d.coverages && d.coverages.dwellingLossSettlement) +
+          Summary.fieldRow('Dwelling perils', d.coverages && d.coverages.dwellingPerils) +
+          Summary.fieldRow('Personal property loss settlement', d.coverages && d.coverages.personalPropertyLossSettlement) +
+          Summary.fieldRow('Personal property perils', d.coverages && d.coverages.personalPropertyPerils) +
+          Summary.fieldRow('Dwelling amount', d.coverages && d.coverages.dwellingAmount) +
+          Summary.fieldRow('Other structures amount', d.coverages && d.coverages.otherStructuresAmount) +
+          Summary.fieldRow('Personal property amount', d.coverages && d.coverages.personalPropertyAmount) +
+          Summary.fieldRow('Loss of use amount', d.coverages && d.coverages.lossOfUseAmount)
+        ) +
+        Summary.card('Hidden Flags',
+          Summary.fieldRow('Risk state', d.hiddenFlags && d.hiddenFlags.riskState) +
+          Summary.fieldRow('Wind/Hail exclusion endorsement', d.hiddenFlags && d.hiddenFlags.hasWindHailExclusionEndorsement) +
+          Summary.fieldRow('Storm mitigation', d.hiddenFlags && d.hiddenFlags.inquiryHasStormMitigation)
+        );
+
+      return Summary.section('Dwelling', html, { id: 'dwelling' });
+    },
     renderWindowHtml(p) {
       const rawText = Summary.build(p);
       const rawJson = JSON.stringify(p, null, 2);
@@ -3187,6 +3679,7 @@
         <button class="eme-jump" data-jump="vehicles">Vehicles</button>
         <button class="eme-jump" data-jump="policy-coverages">Coverages</button>
         <button class="eme-jump" data-jump="reports">Reports</button>
+        <button class="eme-jump" data-jump="dwelling">Dwelling</button>
       </div>
     </div>
 
@@ -3198,6 +3691,7 @@
       ${Summary.renderVehicles(p)}
       ${Summary.renderPolicyCoverages(p)}
       ${Summary.renderReports(p)}
+      ${Summary.renderDwelling(p)}
 
     </div>
   </div>
