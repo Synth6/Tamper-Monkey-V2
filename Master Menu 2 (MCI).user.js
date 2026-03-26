@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      5.8.6
+// @version      5.8.7
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -487,6 +487,36 @@
     }
   }
 
+  function runProgressiveFillLauncher(opts) {
+    const fnName = opts && opts.fnName ? opts.fnName : "";
+    const wrongPageMsg = opts && opts.wrongPageMsg ? opts.wrongPageMsg : "Open Progressive before running this.";
+    const missingFnMsg = opts && opts.missingFnMsg ? opts.missingFnMsg : "Progressive filler script not found on this page.";
+
+    if (!IS_PROG) {
+      toast(wrongPageMsg);
+      return;
+    }
+
+    const target = resolveCallableGlobal(fnName);
+    if (!target) {
+      toast(missingFnMsg);
+      return;
+    }
+
+    try {
+      const res = target.fn.call(target.root);
+      if (res && typeof res.then === "function") {
+        res.catch(function (e) {
+          console.warn("[MCI Toolbox] Progressive launcher error:", e);
+          toast("Error starting Progressive filler - see console.");
+        });
+      }
+    } catch (e) {
+      console.warn("[MCI Toolbox] Progressive launcher error:", e);
+      toast("Error starting Progressive filler - see console.");
+    }
+  }
+
   /*************************
    * CONFIG UI DSL          *
    *************************/
@@ -546,6 +576,23 @@
                     { type: "button", id: "mci_ng_fill_drivers", text: "Drv", title: "Fill Drivers", className: "mci-btn ng-drivers" },
                     { type: "button", id: "mci_ng_fill_vehicles", text: "Veh", title: "Fill Vehicles", className: "mci-btn ng-vehicles" },
                     { type: "button", id: "mci_ng_fill_coverages", text: "Cov", title: "Fill Coverages", className: "mci-btn ng-coverages" }
+                  ]
+                }
+              ]
+            },
+            {
+              type: "panel",
+              panelId: "mci_progressive_fillers_panel",
+              className: "mci-subsection mci-subsection-prog",
+              toggle: { id: "mci_progressive_fillers_toggle", text: "Progressive", className: "mci-btn prog-parent" },
+              items: [
+                {
+                  type: "group",
+                  className: "mci-btn-group prog-group",
+                  items: [
+                    { type: "button", id: "mci_prog_fill_named", text: "Nmd", title: "Fill Named Insured", className: "mci-btn prog-named" },
+                    { type: "button", id: "mci_prog_fill_products", text: "Prod", title: "Fill Products", className: "mci-btn prog-products" },
+                    { type: "button", id: "mci_prog_fill_members", text: "Mem", title: "Fill Household Members", className: "mci-btn prog-members" }
                   ]
                 }
               ]
@@ -811,6 +858,11 @@
         '.mci-btn.brand{background:#1e40af}.mci-btn.brand:hover{background:#1e3a8a}' +
         '.mci-btn.ng-parent{background:#1e3a8a;padding:4px 8px!important;font-weight:600;opacity:.9}' +
         '.mci-btn.ng-parent:hover{background:#1e40af;opacity:.97;transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.34)!important;filter:brightness(1.05)!important}' +
+        '.mci-btn.prog-parent{background:#813E17;padding:4px 8px!important;font-weight:600;opacity:.9}' +
+        '.mci-btn.prog-parent:hover{background:#DB7235;opacity:.97;transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.34)!important;filter:brightness(1.05)!important}' +
+        '.mci-btn.prog-named{background:#2563eb}.mci-btn.prog-named:hover{background:#2b6ef5}' +
+        '.mci-btn.prog-products{background:#d97706}.mci-btn.prog-products:hover{background:#ea860c}' +
+        '.mci-btn.prog-members{background:#2f9e58}.mci-btn.prog-members:hover{background:#36ad61}' +
         '.mci-btn.jones-parent{background:#5b21b6;padding:4px 8px!important;font-weight:600;opacity:.9}' +
         '.mci-btn.jones-parent:hover{background:#6d28d9;opacity:.97;transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.34)!important;filter:brightness(1.05)!important}' +
         '.mci-disclosure-toggle{position:relative;padding-right:22px!important}' +
@@ -850,6 +902,7 @@
         '.mci-downloader-panel#mci_export_panel.open{gap:8px}' +
         '.mci-downloader.mci-subsection{padding:5px 6px;border-radius:10px;gap:5px;overflow:hidden}' +
         '.mci-downloader.mci-subsection-ng{background:rgba(30,58,138,.28);border:1px solid rgba(96,165,250,.24)}' +
+        '.mci-downloader.mci-subsection-prog{background:rgba(138,100,30,.20);border:1px solid rgba(250,167,96,.20)}' +
         '.mci-downloader.mci-subsection-jones{background:rgba(91,33,182,.24);border:1px solid rgba(167,139,250,.24)}' +
         '.mci-downloader.mci-subsection .mci-downloader-panel{padding-top:1px;gap:6px}' +
         '.mci-btn-group{display:flex;gap:6px;width:100%;max-width:100%;min-width:0}' +
@@ -1015,6 +1068,7 @@
 
     applyHoverUi();
     wirePanel("mci_natgen_fillers_toggle", "mci_natgen_fillers_panel", null, null, { disclosure: true });
+    wirePanel("mci_progressive_fillers_toggle", "mci_progressive_fillers_panel", null, null, { disclosure: true });
     wirePanel("mci_jones_forms_toggle", "mci_jones_forms_panel", null, null, { disclosure: true });
 
     /*************************
@@ -1161,6 +1215,30 @@
         fnName: "runNatGenCoverages",
         wrongPageMsg: "Open NatGen Coverages page before running this.",
         missingFnMsg: "NatGen Coverages filler not found (expected: runNatGenCoverages)."
+      });
+    });
+
+    onClick("mci_prog_fill_named", function () {
+      runProgressiveFillLauncher({
+        fnName: "testProgressiveNamedInsured",
+        wrongPageMsg: "Open Progressive before running Named Insured.",
+        missingFnMsg: "Progressive Named Insured filler not found (expected: testProgressiveNamedInsured)."
+      });
+    });
+
+    onClick("mci_prog_fill_products", function () {
+      runProgressiveFillLauncher({
+        fnName: "testProgressiveProducts",
+        wrongPageMsg: "Open Progressive before running Products.",
+        missingFnMsg: "Progressive Products filler not found (expected: testProgressiveProducts)."
+      });
+    });
+
+    onClick("mci_prog_fill_members", function () {
+      runProgressiveFillLauncher({
+        fnName: "testProgressiveHouseholdMembers",
+        wrongPageMsg: "Open Progressive before running Household Members.",
+        missingFnMsg: "Progressive Household Members filler not found (expected: testProgressiveHouseholdMembers)."
       });
     });
 
