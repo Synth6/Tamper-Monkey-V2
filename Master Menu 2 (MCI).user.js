@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      5.8.7
+// @version      5.8.9
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -656,7 +656,8 @@
       label: "Menu",
       items: [
         { type: "button", id: "mci_cashCenter", text: "💵 Cash Payment Center", className: "mci-btn brand" },
-        { type: "button", id: "mci_fax",        text: "📠 Fax",               className: "mci-btn brand" }
+        { type: "button", id: "mci_fax",        text: "📠 Fax",                 className: "mci-btn brand" },
+        { type: "button", id: "mci_draw_tool",  text: "🎨 Draw Tool",           className: "mci-btn draw-gradient" }
       ]
     },
 
@@ -908,6 +909,23 @@
         '.mci-btn-group{display:flex;gap:6px;width:100%;max-width:100%;min-width:0}' +
         '.mci-btn-group .mci-btn{flex:1 1 0;width:auto!important;min-width:0;display:flex;align-items:center;justify-content:center;height:30px;min-height:30px;margin:0!important;padding:4px 6px!important;text-align:center;border-radius:6px}' +
         '.mci-downloader-panel .mci-btn-group{margin-top:0}' +
+
+        '.mci-btn.draw-gradient{' +
+        'background:linear-gradient(135deg,#7c3aed 0%,#2563eb 45%,#06b6d4 100%);' +
+        'color:#ffffff;' +
+        'border:1px solid rgba(255,255,255,.18);' +
+        'box-shadow:0 8px 18px rgba(37,99,235,.28), inset 0 1px 0 rgba(255,255,255,.18);' +
+        'transition:transform .14s ease, box-shadow .14s ease, filter .14s ease;' +
+        '}' +
+        '.mci-btn.draw-gradient:hover{' +
+        'filter:brightness(1.06);' +
+        'transform:translateY(-1px);' +
+        'box-shadow:0 12px 22px rgba(37,99,235,.36), inset 0 1px 0 rgba(255,255,255,.22);' +
+        '}' +
+        '.mci-btn.draw-gradient:active{' +
+        'transform:translateY(0);' +
+        'filter:brightness(.98);' +
+        '}' +
 
         '.qq-row-controls{display:flex;gap:8px;align-items:center}' +
         '#mci_row_color{width:26px;height:29px;border:none;padding:0;background:none;cursor:pointer}' +
@@ -1320,6 +1338,21 @@
       toast("Fax page detected.");
     });
 
+    onClick("mci_draw_tool", function () {
+      try {
+        if (typeof window.runMciDrawTool === "function") {
+          window.runMciDrawTool();
+          toast("Draw Tool toggled.");
+          return;
+        }
+
+        window.dispatchEvent(new CustomEvent("mci:draw-tool-toggle"));
+        toast("Draw Tool trigger sent.");
+      } catch (e) {
+        console.warn("[MCI Toolbox] Draw Tool launcher error:", e);
+        toast("Draw Tool failed - see console.");
+      }
+    });
     return root;
   }
 
