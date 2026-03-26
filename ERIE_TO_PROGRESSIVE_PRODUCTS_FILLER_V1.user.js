@@ -7,6 +7,8 @@
 // @match        https://www.foragentsonly.com/Quote/Index/*
 // @grant        GM_getValue
 // @grant        unsafeWindow
+// @updateURL   https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/ERIE_TO_PROGRESSIVE_PRODUCTS_FILLER_V1.user.js
+// @downloadURL https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/ERIE_TO_PROGRESSIVE_PRODUCTS_FILLER_V1.user.js
 // ==/UserScript==
 
 (function () {
