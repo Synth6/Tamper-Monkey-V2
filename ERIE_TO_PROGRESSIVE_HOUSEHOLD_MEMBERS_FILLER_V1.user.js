@@ -6,6 +6,8 @@
 // @match        https://quoting.foragentsonly.com/Quote/Index/*
 // @match        https://www.foragentsonly.com/Quote/Index/*
 // @grant        unsafeWindow
+// @updateURL   https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/ERIE_TO_PROGRESSIVE_HOUSEHOLD_MEMBERS_FILLER_V1.user.js
+// @downloadURL https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/ERIE_TO_PROGRESSIVE_HOUSEHOLD_MEMBERS_FILLER_V1.user.js
 // ==/UserScript==
 
 (function () {
