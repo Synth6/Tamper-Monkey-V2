@@ -6,8 +6,8 @@
 // @match        https://*.foragentsonly.com/*
 // @match        https://quoting.foragentsonly.com/*
 // @grant        unsafeWindow
-// @updateURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/ERIE_TO_PROGRESSIVE_NAMED_INSURED_FILLER.user.js
-// @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/RIE_TO_PROGRESSIVE_NAMED_INSURED_FILLER.user.js
+// @updateURL   https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/ERIE_TO_PROGRESSIVE_NAMED_INSURED_FILLER.user.js
+// @downloadURL https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/ERIE_TO_PROGRESSIVE_NAMED_INSURED_FILLER.user.js
 // ==/UserScript==
 
 (function () {
