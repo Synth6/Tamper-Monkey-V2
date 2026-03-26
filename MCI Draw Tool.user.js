@@ -6,6 +6,8 @@
 // @match        *://*/*
 // @run-at       document-idle
 // @grant        unsafeWindow
+// @updateURL   https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/MCI%20Draw%20Tool.user.js
+// @downloadURL https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/MCI%20Draw%20Tool.user.js
 // ==/UserScript==
 
 (function () {
