@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name        Smart Lookup (MCI)
 // @namespace    mci-tools
-// @version      4.3.1
+// @version      4.3.2
 // @description  ALT+Right-Click: pinned chooser for Address/Name/Policy. Address: Wake/Maps/Vexcel combos. Name: LinkedIn/Google/Facebook. Policy: Erie/NatGen/Progressive/NFIP
 // @match        *://*/*
 // @match        file://*/*
@@ -532,6 +532,7 @@
       sub.textContent = subtitle || "";
       el.style.display="block";
       position();
+      setTimeout(() => sel.focus(), 0);
     }
 
     function openPinned(text, clientX, clientY){
@@ -627,9 +628,56 @@
     e.preventDefault();
     e.stopPropagation();
 
-    const selected = (window.getSelection && window.getSelection().toString().trim()) || "";
-    const hovered  = (e.target && ((e.target.innerText || e.target.textContent) || "").trim()) || "";
-    const txt = selected || hovered;
+document.addEventListener("contextmenu", (e) => {
+  if (!e.altKey) return;
+
+  const tag = (e.target && e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || (e.target && e.target.isContentEditable)) return;
+
+  function getTextUnderCursor(evt) {
+    try {
+      let node = document.elementFromPoint(evt.clientX, evt.clientY);
+      if (!node) return "";
+
+      if (node.nodeType === 3) node = node.parentNode;
+      if (!node) return "";
+
+      // Try exact element text first
+      let txt = ((node.innerText || node.textContent) || "").trim();
+
+      // If too big, try a tighter child
+      if (txt && txt.length > 80) {
+        const small = node.querySelector && node.querySelector("a, span, div, td");
+        if (small) {
+          const t2 = ((small.innerText || small.textContent) || "").trim();
+          if (t2) txt = t2;
+        }
+      }
+
+      // If still too big, walk up looking for something with a policy pattern
+      let cur = node;
+      while (cur && cur !== document.body) {
+        const t = ((cur.innerText || cur.textContent) || "").trim();
+        if (t && extractPolicy(t)) return t;
+        cur = cur.parentElement;
+      }
+
+      return txt || "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      const underCursor = getTextUnderCursor(e);
+      const selected = (window.getSelection && window.getSelection().toString().trim()) || "";
+      const hovered = getSelectedOrHoverText();
+      const txt = underCursor || selected || hovered;
+
+      HoverChooser.openPinned(txt, e.clientX, e.clientY);
+    }, true);
 
     HoverChooser.openPinned(txt, e.clientX, e.clientY);
   }, true);
