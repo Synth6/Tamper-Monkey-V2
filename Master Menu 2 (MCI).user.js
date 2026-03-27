@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      5.8.9
+// @version      5.9.1
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -547,8 +547,8 @@
       items: [
         {
           type: "pair",
-          left:  { id: "mci_copy",  text: "✂️Copy",  className: "mci-btn blue" },
-          right: { id: "mci_paste", text: "📋Paste", className: "mci-btn green" }
+          left:  { id: "mci_copy",  text: "✂️Copy",  className: "mci-btn ring copy-ring" },
+          right: { id: "mci_paste", text: "📋Paste", className: "mci-btn ring paste-ring" }
         }
       ]
     },
@@ -560,7 +560,7 @@
         {
           type: "panel",
           panelId: "mci_export_panel",
-          toggle: { id: "mci_export_toggle", text: "🚗 Erie Export Quote ▸", className: "mci-btn blue" },
+          toggle: { id: "mci_export_toggle", text: "🚗 Erie Export Quote ▸", className: "mci-btn export" },
           items: [
             {
               type: "panel",
@@ -624,7 +624,7 @@
         {
           type: "panel",
           panelId: "mci_fd_panel",
-          toggle: { id: "mci_fd_toggle", text: "📥 File Downloader ▸", className: "mci-btn blue" },
+          toggle: { id: "mci_fd_toggle", text: "📥 File Downloader ▸", className: "mci-btn downloader" },
           items: [
             { type: "button", id: "mci_fd_erie", text: "Erie / NatGen", className: "mci-btn purple" },
             {
@@ -648,14 +648,14 @@
     {
       label: "QQC Extractor",
       items: [
-        { type: "button", id: "mci_open_qqc", text: "📂 Get Customer Data", className: "mci-btn purple" }
+        { type: "button", id: "mci_open_qqc", text: "📂 Get Customer Data", className: "mci-btn qqc" }
       ]
     },
 
     {
       label: "Menu",
       items: [
-        { type: "button", id: "mci_cashCenter", text: "💵 Cash Payment Center", className: "mci-btn brand" },
+        { type: "button", id: "mci_cashCenter", text: "💵 Cash Payment", className: "mci-btn brand" },
         { type: "button", id: "mci_fax",        text: "📠 Fax",                 className: "mci-btn brand" },
         { type: "button", id: "mci_draw_tool",  text: "🎨 Draw Tool",           className: "mci-btn draw-gradient" }
       ]
@@ -665,22 +665,29 @@
       label: "Shortcuts",
       items: [
         {
-          type: "custom",
-          html:
-            '<div class="mci-footer-note shortcuts v2">' +
-              '<div class="tip">💡 <b>Tip:</b> Hover text, then press the key</div>' +
-              '<div class="group"><div class="list">' +
-                '<span><b>SMART LOOKUP</b></span>' +
-                '<div><span class="kbd">ALT</span> + <span class="kbd">Right-Click</span></div>' +
-                '<div>Name → Address → Policy #</div>' +
-              '</div></div>' +
-              '<hr style="border:none;border-top:1px dashed rgba(255,255,255,.2);margin:8px 0;">' +
-              '<div class="group"><div class="list">' +
-                '<span><b>VIN LOOKUP</b></span>' +
-                '<div><span class="kbd">F10</span></div>' +
-                '<div>NHTSA Decoder</div>' +
-              '</div></div>' +
-            '</div>'
+          type: "panel",
+          panelId: "mci_shortcuts_panel",
+          toggle: { id: "mci_shortcuts_toggle", text: "⌨️ Shortcuts Help ▸", className: "mci-btn help" },
+          items: [
+            {
+              type: "custom",
+              html:
+                '<div class="mci-footer-note shortcuts v2">' +
+                  '<div class="tip">💡 <b>Tip:</b> Hover text, then press the key</div>' +
+                  '<div class="group"><div class="list">' +
+                    '<span><b>SMART LOOKUP</b></span>' +
+                    '<div><span class="kbd">ALT</span> + <span class="kbd">Right-Click</span></div>' +
+                    '<div>Name → Address → Policy #</div>' +
+                  '</div></div>' +
+                  '<hr style="border:none;border-top:1px dashed rgba(255,255,255,.2);margin:8px 0;">' +
+                  '<div class="group"><div class="list">' +
+                    '<span><b>VIN LOOKUP</b></span>' +
+                    '<div><span class="kbd">F10</span></div>' +
+                    '<div>NHTSA Decoder</div>' +
+                  '</div></div>' +
+                '</div>'
+            }
+          ]
         }
       ]
     }
@@ -826,7 +833,7 @@
         '.mci-tab-label{writing-mode:vertical-rl;transform:rotate(180deg);font:700 10px system-ui,Segoe UI,Arial;letter-spacing:.8px;opacity:.95;user-select:none}' +
 
         /* MENU */
-        '#' + MENU_ID + '{position:fixed;top:0;left:-230px;width:230px;height:100vh;background:#1a1c22;color:#eef3ff;z-index:2147483646;padding-top:0;box-shadow:2px 0 10px rgba(0,0,0,.55);transition:left .22s cubic-bezier(.2,.9,.2,1),box-shadow .22s ease,filter .22s ease;overflow-x:hidden;overflow-y:auto;font:13px system-ui,Segoe UI,Arial;will-change:left}' +
+        '#' + MENU_ID + '{position:fixed;top:0;left:-214px;width:214px;height:100vh;background:#1a1c22;color:#eef3ff;z-index:2147483646;padding-top:0;box-shadow:2px 0 10px rgba(0,0,0,.55);transition:left .22s cubic-bezier(.2,.9,.2,1),box-shadow .22s ease,filter .22s ease;overflow-x:hidden;overflow-y:auto;font:13px system-ui,Segoe UI,Arial;will-change:left}' +
         '#' + MENU_ID + '[data-open="1"]{left:0!important;filter:brightness(1.02)}' +
 
         '.mci-section{margin:10px 10px 6px;border:1px solid rgba(255,255,255,.06);border-radius:10px;background:#20232b;overflow:hidden}' +
@@ -849,12 +856,13 @@
 
         /* BODY */
         '.mci-body{padding:8px 10px}' +
-        '.mci-btn{display:block;width:100%;margin:4px 0!important;padding:5px 9px!important;border-radius:4px;border:1px solid rgba(255,255,255,.08);background:#2a2f39;color:#fff;text-align:left;cursor:pointer;line-height:1.2;transition:transform .08s ease,box-shadow .18s ease,filter .18s ease,border-color .18s ease!important}' +
+        /* BUTTONS */
+        '.mci-btn{display:block;width:100%;margin:4px 0!important;padding:3px 5px!important;border-radius:4px;border:1px solid rgba(255,255,255,.08);background:#2a2f39;color:#fff;text-align:left;cursor:pointer;line-height:1.2;transition:transform .08s ease,box-shadow .18s ease,filter .18s ease,border-color .18s ease!important}' +
         '.mci-btn:hover{transform:translateY(-1px)!important;box-shadow:0 6px 14px rgba(0,0,0,.45)!important;filter:brightness(1.15)!important;border-color:rgba(255,255,255,.2)!important}' +
         '.mci-btn:active{transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.4)!important}' +
         '.mci-btn.primary{background:#1f6feb}.mci-btn.primary:hover{background:#2b79f0}' +
         '.mci-btn.green{background:#3ba55d}.mci-btn.green:hover{background:#44b569}' +
-        '.mci-btn.blue{background:#2563eb}.mci-btn.blue:hover{background:#2b6ef5}' +
+        '.mci-btn.blue{background:#007EF5}.mci-btn.blue:hover{background:#2b6ef5}' +
         '.mci-btn.purple{background:#7b68ee}.mci-btn.purple:hover{background:#6c5ce7}' +
         '.mci-btn.brand{background:#1e40af}.mci-btn.brand:hover{background:#1e3a8a}' +
         '.mci-btn.ng-parent{background:#1e3a8a;padding:4px 8px!important;font-weight:600;opacity:.9}' +
@@ -893,6 +901,14 @@
         '.mci-split-half:active{transform:scale(.99)}' +
         '.mci-split-divider{width:1px;background:rgba(255,255,255,.18)}' +
 
+        /* Erie Export Button */
+        '.mci-btn.export{background:linear-gradient(180deg,#3b82f6 0%,#2563eb 52%,#1e3a8a 100%)}' +
+        '.mci-btn.export:hover{background:linear-gradient(180deg,#60a5fa 0%,#3b82f6 52%,#1e40af 100%)}' +
+        /* Help Button */
+        '.mci-btn.help{background:#A11702}' +
+        '.mci-btn.help:hover{background:#c11a03}' +
+
+        /* DIVIDERS */
         '.divider{margin:12px 10px 10px;border-top:1px dashed rgba(255,255,255,.25);position:relative;height:0}' +
         '.divider::after{content:attr(data-label);position:absolute;left:50%;transform:translate(-50%,-55%);background:#1a1c22;padding:0 6px;color:#9fb4d8;font-size:11px;letter-spacing:.2px}' +
 
@@ -907,25 +923,32 @@
         '.mci-downloader.mci-subsection-jones{background:rgba(91,33,182,.24);border:1px solid rgba(167,139,250,.24)}' +
         '.mci-downloader.mci-subsection .mci-downloader-panel{padding-top:1px;gap:6px}' +
         '.mci-btn-group{display:flex;gap:6px;width:100%;max-width:100%;min-width:0}' +
-        '.mci-btn-group .mci-btn{flex:1 1 0;width:auto!important;min-width:0;display:flex;align-items:center;justify-content:center;height:30px;min-height:30px;margin:0!important;padding:4px 6px!important;text-align:center;border-radius:6px}' +
+        '.mci-btn-group .mci-btn{flex:1 1 0;width:auto!important;min-width:0;display:flex;align-items:center;justify-content:center;height:25px;min-height:25px;margin:0!important;padding:4px 6px!important;text-align:center;border-radius:6px; border: 1px solid #00b9ff;}' +
         '.mci-downloader-panel .mci-btn-group{margin-top:0}' +
 
-        '.mci-btn.draw-gradient{' +
-        'background:linear-gradient(135deg,#7c3aed 0%,#2563eb 45%,#06b6d4 100%);' +
-        'color:#ffffff;' +
-        'border:1px solid rgba(255,255,255,.18);' +
-        'box-shadow:0 8px 18px rgba(37,99,235,.28), inset 0 1px 0 rgba(255,255,255,.18);' +
-        'transition:transform .14s ease, box-shadow .14s ease, filter .14s ease;' +
-        '}' +
-        '.mci-btn.draw-gradient:hover{' +
-        'filter:brightness(1.06);' +
-        'transform:translateY(-1px);' +
-        'box-shadow:0 12px 22px rgba(37,99,235,.36), inset 0 1px 0 rgba(255,255,255,.22);' +
-        '}' +
-        '.mci-btn.draw-gradient:active{' +
-        'transform:translateY(0);' +
-        'filter:brightness(.98);' +
-        '}' +
+        /* Downloader Buttons */
+        '.mci-btn.downloader{background:linear-gradient(180deg,#b04dff 0%,#9100f5 55%,#5e00a8 100%)}' +
+        '.mci-btn.downloader:hover{background:linear-gradient(180deg,#c066ff 0%,#a020ff 55%,#6b00c2 100%)}' +
+        /* QQ Get Customer Data Button */
+        '.mci-btn.qqc{background:linear-gradient(180deg,#ff7a33 0%,#EE6521 52%,#b94b12 100%)}' +
+        '.mci-btn.qqc:hover{background:linear-gradient(180deg,#ff8c4d 0%,#ff7029 52%,#c55418 100%)}' +
+        /* Draw Tool Button */
+        '.mci-btn.draw-gradient{background:linear-gradient(135deg,#7c3aed 0%,#2563eb 45%,#06b6d4 100%);color:#ffffff;border:1px solid rgba(255,255,255,.18);}' +
+        '.mci-btn.draw-gradient:hover{filter:brightness(1.06);transform:translateY(-1px);}' +
+        '.mci-btn.draw-gradient:active{transform:translateY(0);filter:brightness(.98);}' +
+
+        /* Copy Paste Buttons Ring*/
+        '.mci-btn.ring{border:1px solid rgba(255,255,255,.25);box-shadow:0 0 0 1px rgba(0,0,0,.65),0 0 0 2px rgba(255,255,255,.10),inset 0 2px 3px rgba(255,255,255,.15),inset 0 -3px 6px rgba(0,0,0,.7);transition:transform .12s ease,box-shadow .18s ease,filter .18s ease;}' +
+        '.mci-btn.ring:hover{filter:brightness(1.08);box-shadow:0 0 0 1px rgba(0,0,0,.65),0 0 0 2px rgba(255,255,255,.14),0 8px 18px rgba(0,0,0,.5),inset 0 2px 4px rgba(255,255,255,.2),inset 0 -4px 8px rgba(0,0,0,.75);}' +
+        '.mci-btn.ring:active{transform:translateY(1px);box-shadow:inset 0 3px 6px rgba(0,0,0,.75),inset 0 1px 2px rgba(255,255,255,.08);}' +
+
+        /* Copy button */
+        '.mci-btn.copy-ring{background:linear-gradient(180deg,#5c6675 0%,#3b434f 52%,#262c34 100%);color:#e8edf5;}' +
+        '.mci-btn.copy-ring:hover{background:linear-gradient(180deg,#6b7686 0%,#46505d 52%,#2f3640 100%);}' +
+
+        /* Paste button */
+        '.mci-btn.paste-ring{background:linear-gradient(180deg,#34d4c7 0%,#1aa39a 52%,#0f6d67 100%);color:#ffffff;}' +
+        '.mci-btn.paste-ring:hover{background:linear-gradient(180deg,#49e3d6 0%,#20b5ab 52%,#13827c 100%);}' +
 
         '.qq-row-controls{display:flex;gap:8px;align-items:center}' +
         '#mci_row_color{width:26px;height:29px;border:none;padding:0;background:none;cursor:pointer}' +
@@ -1085,9 +1108,6 @@
     }, true);
 
     applyHoverUi();
-    wirePanel("mci_natgen_fillers_toggle", "mci_natgen_fillers_panel", null, null, { disclosure: true });
-    wirePanel("mci_progressive_fillers_toggle", "mci_progressive_fillers_panel", null, null, { disclosure: true });
-    wirePanel("mci_jones_forms_toggle", "mci_jones_forms_panel", null, null, { disclosure: true });
 
     /*************************
      * PANEL TOGGLES (generic)
@@ -1098,27 +1118,90 @@
       const p = $s("#" + panelId);
       if (!t || !p) return;
 
+      const accordionGroup = opts.accordionGroup || "";
+
       if (opts.disclosure) {
         t.classList.add("mci-disclosure-toggle");
         t.setAttribute("data-open", "0");
         t.setAttribute("aria-expanded", "false");
       }
 
-      t.addEventListener("click", function () {
+      t.setAttribute("aria-controls", panelId);
+      if (accordionGroup) {
+        t.setAttribute("data-accordion-group", accordionGroup);
+        p.setAttribute("data-accordion-group", accordionGroup);
+      }
+
+      t.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+
+        const willOpen = !p.classList.contains("open");
+
+        if (willOpen && accordionGroup) {
+          root.querySelectorAll('.mci-downloader-panel.open[data-accordion-group="' + accordionGroup + '"]').forEach(function (otherPanel) {
+            if (otherPanel === p) return;
+
+            otherPanel.classList.remove("open");
+
+            const otherToggle = root.querySelector('[aria-controls="' + otherPanel.id + '"]');
+            if (otherToggle) {
+              otherToggle.setAttribute("data-open", "0");
+              otherToggle.setAttribute("aria-expanded", "false");
+
+              const otherPanelId = otherToggle.getAttribute("aria-controls");
+              if (otherPanelId === "mci_fd_panel") {
+                otherToggle.textContent = "📥 File Downloader ▸";
+              } else if (otherPanelId === "mci_export_panel") {
+                otherToggle.textContent = "🚗 Erie Export Quote ▸";
+              } else if (otherPanelId === "mci_natgen_fillers_panel") {
+                otherToggle.textContent = "National General";
+              } else if (otherPanelId === "mci_progressive_fillers_panel") {
+                otherToggle.textContent = "Progressive";
+              } else if (otherPanelId === "mci_jones_forms_panel") {
+                otherToggle.textContent = "Jones Forms";
+              }
+            }
+          });
+        }
+
         const open = p.classList.toggle("open");
+
         if (opts.disclosure) {
           t.setAttribute("data-open", open ? "1" : "0");
           t.setAttribute("aria-expanded", open ? "true" : "false");
         }
+
         if (typeof openText === "string" && typeof closedText === "string") {
-          if (open) t.textContent = openText;
-          else t.textContent = closedText;
+          t.textContent = open ? openText : closedText;
         }
       });
     }
 
-    wirePanel("mci_fd_toggle", "mci_fd_panel", "File Downloader ▾", "📥 File Downloader ▸");
-    wirePanel("mci_export_toggle", "mci_export_panel", "🚗 Export Quote ▾", "🚗 Erie Export Quote ▸");
+    wirePanel("mci_natgen_fillers_toggle", "mci_natgen_fillers_panel", null, null, {
+      disclosure: true,
+      accordionGroup: "export-submenus"
+    });
+
+    wirePanel("mci_progressive_fillers_toggle", "mci_progressive_fillers_panel", null, null, {
+      disclosure: true,
+      accordionGroup: "export-submenus"
+    });
+
+    wirePanel("mci_jones_forms_toggle", "mci_jones_forms_panel", null, null, {
+      disclosure: true,
+      accordionGroup: "export-submenus"
+    });
+
+    wirePanel("mci_fd_toggle", "mci_fd_panel", "📥 File Downloader ▾", "📥 File Downloader ▸", {
+      accordionGroup: "main-sections"
+    });
+
+    wirePanel("mci_export_toggle", "mci_export_panel", "🚗 Export Quote ▾", "🚗 Erie Export Quote ▸", {
+      accordionGroup: "main-sections"
+    });
+
+    wirePanel("mci_shortcuts_toggle", "mci_shortcuts_panel", "⌨️ Shortcuts Help ▾", "⌨️ Shortcuts Help ▸");
 
     /*************************
      * WIRE BUTTON ACTIONS    *
