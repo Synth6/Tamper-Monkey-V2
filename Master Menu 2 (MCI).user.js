@@ -543,7 +543,7 @@
     } : null,
 
     {
-      label: "Cross-site tools",
+      label: "Simple",
       items: [
         {
           type: "pair",
@@ -653,11 +653,11 @@
     },
 
     {
-      label: "Menu",
+      label: "Tools",
       items: [
         { type: "button", id: "mci_cashCenter", text: "💵 Cash Payment", className: "mci-btn brand" },
-        { type: "button", id: "mci_fax",        text: "📠 Fax",                 className: "mci-btn brand" },
-        { type: "button", id: "mci_draw_tool",  text: "🎨 Draw Tool",           className: "mci-btn draw-gradient" }
+        { type: "button", id: "mci_fax",        text: "📠 Fax", className: "mci-btn brand" },
+        { type: "button", id: "mci_draw_tool",  text: "🎨 Draw Tool", className: "mci-btn draw-gradient" }
       ]
     },
 
