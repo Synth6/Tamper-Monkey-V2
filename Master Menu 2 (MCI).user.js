@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      5.9.1
+// @version      5.9.2
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -536,8 +536,8 @@
     IS_QQ ? {
       label: "QQ Helpers",
       items: [
-        { type: "button", id: "mci_pdf_open", text: "📄 Open PDFs (Smart)", className: "mci-btn primary" },
-        { type: "button", id: "mci_fix_names", text: "🧾Show Full File Names", className: "mci-btn purple" },
+      { type: "button", id: "mci_pdf_open", text: "📄 Open PDFs (Smart)", className: "mci-btn qq-pdf" },
+      { type: "button", id: "mci_fix_names", text: "🧾Show Full File Names", className: "mci-btn qq-names" },
         { type: "rowControls" }
       ]
     } : null,
@@ -764,7 +764,7 @@
   function renderRowControls() {
     return (
       '<div class="qq-row-controls">' +
-        '<button class="mci-btn green" id="mci_row_highlight" style="flex:1" type="button">🟡 Row Highlighter</button>' +
+        '<button class="mci-btn qq-highlight-live" id="mci_row_highlight" style="flex:1" type="button">🟡 Row Highlighter</button>' +
         '<label class="color-chip" title="Pick highlight color">' +
           '<input type="color" id="mci_row_color" value="' + escHtml(storedRowColor) + '" />' +
         "</label>" +
@@ -950,8 +950,18 @@
         '.mci-btn.paste-ring{background:linear-gradient(180deg,#34d4c7 0%,#1aa39a 52%,#0f6d67 100%);color:#ffffff;}' +
         '.mci-btn.paste-ring:hover{background:linear-gradient(180deg,#49e3d6 0%,#20b5ab 52%,#13827c 100%);}' +
 
+        /* Row Highlighter Button */
+        '.mci-btn.qq-highlight-live{color:#111;border:1px solid rgba(255,255,255,.18);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 6px 14px rgba(0,0,0,.25),inset 0 1px 2px rgba(255,255,255,.22)}' +
+        '.mci-btn.qq-highlight-live:hover{filter:brightness(1.06)!important;box-shadow:0 0 0 1px rgba(0,0,0,.45),0 8px 18px rgba(0,0,0,.35),inset 0 1px 2px rgba(255,255,255,.28)!important}' +
+        
+        /* QQ Helper Buttons */
+        '.mci-btn.qq-pdf{background:linear-gradient(180deg,#38bdf8 0%,#0ea5e9 52%,#0369a1 100%);color:#fff;border:1px solid rgba(255,255,255,.18);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 10px rgba(14,165,233,.18),inset 0 1px 2px rgba(255,255,255,.18)}' +
+        '.mci-btn.qq-pdf:hover{background:linear-gradient(180deg,#67d3ff 0%,#22b8f2 52%,#0b7db8 100%);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 14px rgba(14,165,233,.28),0 6px 14px rgba(0,0,0,.35),inset 0 1px 2px rgba(255,255,255,.22)}' +
+        '.mci-btn.qq-names{background:linear-gradient(180deg,#a78bfa 0%,#8b5cf6 52%,#5b21b6 100%);color:#fff;border:1px solid rgba(255,255,255,.18);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 10px rgba(139,92,246,.18),inset 0 1px 2px rgba(255,255,255,.18)}' +
+        '.mci-btn.qq-names:hover{background:linear-gradient(180deg,#bea7ff 0%,#9d72ff 52%,#6d28d9 100%);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 14px rgba(139,92,246,.28),0 6px 14px rgba(0,0,0,.35),inset 0 1px 2px rgba(255,255,255,.22)}' +
+        
         '.qq-row-controls{display:flex;gap:8px;align-items:center}' +
-        '#mci_row_color{width:26px;height:29px;border:none;padding:0;background:none;cursor:pointer}' +
+        '#mci_row_color{width:26px;height:29px;border:none;padding:0;background:none;cursor:pointer;}' +
 
         '.mci-footer-note.shortcuts.v2{margin-top:10px;padding:10px;border-radius:10px;background:rgba(255,255,255,.06);color:#d0d6e2;font-size:12px;line-height:1.25}' +
         '.mci-footer-note.shortcuts.v2 .tip{margin-bottom:6px;color:#c7cfdb}' +
@@ -986,6 +996,7 @@
       "</div>";
 
     const $s = (sel) => root.querySelector(sel);
+    applyRowHighlightButtonColor(root);
     const menuEl = $s("#" + MENU_ID);
     const tabEl = $s("#" + TRIGGER_ID);
 
@@ -1235,9 +1246,45 @@
           const color = e.target.value || DEFAULT_ROW_COLOR;
           localStorage.setItem(HIGHLIGHT_COLOR_KEY, color);
           updateHighlightedRows(color);
+          applyRowHighlightButtonColor(root); // 👈 ADD THIS LINE
           toast("Highlight color set to " + color + ".");
         });
       }
+    }
+
+    function applyRowHighlightButtonColor(root) {
+      if (!root) return;
+      const btn = root.querySelector("#mci_row_highlight");
+      if (!btn) return;
+
+      const color = localStorage.getItem(HIGHLIGHT_COLOR_KEY) || DEFAULT_ROW_COLOR;
+
+      function adjust(hex, amt) {
+        hex = hex.replace("#", "");
+        let r = parseInt(hex.substring(0, 2), 16);
+        let g = parseInt(hex.substring(2, 4), 16);
+        let b = parseInt(hex.substring(4, 6), 16);
+
+        r = Math.min(255, Math.max(0, r + amt));
+        g = Math.min(255, Math.max(0, g + amt));
+        b = Math.min(255, Math.max(0, b + amt));
+
+        return "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
+      }
+
+      const light = adjust(color, 25);
+      const dark  = adjust(color, -35);
+
+      btn.style.background = `linear-gradient(180deg, ${light} 0%, ${color} 55%, ${dark} 100%)`;
+
+      // Text contrast (same logic you already had)
+      const hex = color.replace("#", "");
+      const r = parseInt(hex.substring(0, 2), 16);
+      const g = parseInt(hex.substring(2, 4), 16);
+      const b = parseInt(hex.substring(4, 6), 16);
+      const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+
+      btn.style.color = brightness >= 150 ? "#111" : "#fff";
     }
 
     // Cross-site tools (your separate script listens)
