@@ -334,23 +334,28 @@
     }
   }
 
-  function attachRowHighlighter() {
-    const rows = document.querySelectorAll("div.zebra-row.email-row, .search-results-row");
-    rows.forEach(function (row) {
-      row.style.cursor = "pointer";
-      if (!row.dataset.mciRowListener) {
-        row.addEventListener("click", rowHighlightHandler);
-        row.dataset.mciRowListener = "1";
-      }
-    });
-    return rows.length;
-  }
+    function attachRowHighlighter() {
+      const rows = document.querySelectorAll(
+        "div.zebra-row.email-row, .search-results-row, .TableRow.AcordItemRow"
+      );
 
-  function updateHighlightedRows(color) {
-    document.querySelectorAll('[data-mci-highlighted="true"]').forEach(function (row) {
-      row.style.backgroundColor = color;
-    });
-  }
+      rows.forEach(function (row) {
+        row.style.cursor = "pointer";
+
+        if (!row.dataset.mciRowListener) {
+          row.addEventListener("click", rowHighlightHandler);
+          row.dataset.mciRowListener = "1";
+        }
+      });
+
+      return rows.length;
+    }
+
+    function updateHighlightedRows(color) {
+      document.querySelectorAll('[data-mci-highlighted="true"]').forEach(function (row) {
+        row.style.backgroundColor = color;
+      });
+    }
 
   /*************************
    * CROSS-SITE TRIGGERS    *
