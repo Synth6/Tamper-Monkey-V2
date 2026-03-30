@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      5.9.2
+// @version      5.9.3
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -658,6 +658,35 @@
     },
 
     {
+      label: "VIN Tools",
+      items: [
+        {
+          type: "panel",
+          panelId: "mci_vin_panel",
+          toggle: { id: "mci_vin_toggle", text: "🚗 VIN Lookup ▸", className: "mci-btn vin-parent" },
+          items: [
+            {
+              type: "custom",
+              html:
+                '<div class="mci-vin-wrap">' +
+                  '<input id="mci_vin_input" class="mci-vin-input" type="text" maxlength="17" placeholder="Paste or type VIN">' +
+                  '<div class="mci-btn-pair">' +
+                    '<button class="mci-btn vin-util" id="mci_vin_paste" type="button">Paste</button>' +
+                    '<button class="mci-btn vin-util" id="mci_vin_clear" type="button">Clear</button>' +
+                  '</div>' +
+                  '<div class="mci-btn-group vin-group">' +
+                    '<button class="mci-btn vin-nhtsa" id="mci_vin_nhtsa" type="button">NHTSA</button>' +
+                    '<button class="mci-btn vin-google" id="mci_vin_google" type="button">Google</button>' +
+                    '<button class="mci-btn vin-copy" id="mci_vin_copy" type="button">Copy</button>' +
+                  '</div>' +
+                '</div>'
+            }
+          ]
+        }
+      ]
+    },
+
+    {
       label: "Tools",
       items: [
         { type: "button", id: "mci_cashCenter", text: "💵 Cash Payment", className: "mci-btn brand" },
@@ -958,13 +987,26 @@
         /* Row Highlighter Button */
         '.mci-btn.qq-highlight-live{color:#111;border:1px solid rgba(255,255,255,.18);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 6px 14px rgba(0,0,0,.25),inset 0 1px 2px rgba(255,255,255,.22)}' +
         '.mci-btn.qq-highlight-live:hover{filter:brightness(1.06)!important;box-shadow:0 0 0 1px rgba(0,0,0,.45),0 8px 18px rgba(0,0,0,.35),inset 0 1px 2px rgba(255,255,255,.28)!important}' +
-        
+
         /* QQ Helper Buttons */
         '.mci-btn.qq-pdf{background:linear-gradient(180deg,#38bdf8 0%,#0ea5e9 52%,#0369a1 100%);color:#fff;border:1px solid rgba(255,255,255,.18);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 10px rgba(14,165,233,.18),inset 0 1px 2px rgba(255,255,255,.18)}' +
         '.mci-btn.qq-pdf:hover{background:linear-gradient(180deg,#67d3ff 0%,#22b8f2 52%,#0b7db8 100%);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 14px rgba(14,165,233,.28),0 6px 14px rgba(0,0,0,.35),inset 0 1px 2px rgba(255,255,255,.22)}' +
         '.mci-btn.qq-names{background:linear-gradient(180deg,#a78bfa 0%,#8b5cf6 52%,#5b21b6 100%);color:#fff;border:1px solid rgba(255,255,255,.18);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 10px rgba(139,92,246,.18),inset 0 1px 2px rgba(255,255,255,.18)}' +
         '.mci-btn.qq-names:hover{background:linear-gradient(180deg,#bea7ff 0%,#9d72ff 52%,#6d28d9 100%);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 14px rgba(139,92,246,.28),0 6px 14px rgba(0,0,0,.35),inset 0 1px 2px rgba(255,255,255,.22)}' +
-        
+
+        /* VIN Tools */
+        '.mci-btn.vin-parent{background:linear-gradient(180deg,#475569 0%,#334155 52%,#1e293b 100%)}' +
+        '.mci-btn.vin-parent:hover{background:linear-gradient(180deg,#64748b 0%,#475569 52%,#334155 100%)}' +
+        '.mci-vin-wrap{display:flex;flex-direction:column;gap:6px}' +
+        '.mci-vin-input{width:100%;height:30px;padding:6px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.16);background:#111827;color:#fff;outline:none}' +
+        '.mci-vin-input:focus{border-color:rgba(96,165,250,.75);box-shadow:0 0 0 1px rgba(96,165,250,.35) inset}' +
+        '.mci-btn.vin-util{background:#374151;color:#fff}' +
+        '.mci-btn.vin-util:hover{background:#4b5563}' +
+        '.vin-group .mci-btn{flex:1 1 0;width:auto!important;min-width:0;display:flex;align-items:center;justify-content:center;height:25px;min-height:25px;margin:0!important;padding:4px 6px!important;text-align:center;border-radius:6px}' +
+        '.mci-btn.vin-nhtsa{background:#0f766e}.mci-btn.vin-nhtsa:hover{background:#0d857c}' +
+        '.mci-btn.vin-google{background:#b45309}.mci-btn.vin-google:hover{background:#c2410c}' +
+        '.mci-btn.vin-copy{background:#5b21b6}.mci-btn.vin-copy:hover{background:#6d28d9}' +
+
         '.qq-row-controls{display:flex;gap:8px;align-items:center}' +
         '#mci_row_color{width:26px;height:29px;border:none;padding:0;background:none;cursor:pointer;}' +
 
@@ -1170,6 +1212,8 @@
                 otherToggle.textContent = "📥 File Downloader ▸";
               } else if (otherPanelId === "mci_export_panel") {
                 otherToggle.textContent = "🚗 Erie Export Quote ▸";
+              } else if (otherPanelId === "mci_vin_panel") {
+                otherToggle.textContent = "🚗 VIN Lookup ▸";
               } else if (otherPanelId === "mci_natgen_fillers_panel") {
                 otherToggle.textContent = "National General";
               } else if (otherPanelId === "mci_progressive_fillers_panel") {
@@ -1216,6 +1260,24 @@
     wirePanel("mci_export_toggle", "mci_export_panel", "🚗 Export Quote ▾", "🚗 Erie Export Quote ▸", {
       accordionGroup: "main-sections"
     });
+
+    wirePanel("mci_vin_toggle", "mci_vin_panel", "🚗 VIN Lookup ▾", "🚗 VIN Lookup ▸", {
+      accordionGroup: "main-sections"
+    });
+
+    const vinToggleBtn = $s("#mci_vin_toggle");
+    if (vinToggleBtn) {
+      vinToggleBtn.addEventListener("click", function () {
+        setTimeout(function () {
+          const input = $s("#mci_vin_input");
+          if (!input) return;
+          if (!input.value) {
+            const vin = getSelectedTextVin();
+            if (vin) input.value = vin;
+          }
+        }, 0);
+      });
+    }
 
     wirePanel("mci_shortcuts_toggle", "mci_shortcuts_panel", "⌨️ Shortcuts Help ▾", "⌨️ Shortcuts Help ▸");
 
@@ -1292,7 +1354,84 @@
       btn.style.color = brightness >= 150 ? "#111" : "#fff";
     }
 
+    function getVinValue() {
+      const input = $s("#mci_vin_input");
+      if (!input) return "";
+      return String(input.value || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 17);
+    }
+
+    function setVinValue(value) {
+      const input = $s("#mci_vin_input");
+      if (!input) return "";
+      const vin = String(value || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 17);
+      input.value = vin;
+      return vin;
+    }
+
+    function getSelectedTextVin() {
+      try {
+        return String(window.getSelection ? window.getSelection().toString() : "")
+          .replace(/[^A-Za-z0-9]/g, "")
+          .toUpperCase()
+          .slice(0, 17);
+      } catch (e) {
+        return "";
+      }
+    }
+
+    function requireVin() {
+      let vin = getVinValue();
+      if (!vin) {
+        vin = setVinValue(getSelectedTextVin());
+      }
+      if (!vin || vin.length < 11) {
+        toast("Paste, type, or select a VIN first.");
+        return "";
+      }
+      return vin;
+    }
+
+    // VIN tools
+    onClick("mci_vin_paste", async function () {
+      try {
+        const txt = await navigator.clipboard.readText();
+        const vin = setVinValue(txt);
+        toast(vin ? "VIN pasted." : "Clipboard did not contain a VIN.");
+      } catch (e) {
+        toast("Clipboard paste was blocked.");
+      }
+    });
+
+    onClick("mci_vin_clear", function () {
+      setVinValue("");
+      toast("VIN cleared.");
+    });
+
+    onClick("mci_vin_nhtsa", function () {
+      const vin = requireVin();
+      if (!vin) return;
+      window.open("https://vpic.nhtsa.dot.gov/decoder/VinDecoder?VIN=" + encodeURIComponent(vin) + "&ModelYear=", "_blank");
+    });
+
+    onClick("mci_vin_google", function () {
+      const vin = requireVin();
+      if (!vin) return;
+      window.open("https://www.google.com/search?q=" + encodeURIComponent(vin), "_blank");
+    });
+
+    onClick("mci_vin_copy", function () {
+      const vin = requireVin();
+      if (!vin) return;
+      try {
+        GM_setClipboard(vin);
+        toast("VIN copied.");
+      } catch (e) {
+        toast("Could not copy VIN.");
+      }
+    });
+
     // Cross-site tools (your separate script listens)
+
     onClick("mci_copy", function () {
       window.dispatchEvent(new CustomEvent("mci:copy"));
       toast("Copy requested…");
