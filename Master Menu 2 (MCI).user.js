@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      5.9.3
+// @version      5.9.4
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -70,6 +70,8 @@
   const PREF_HOVER_KEY = "mci_pref_hover_open";
   const PREF_ERIE_EXTRACTOR_ENABLED_KEY = "mci_pref_erie_extractor_enabled";
   const EVENT_ERIE_EXTRACTOR_TOGGLE = "mci:erie-extractor-toggle";
+  const EVENT_COUNTY_RUN = "mci-county-run";
+  const EVENT_COUNTY_MANUAL = "mci-county-manual";
 
   const GLOBAL_STYLE_ID = "mci-global-style";
 
@@ -371,6 +373,18 @@
   function triggerFileDownloader(tool) {
     const detail = { source: "mci-menu", tool: tool };
     try { window.postMessage({ __mci: "run-file-downloader", detail: detail }, "*"); } catch (e) {}
+  }
+
+  function triggerCountyFinder(mode, address) {
+    const isManual = mode === "manual";
+    const detail = {
+      source: "mci-menu",
+      mode: isManual ? "manual" : "auto",
+      address: address || ""
+    };
+    const eventName = isManual ? EVENT_COUNTY_MANUAL : EVENT_COUNTY_RUN;
+
+    try { window.dispatchEvent(new CustomEvent(eventName, { detail: detail })); } catch (e) {}
   }
 
   function getErieExtractorEnabled() {
@@ -689,6 +703,12 @@
     {
       label: "Tools",
       items: [
+          {
+          type: "split",
+          className: "mci-split-btn county-split",
+          left:  { id: "mci_county_run", text: "📍 County Finder", title: "Run County Finder using selection / hover / page detection" },
+          right: { id: "mci_county_manual", text: "✏️",title: "Open manual address entry" }
+        },
         { type: "button", id: "mci_cashCenter", text: "💵 Cash Payment", className: "mci-btn brand" },
         { type: "button", id: "mci_fax",        text: "📠 Fax", className: "mci-btn brand" },
         { type: "button", id: "mci_draw_tool",  text: "🎨 Draw Tool", className: "mci-btn draw-gradient" }
@@ -934,6 +954,17 @@
         '.mci-split-half:hover{background:rgba(0,0,0,.18);filter:brightness(1.15)}' +
         '.mci-split-half:active{transform:scale(.99)}' +
         '.mci-split-divider{width:1px;background:rgba(255,255,255,.18)}' +
+        /* County Finder Button (Carolina Blue) */
+        '.mci-split-btn.county-split{display:flex;align-items:center;width:100%;height:30px;min-height:30px;border-radius:6px;overflow:hidden;white-space:nowrap;background:linear-gradient(180deg,#a8cce6 0%,#7bafd4 55%,#5f95bd 100%);border:1px solid rgba(60,90,120,.35);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 3px 8px rgba(0,0,0,.22)}' +
+        '.mci-split-btn.county-split:hover{background:linear-gradient(180deg,#bdd9ec 0%,#8bb9dc 55%,#6aa2c9 100%)}' +
+        '.mci-split-btn.county-split .mci-split-half{height:30px;min-height:30px;display:flex;align-items:center;white-space:nowrap;color:#0f2a3a;font-weight:700;text-shadow:0 1px 0 rgba(255,255,255,.35)}' +
+        '.mci-split-btn.county-split .mci-split-half:hover{background:rgba(255,255,255,.12);filter:brightness(1.03)}' +
+        '.mci-split-btn.county-split .mci-split-divider{width:1px;height:70%;background:rgba(0,0,0,.2)}' +
+        '#mci_county_run{flex:1 1 auto;justify-content:flex-start;padding:0 10px;font-size:13px}' +
+        '#mci_county_manual{flex:0 0 30px;justify-content:center;padding:0;font-size:12px;letter-spacing:0}' +
+
+        '#mci_county_run.mci-split-half{flex:2 0 0}' +
+        '#mci_county_manual.mci-split-half{flex:1 0 0;font-size:12px;letter-spacing:.15px}' +
 
         /* Erie Export Button */
         '.mci-btn.export{background:linear-gradient(180deg,#3b82f6 0%,#2563eb 52%,#1e3a8a 100%)}' +
@@ -1440,6 +1471,26 @@
     onClick("mci_paste", function () {
       window.dispatchEvent(new CustomEvent("mci:paste"));
       toast("Paste requested…");
+    });
+
+    onClick("mci_county_run", function () {
+      try {
+        triggerCountyFinder("auto");
+        toast("County Finder triggered.");
+      } catch (e) {
+        console.warn("[MCI Toolbox] County Finder trigger error:", e);
+        toast("County Finder trigger failed.");
+      }
+    });
+
+    onClick("mci_county_manual", function () {
+      try {
+        triggerCountyFinder("manual");
+        toast("County Finder manual entry opened.");
+      } catch (e) {
+        console.warn("[MCI Toolbox] County Finder manual trigger error:", e);
+        toast("County Finder manual trigger failed.");
+      }
     });
 
     // QQC extractor
