@@ -7,6 +7,8 @@
 // @match        *://*/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
+// @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/County%20Finder.user.js
+// @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/County%20Finder.user.js
 // ==/UserScript==
 
 (function () {
