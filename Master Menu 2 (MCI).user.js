@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      5.9.4
+// @version      5.9.5
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -726,20 +726,32 @@
             {
               type: "custom",
               html:
-                '<div class="mci-footer-note shortcuts v2">' +
-                  '<div class="tip">💡 <b>Tip:</b> Hover text, then press the key</div>' +
-                  '<div class="group"><div class="list">' +
-                    '<span><b>SMART LOOKUP</b></span>' +
-                    '<div><span class="kbd">ALT</span> + <span class="kbd">Right-Click</span></div>' +
-                    '<div>Name → Address → Policy #</div>' +
-                  '</div></div>' +
-                  '<hr style="border:none;border-top:1px dashed rgba(255,255,255,.2);margin:8px 0;">' +
-                  '<div class="group"><div class="list">' +
-                    '<span><b>VIN LOOKUP</b></span>' +
-                    '<div><span class="kbd">F10</span></div>' +
-                    '<div>NHTSA Decoder</div>' +
-                  '</div></div>' +
-                '</div>'
+              '<div class="mci-footer-note shortcuts v2">' +
+                '<div class="tip">💡 <b>Tip:</b> Hover text, then press the key</div>' +
+
+                '<div class="group"><div class="list">' +
+                  '<span><b>SMART LOOKUP</b></span>' +
+                  '<div><span class="kbd">ALT</span> + <span class="kbd">Right-Click</span></div>' +
+                  '<div>Name → Address → Policy #</div>' +
+                '</div></div>' +
+
+                '<hr style="border:none;border-top:1px dashed rgba(255,255,255,.2);margin:8px 0;">' +
+
+                '<div class="group"><div class="list">' +
+                  '<span><b>VIN LOOKUP</b></span>' +
+                  '<div><span class="kbd">F10</span></div>' +
+                  '<div>NHTSA Decoder</div>' +
+                '</div></div>' +
+
+                '<hr style="border:none;border-top:1px dashed rgba(255,255,255,.2);margin:8px 0;">' +
+
+                '<div class="group"><div class="list">' +
+                  '<span><b>COUNTY LOOKUP</b></span>' +
+                  '<div><span class="kbd">ALT</span> + <span class="kbd">C</span></div>' +
+                  '<div>Find County from Address</div>' +
+                '</div></div>' +
+
+              '</div>'
             }
           ]
         }
