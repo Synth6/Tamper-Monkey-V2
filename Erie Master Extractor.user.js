@@ -1,4318 +1,1744 @@
 // ==UserScript==
-// @name         Erie Master Extractor
-// @namespace    https://middlecreekinsurance.com/
-// @version      0.1.3
-// @description  Erie-only master extractor for Personal Lines Auto. Collects page-by-page data into one normalized JSON payload.
-// @match        https://www.agentexchange.com/PersonalLinesWeb/g/*
-// @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Erie%20Master%20Extractor.user.js
-// @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Erie%20Master%20Extractor.user.js
+// @name         Master Menu 2 (MCI)
+// @namespace    mci-tools
+// @version      5.9.5
+// @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
+// @match        https://app.qqcatalyst.com/*
+// @match        https://*.qqcatalyst.com/*
+// @match        https://portal.agentexchange.com/*
+// @match        https://www.agentexchange.com/*
+// @match        https://*.agentexchange.com/*
+// @match        https://customerdatamanagement.agentexchange.com/*
+// @match        https://natgenagency.com/*
+// @match        https://*.natgenagency.com/*
+// @match        https://www.gotfreefax.com/*
+// @match        https://gotfreefax.com/*
+// @match        https://natgen.beyondfloods.com/*
+// @match        https://nationalgeneral.torrentflood.com/*
+// @match        https://quoting.foragentsonly.com/*
+// @match        https://www.foragentsonly.com/*
+// @match        https://*.foragentsonly.com/*
+// @match        https://*.apps.foragentsonly.com/*
+// @match        https://*.ncjua-nciua.org/*
+// @match        https://*.ncjuanciua.org/*
+// @run-at       document-idle
 // @grant        GM_setValue
 // @grant        GM_getValue
-// @grant        GM_deleteValue
-// @grant        GM_addStyle
+// @grant        GM_setClipboard
 // @grant        unsafeWindow
+// @updateURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Master%20Menu%202%20(MCI).user.js
+// @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Master%20Menu%202%20(MCI).user.js
 // ==/UserScript==
 
 (function () {
-  'use strict';
-
-  const APP = {
-    version: '0.1.3',
-    carrier: 'Erie',
-    lob: 'PersonalAuto'
-  };
-
-  const PREF_ERIE_EXTRACTOR_ENABLED_KEY = 'mci_pref_erie_extractor_enabled';
-
-  const KEYS = {
-    payload: 'erieMasterPayload',
-    settings: 'erieMasterSettings'
-  };
-
-  const DEFAULT_SETTINGS = {
-    autoCollect: true,
-    debug: true
-  };
-
-  // -----------------------------
-  // Utilities
-  // -----------------------------
-  const U = {
-    nowIso() {
-      return new Date().toISOString();
-    },
-
-    safeString(v) {
-      return v == null ? '' : String(v);
-    },
-
-    cleanString(v) {
-      return U.safeString(v).replace(/\s+/g, ' ').trim();
-    },
-
-    upper(v) {
-      return U.cleanString(v).toUpperCase();
-    },
-
-    clone(obj) {
-      return JSON.parse(JSON.stringify(obj));
-    },
-
-    tryJsonParse(str) {
-      try {
-        return JSON.parse(str);
-      } catch (e) {
-        return null;
-      }
-    },
-
-    // For trusted Erie inline data only.
-    tryEvalObjectLiteral(str) {
-      try {
-        // eslint-disable-next-line no-new-func
-        return Function('"use strict"; return (' + str + ');')();
-      } catch (e) {
-        return null;
-      }
-    },
-
-    normalizeDate(v) {
-      const s = U.cleanString(v);
-      if (!s) return '';
-      return s;
-    },
-
-    normalizeMoney(v) {
-      const s = U.cleanString(v).replace(/[$,]/g, '');
-      return s;
-    },
-
-    boolFromErie(v) {
-      if (v === true || v === false) return v;
-      const s = U.cleanString(v).toLowerCase();
-      if (s === 'true') return true;
-      if (s === 'false') return false;
-      return null;
-    },
-
-    isEmpty(v) {
-      if (v == null) return true;
-      if (typeof v === 'string') return U.cleanString(v) === '';
-      if (Array.isArray(v)) return v.length === 0;
-      if (typeof v === 'object') return Object.keys(v).length === 0;
-      return false;
-    },
-
-    looksMasked(v) {
-      const s = U.cleanString(v);
-      if (!s) return false;
-      if (/[*xX•]/.test(s)) return true;
-      if (/^\d{3}-\d{2}-\*{4}$/.test(s)) return true;
-      if (/^\d{4,}\*+$/.test(s)) return true;
-      if (/^\*+\d{2,}$/.test(s)) return true;
-      return false;
-    },
-
-    betterScalar(existing, incoming, meta) {
-      const a = existing;
-      const b = incoming;
-
-      if (U.isEmpty(b)) return a;
-      if (U.isEmpty(a)) return b;
-
-      const aStr = U.cleanString(a);
-      const bStr = U.cleanString(b);
-
-      const aMasked = U.looksMasked(aStr);
-      const bMasked = U.looksMasked(bStr);
-
-      if (!aMasked && bMasked) return a;
-      if (aMasked && !bMasked) return b;
-
-      const aSourceRank = meta && meta.existingSourceRank != null ? meta.existingSourceRank : 0;
-      const bSourceRank = meta && meta.incomingSourceRank != null ? meta.incomingSourceRank : 0;
-      if (bSourceRank > aSourceRank) {
-        if (!(U.looksMasked(bStr) && !U.looksMasked(aStr))) return b;
-      }
-
-      if (bStr.length > aStr.length && !(bMasked && !aMasked)) return b;
-
-      return a;
-    },
-
-    pushUnique(arr, value) {
-      if (!value) return;
-      if (!arr.includes(value)) arr.push(value);
-    },
-
-    downloadText(filename, text) {
-      const blob = new Blob([text], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(function () {
-        URL.revokeObjectURL(a.href);
-        a.remove();
-      }, 1000);
-    },
-
-    copyText(text) {
-      return navigator.clipboard.writeText(text);
-    },
-
-    safeQuery(selector, root) {
-      try {
-        return (root || document).querySelector(selector);
-      } catch (e) {
-        return null;
-      }
-    },
-
-    safeQueryAll(selector, root) {
-      try {
-        return Array.from((root || document).querySelectorAll(selector));
-      } catch (e) {
-        return [];
-      }
-    },
-
-    asArray(v) {
-      return Array.isArray(v) ? v : [];
-    },
-
-    delay(ms) {
-      return new Promise(function (resolve) {
-        setTimeout(resolve, ms);
-      });
-    },
-
-    waitFor(fn, timeoutMs, intervalMs) {
-      timeoutMs = timeoutMs || 5000;
-      intervalMs = intervalMs || 150;
-
-      return new Promise(function (resolve) {
-        const start = Date.now();
-
-        (function check() {
-          try {
-            const value = fn();
-            if (value) {
-              resolve(value);
-              return;
-            }
-          } catch (e) {}
-
-          if (Date.now() - start >= timeoutMs) {
-            resolve(null);
-            return;
-          }
-
-          setTimeout(check, intervalMs);
-        })();
-      });
-    },
-
-    isJunkCoverageText(text) {
-      const s = U.cleanString(text);
-      if (!s) return true;
-      if (s.length > 120 && /- None -/i.test(s)) return true;
-      if ((s.match(/\d{1,3},?\d{0,3}\s*\/\s*\d{1,3},?\d{0,3}/g) || []).length >= 3) return true;
-      if ((s.match(/- None -/g) || []).length >= 1) return true;
-      return false;
-    },
-
-    selectedControlValue(row) {
-      if (!row) return '';
-      const select = row.querySelector('select');
-      if (select) {
-        if (select.selectedIndex >= 0) {
-          return U.cleanString(select.options[select.selectedIndex].text || select.value || '');
-        }
-        return U.cleanString(select.value || '');
-      }
-      const input = row.querySelector('input[type="text"], input:not([type]), textarea');
-      if (input) return U.cleanString(input.value || '');
-      return '';
-    },
-
-    dedupeCoverageItems(items) {
-      const map = new Map();
-
-      (items || []).forEach(function (item) {
-        const key = U.cleanString(item && (item.coverageCode || item.coverageDescription || '') || '').toUpperCase();
-        if (!key) return;
-
-        const existing = map.get(key);
-        if (!existing) {
-          map.set(key, item);
-          return;
-        }
-
-        const existingScore =
-          (existing.coverageLimit ? 10 : 0) +
-          (!U.isJunkCoverageText(existing.coverageDescription) ? 5 : 0) +
-          Math.max(0, 20 - U.cleanString(existing.coverageDescription).length);
-
-        const incomingScore =
-          (item.coverageLimit ? 10 : 0) +
-          (!U.isJunkCoverageText(item.coverageDescription) ? 5 : 0) +
-          Math.max(0, 20 - U.cleanString(item.coverageDescription).length);
-
-        if (incomingScore > existingScore) {
-          map.set(key, item);
-        }
-      });
-
-      return Array.from(map.values());
-    },
-
-    matchVehicleByDescription(vehicleDescription, vehicles) {
-      const desc = U.upper(vehicleDescription);
-      if (!desc || !Array.isArray(vehicles)) return null;
-
-      return vehicles.find(function (v) {
-        const candidate = U.upper([v.year, v.make, v.model].filter(Boolean).join(' '));
-        return candidate && desc.indexOf(candidate) !== -1;
-      }) || null;
-    },
-
-    matchVehicleFromDescription(vehicleDescription, payloadVehicles) {
-      return U.matchVehicleByDescription(vehicleDescription, payloadVehicles);
-    },
-
-    inputValue(selector) {
-      const el = U.safeQuery(selector);
-      return el ? U.cleanString(el.value) : '';
-    },
-
-    selectText(selector) {
-      const el = U.safeQuery(selector);
-      if (!el) return '';
-      if (el.tagName === 'SELECT' && el.selectedIndex >= 0) {
-        return U.cleanString(el.options[el.selectedIndex].text);
-      }
-      return U.cleanString(el.textContent || el.innerText);
-    },
-
-    text(selector) {
-      const el = U.safeQuery(selector);
-      return el ? U.cleanString(el.textContent || el.innerText) : '';
-    },
-
-    pageStamp() {
-      const d = new Date();
-      const pad = function (n) { return String(n).padStart(2, '0'); };
-      return (
-        d.getFullYear() + '-' +
-        pad(d.getMonth() + 1) + '-' +
-        pad(d.getDate()) + 'T' +
-        pad(d.getHours()) + '-' +
-        pad(d.getMinutes()) + '-' +
-        pad(d.getSeconds())
-      );
-    },
-
-    makeDriverMatchKey(d) {
-      const id = U.cleanString(d.driverId || d.sourceKeys && d.sourceKeys.id || '');
-      if (id) return 'DRIVER_ID|' + id;
-
-      const erieId = U.cleanString(d.sourceKeys && d.sourceKeys.erieId || '');
-      if (erieId) return 'DRIVER_ERIE|' + erieId;
-
-      const dl = U.cleanString(d.license && d.license.number || '');
-      if (dl && !U.looksMasked(dl)) return 'DRIVER_DL|' + dl;
-
-      const first = U.upper(d.firstName);
-      const last = U.upper(d.lastName);
-      const dob = U.cleanString(d.dob);
-      return 'DRIVER_NAME_DOB|' + [first, last, dob].join('|');
-    },
-
-    makeVehicleMatchKey(v) {
-      const id = U.cleanString(v.vehicleId || '');
-      if (id) return 'VEHICLE_ID|' + id;
-
-      const vin = U.cleanString(v.vin || '');
-      if (vin && !U.looksMasked(vin)) return 'VEHICLE_VIN|' + vin;
-
-      const tail = U.cleanString(v.vinMaskedTail || '');
-      return 'VEHICLE_FALLBACK|' + [tail, U.upper(v.year), U.upper(v.make), U.upper(v.model)].join('|');
-    },
-
-    sourceRank(source) {
-      switch (source) {
-        case 'inline-viewmodel':
-          return 100;
-        case 'inline-viewData':
-          return 95;
-        case 'inline-data':
-          return 90;
-        case 'dom-input':
-          return 70;
-        case 'dom-text':
-          return 50;
-        default:
-          return 0;
-      }
-    },
-
-    debug() {
-      const settings = Storage.loadSettings();
-      if (!settings.debug) return;
-      console.log.apply(console, arguments);
-    }
-  };
-
-  // -----------------------------
-  // Storage
-  // -----------------------------
-  const Storage = {
-    loadSettings() {
-      const raw = GM_getValue(KEYS.settings, null);
-      if (!raw) return U.clone(DEFAULT_SETTINGS);
-      try {
-        return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(raw));
-      } catch (e) {
-        return U.clone(DEFAULT_SETTINGS);
-      }
-    },
-
-    saveSettings(settings) {
-      GM_setValue(KEYS.settings, JSON.stringify(settings));
-    },
-
-    createEmptyPayload() {
-      return {
-        meta: {
-          extractorVersion: APP.version,
-          carrier: APP.carrier,
-          lob: APP.lob,
-          createdAt: U.nowIso(),
-          updatedAt: U.nowIso(),
-          currentPageType: '',
-          coverageSubType: '',
-          visitedPages: [],
-          sourceUrls: [],
-          policyNumber: '',
-          effectiveDate: '',
-          expirationDate: '',
-          products: [],
-          routeGuid: '',
-          pageTitles: [],
-          notes: []
-        },
-        customer: {
-          fullName: '',
-          firstName: '',
-          middleName: '',
-          lastName: '',
-          suffix: '',
-          dob: '',
-          email: '',
-          phone: {
-            mobile: '',
-            home: '',
-            work: ''
-          },
-          maritalStatus: '',
-          gender: '',
-          mailingAddress: {
-            line1: '',
-            line2: '',
-            city: '',
-            state: '',
-            zip: '',
-            zipPlus4: '',
-            county: ''
-          },
-          residenceAddress: {
-            line1: '',
-            line2: '',
-            city: '',
-            state: '',
-            zip: '',
-            zipPlus4: '',
-            county: ''
-          },
-          currentInsurance: {
-            currentAutoInsurer: '',
-            priorAutoEriePolicyNumber: '',
-            autoPriorBILimits: '',
-            rewriteSpinoff: ''
-          },
-          sourceKeys: {}
-        },
-        namedInsureds: [],
-        drivers: [],
-        vehicles: [],
-        coverages: {
-          policy: {
-            effectiveDate: '',
-            payPlan: '',
-            riskState: '',
-            lineOfBusinessList: [],
-            policyCoverages: [],
-            coveragesThatOnlyAppearOncePremiums: []
-          },
-          vehicleCoverages: [],
-          discounts: [],
-          endorsements: [],
-          rawCoverageFields: {}
-        },
-        // Reports V1 (optional/additive)
-        reports: {
-          rows: [],
-          summary: {
-            hasInsuranceScore: false,
-            hasClue: false,
-            hasMvr: false,
-            insuranceScoreCount: 0,
-            clueCount: 0,
-            mvrCount: 0,
-            hitCount: 0,
-            noClaimsCount: 0,
-            noViolationsCount: 0
-          }
-        },
-        dwelling: {
-          policyType: '',
-          address: {
-            full: '',
-            line1: '',
-            line2: '',
-            city: '',
-            state: '',
-            zip: '',
-            zipPlus4: '',
-            county: ''
-          },
-          options: {
-            mailDeclarationToAgency: '',
-            swimmingPool: '',
-            alarm: '',
-            sprinklerSystem: '',
-            usedHighValueVendor: '',
-            homeCostEstimatorAction: '',
-            acvWindHailRoofSurfacing: ''
-          },
-          structure: {
-            yearBuilt: '',
-            squareFeet: '',
-            numberOfFamilies: '',
-            constructionType: '',
-            dwellingStyle: '',
-            protectionClass: ''
-          },
-          fireProtection: {
-            distanceToFireHydrant: '',
-            distanceToFireDepartment: ''
-          },
-          roof: {
-            installationYear: '',
-            material: '',
-            manuallyEnteredOtherRoofMaterial: ''
-          },
-          coverages: {
-            dwellingLossSettlement: '',
-            dwellingPerils: '',
-            personalPropertyLossSettlement: '',
-            personalPropertyPerils: '',
-            dwellingAmount: '',
-            otherStructuresAmount: '',
-            personalPropertyAmount: '',
-            lossOfUseAmount: ''
-          },
-          hiddenFlags: {
-            riskState: '',
-            hasWindHailExclusionEndorsement: '',
-            inquiryHasStormMitigation: ''
-          }
-        },
-        raw: {
-          customer: {},
-          drivers: {},
-          vehicles: {},
-          coverages: {},
-          reports: {},
-          dwelling: {}
-        },
-        sourceAudit: [],
-        completeness: {}
-      };
-    },
-
-    loadPayload() {
-      const raw = GM_getValue(KEYS.payload, null);
-      if (!raw) return Storage.createEmptyPayload();
-      try {
-        const parsed = JSON.parse(raw);
-        return Object.assign(Storage.createEmptyPayload(), parsed);
-      } catch (e) {
-        return Storage.createEmptyPayload();
-      }
-    },
-
-    _sharedSyncTimer: null,
-
-    summarizePayload(payload) {
-      const p = payload || {};
-      const visitedPages = Array.isArray(p.meta && p.meta.visitedPages) ? p.meta.visitedPages : [];
-      const policyCoverages = Array.isArray(p.coverages && p.coverages.policy && p.coverages.policy.policyCoverages)
-        ? p.coverages.policy.policyCoverages
-        : [];
-      const vehicleCoverageGroups = Array.isArray(p.coverages && p.coverages.vehicleCoverages)
-        ? p.coverages.vehicleCoverages
-        : [];
-
-      return {
-        storageKey: 'mciMasterPayload',
-        updatedAt: U.cleanString(p.meta && p.meta.updatedAt || p.meta && p.meta.createdAt || ''),
-        visitedPages: visitedPages,
-        policyCoverageCount: policyCoverages.length,
-        vehicleCoverageGroupCount: vehicleCoverageGroups.length
-      };
-    },
-
-    syncSharedPayload(payload, reason, attempt) {
-      const tryAttempt = typeof attempt === 'number' ? attempt : 0;
-      const maxAttempts = 20;
-      const retryDelayMs = 300;
-      const root = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-
-      try {
-        if (root && typeof root.setMciSharedPayload === 'function') {
-          const ok = root.setMciSharedPayload(payload);
-          U.debug('Erie Master Extractor shared payload sync', {
-            reason: reason || 'unknown',
-            attempt: tryAttempt,
-            ok: !!ok,
-            summary: Storage.summarizePayload(payload)
-          });
-          return;
-        }
-      } catch (e) {
-        U.debug('Erie Master Extractor shared payload sync failed:', e);
-      }
-
-      if (tryAttempt >= maxAttempts) {
-        U.debug('Erie Master Extractor shared payload bridge unavailable after retries', {
-          reason: reason || 'unknown',
-          attempts: tryAttempt,
-          summary: Storage.summarizePayload(payload)
-        });
-        return;
-      }
-
-      if (Storage._sharedSyncTimer) {
-        clearTimeout(Storage._sharedSyncTimer);
-      }
-
-      Storage._sharedSyncTimer = setTimeout(function () {
-        Storage.syncSharedPayload(payload, reason, tryAttempt + 1);
-      }, retryDelayMs);
-    },
-
-    savePayload(payload) {
-      payload.meta.updatedAt = U.nowIso();
-      const serialized = JSON.stringify(payload);
-      GM_setValue(KEYS.payload, serialized);
-      const root = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-      root.__eriePayload = payload;
-      Storage.syncSharedPayload(payload, 'savePayload', 0);
-    },
-
-    resetPayload() {
-      GM_deleteValue(KEYS.payload);
-
-      try {
-        const root = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-        if (root && typeof root.clearMciSharedPayload === 'function') {
-          root.clearMciSharedPayload();
-          U.debug('Erie Master Extractor shared payload cleared via bridge');
-        } else {
-          U.debug('Erie Master Extractor shared bridge unavailable on reset');
-        }
-      } catch (e) {
-        U.debug('Erie Master Extractor shared payload clear failed:', e);
-      }
-    }
-  };
-
-  // -----------------------------
-  // Script readers
-  // -----------------------------
-  const Readers = {
-    getAllScripts() {
-      return Array.from(document.scripts).map(function (s) {
-        return s.textContent || '';
-      }).filter(Boolean);
-    },
-
-    findScriptContaining(text) {
-      return Readers.getAllScripts().find(function (s) {
-        return s.indexOf(text) !== -1;
-      }) || '';
-    },
-
-    extractBalancedObjectAt(text, startIndex) {
-      if (startIndex < 0 || text[startIndex] !== '{') return null;
-
-      let depth = 0;
-      let inString = false;
-      let stringQuote = '';
-      let escaped = false;
-
-      for (let i = startIndex; i < text.length; i++) {
-        const ch = text[i];
-
-        if (inString) {
-          if (escaped) {
-            escaped = false;
-          } else if (ch === '\\') {
-            escaped = true;
-          } else if (ch === stringQuote) {
-            inString = false;
-            stringQuote = '';
-          }
-          continue;
-        }
-
-        if (ch === '"' || ch === "'" || ch === '`') {
-          inString = true;
-          stringQuote = ch;
-          continue;
-        }
-
-        if (ch === '{') depth++;
-        if (ch === '}') {
-          depth--;
-          if (depth === 0) {
-            return text.slice(startIndex, i + 1);
-          }
-        }
-      }
-
-      return null;
-    },
-
-    extractConstructorObject(scriptText, constructorName) {
-      if (!scriptText) return null;
-      const needle = constructorName + '(';
-      const i = scriptText.indexOf(needle);
-      if (i < 0) return null;
-
-      const after = scriptText.slice(i + needle.length);
-      const braceIndex = after.indexOf('{');
-      if (braceIndex < 0) return null;
-
-      const absBraceIndex = i + needle.length + braceIndex;
-      const objText = Readers.extractBalancedObjectAt(scriptText, absBraceIndex);
-      if (!objText) return null;
-
-      return U.tryEvalObjectLiteral(objText);
-    },
-
-    extractAssignedObject(scriptText, variableName) {
-      if (!scriptText) return null;
-
-      const patterns = [
-        'var ' + variableName + ' =',
-        'let ' + variableName + ' =',
-        'const ' + variableName + ' =',
-        variableName + ' ='
-      ];
-
-      let foundIndex = -1;
-      let foundPattern = '';
-      for (let i = 0; i < patterns.length; i++) {
-        const idx = scriptText.indexOf(patterns[i]);
-        if (idx >= 0) {
-          foundIndex = idx;
-          foundPattern = patterns[i];
-          break;
-        }
-      }
-      if (foundIndex < 0) return null;
-
-      const after = scriptText.slice(foundIndex + foundPattern.length);
-      const braceIndex = after.indexOf('{');
-      if (braceIndex < 0) return null;
-
-      const absBraceIndex = foundIndex + foundPattern.length + braceIndex;
-      const objText = Readers.extractBalancedObjectAt(scriptText, absBraceIndex);
-      if (!objText) return null;
-
-      return U.tryEvalObjectLiteral(objText);
-    },
-
-    findBestCustomerVM() {
-      const scripts = Readers.getAllScripts();
-      for (let i = 0; i < scripts.length; i++) {
-        const obj = Readers.extractConstructorObject(scripts[i], 'new plw.customer.ViewModel');
-        if (obj && (obj.FirstNamedInsured || obj.SecondNamedInsured || obj.MailingAddress || obj.CurrentAutoInsurer)) {
-          return obj;
-        }
-      }
-      return null;
-    },
-
-    findDriverViewData() {
-      const scripts = Readers.getAllScripts();
-      for (let i = 0; i < scripts.length; i++) {
-        const obj = Readers.extractAssignedObject(scripts[i], 'viewData');
-        if (obj && obj.DriverFormList) return obj;
-      }
-      return null;
-    },
-
-    findVehicleData() {
-      const scripts = Readers.getAllScripts();
-      for (let i = 0; i < scripts.length; i++) {
-        const obj = Readers.extractAssignedObject(scripts[i], 'data');
-        if (obj && obj.VehicleGridItems) return obj;
-      }
-      return null;
-    },
-
-    findNestedCoverageObject(obj, depth) {
-      if (!obj || typeof obj !== 'object') return null;
-      if (depth > 6) return null;
-
-      if (
-        Array.isArray(obj.PolicyCoverageItems) ||
-        Array.isArray(obj.VehicleCoverageItems) ||
-        Array.isArray(obj.CoveragesThatOnlyAppearOncePremiums)
-      ) {
-        return obj;
-      }
-
-      const keys = Object.keys(obj);
-      for (let i = 0; i < keys.length; i++) {
-        const val = obj[keys[i]];
-        if (val && typeof val === 'object') {
-          const found = Readers.findNestedCoverageObject(val, depth + 1);
-          if (found) return found;
-        }
-      }
-
-      return null;
-    },
-
-    findFirstArrayByKey(obj, key, depth) {
-      if (!obj || typeof obj !== 'object') return null;
-      if (depth > 6) return null;
-
-      if (Array.isArray(obj[key])) {
-        return obj[key];
-      }
-
-      const keys = Object.keys(obj);
-      for (let i = 0; i < keys.length; i++) {
-        const val = obj[keys[i]];
-        if (val && typeof val === 'object') {
-          const found = Readers.findFirstArrayByKey(val, key, depth + 1);
-          if (found) return found;
-        }
-      }
-
-      return null;
-    },
-
-    findAnyObjectWithCoverageArrays(scriptText) {
-      if (!scriptText) return null;
-
-      function hasCoverageShape(obj) {
-        return !!(
-          obj &&
-          (
-            Array.isArray(obj.PolicyCoverageItems) ||
-            Array.isArray(obj.VehicleCoverageItems) ||
-            Array.isArray(obj.CoveragesThatOnlyAppearOncePremiums)
-          )
-        );
-      }
-
-      // First pass: scan balanced object literals around known coverage keys.
-      const anchors = ['PolicyCoverageItems', 'VehicleCoverageItems', 'CoveragesThatOnlyAppearOncePremiums'];
-      for (let a = 0; a < anchors.length; a++) {
-        let idx = scriptText.indexOf(anchors[a]);
-        while (idx >= 0) {
-          let open = scriptText.lastIndexOf('{', idx);
-          let tries = 0;
-          while (open >= 0 && tries < 20) {
-            const objText = Readers.extractBalancedObjectAt(scriptText, open);
-            if (objText) {
-              const obj = U.tryEvalObjectLiteral(objText);
-              if (hasCoverageShape(obj)) return obj;
-              const nested = Readers.findNestedCoverageObject(obj, 0);
-              if (nested && hasCoverageShape(nested)) return nested;
-            }
-            open = scriptText.lastIndexOf('{', open - 1);
-            tries++;
-          }
-          idx = scriptText.indexOf(anchors[a], idx + anchors[a].length);
-        }
-      }
-
-      // Second pass: broad regex scan (kept for compatibility with prior behavior).
-      const matches = scriptText.match(/\{[\s\S]*?\}/g);
-      if (!matches) return null;
-
-      for (let i = 0; i < matches.length; i++) {
-        const raw = matches[i];
-        let obj = null;
-
-        try {
-          obj = JSON.parse(raw);
-        } catch (e) {
-          obj = U.tryEvalObjectLiteral(raw);
-        }
-
-        if (hasCoverageShape(obj)) {
-          return obj;
-        }
-
-        const nested = Readers.findNestedCoverageObject(obj, 0);
-        if (nested && hasCoverageShape(nested)) {
-          return nested;
-        }
-      }
-
-      return null;
-    },
-
-    findCoverageData() {
-      const scripts = Readers.getAllScripts();
-
-      function hasCoverageShape(obj) {
-        return !!(
-          obj &&
-          (
-            Array.isArray(obj.PolicyCoverageItems) ||
-            Array.isArray(obj.VehicleCoverageItems) ||
-            Array.isArray(obj.CoveragesThatOnlyAppearOncePremiums)
-          )
-        );
-      }
-
-      const candidateNames = ['viewData', 'data', 'model', 'viewModelData', 'serverViewModelData'];
-
-      for (let i = 0; i < scripts.length; i++) {
-        const script = scripts[i];
-
-        for (let j = 0; j < candidateNames.length; j++) {
-          const candidate = Readers.extractAssignedObject(script, candidateNames[j]);
-          if (hasCoverageShape(candidate)) return candidate;
-
-          const nested = Readers.findNestedCoverageObject(candidate, 0);
-          if (nested && hasCoverageShape(nested)) return nested;
-        }
-
-        if (
-          script.indexOf('VehicleCoverageItems') !== -1 ||
-          script.indexOf('CoveragesThatOnlyAppearOncePremiums') !== -1
-        ) {
-          const brute = Readers.findAnyObjectWithCoverageArrays(script);
-          if (hasCoverageShape(brute)) return brute;
-        }
-      }
-
-      return null;
-    },
-
-    // Reports V1: locate the Erie reports model with ReportGrid.
-    findNestedReportsObject(obj, depth) {
-      if (!obj || typeof obj !== 'object') return null;
-      if (depth > 6) return null;
-
-      if (Array.isArray(obj.ReportGrid)) {
-        return obj;
-      }
-
-      const keys = Object.keys(obj);
-      for (let i = 0; i < keys.length; i++) {
-        const val = obj[keys[i]];
-        if (val && typeof val === 'object') {
-          const found = Readers.findNestedReportsObject(val, depth + 1);
-          if (found) return found;
-        }
-      }
-
-      return null;
-    },
-
-    findReportsData() {
-      const scripts = Readers.getAllScripts();
-      const candidateNames = ['viewData', 'data', 'model', 'viewModelData', 'serverViewModelData'];
-
-      for (let i = 0; i < scripts.length; i++) {
-        const script = scripts[i];
-
-        for (let j = 0; j < candidateNames.length; j++) {
-          const candidate = Readers.extractAssignedObject(script, candidateNames[j]);
-          if (candidate && Array.isArray(candidate.ReportGrid)) return candidate;
-
-          const nested = Readers.findNestedReportsObject(candidate, 0);
-          if (nested && Array.isArray(nested.ReportGrid)) return nested;
-        }
-
-        if (script.indexOf('ReportGrid') !== -1) {
-          const grid = Readers.findFirstArrayByKey(
-            Readers.extractAssignedObject(script, 'viewData') ||
-            Readers.extractAssignedObject(script, 'data') ||
-            Readers.extractAssignedObject(script, 'model') ||
-            Readers.extractAssignedObject(script, 'viewModelData') ||
-            Readers.extractAssignedObject(script, 'serverViewModelData'),
-            'ReportGrid',
-            0
-          );
-          if (Array.isArray(grid)) {
-            return { ReportGrid: grid };
-          }
-        }
-      }
-
-      return null;
-    },
-
-    findDwellingVM() {
-      const scripts = Readers.getAllScripts();
-      for (let i = 0; i < scripts.length; i++) {
-        const obj = Readers.extractAssignedObject(scripts[i], 'serverViewModelData');
-        if (obj && (Object.prototype.hasOwnProperty.call(obj, 'NumberOfStories') || Object.prototype.hasOwnProperty.call(obj, 'States'))) {
-          return obj;
-        }
-      }
-      return null;
-    }
-  };
-
-  // -----------------------------
-  // Detection
-  // -----------------------------
-  const Detector = {
-    detect() {
-      const path = location.pathname || '';
-      const currentPageMarker = Readers.findScriptContaining('plw.currentPage');
-
-      let pageType = 'unknown';
-      let coverageSubType = '';
-
-      if (/\/Customer$/i.test(path) || currentPageMarker.indexOf("plw.currentPage = 'Customer'") >= 0) {
-        pageType = 'customer';
-      } else if (/\/Driver$/i.test(path) || currentPageMarker.indexOf("plw.currentPage = 'Driver'") >= 0) {
-        pageType = 'drivers';
-      } else if (/\/Vehicle$/i.test(path) || currentPageMarker.indexOf("plw.currentPage = 'Vehicle'") >= 0) {
-        pageType = 'vehicles';
-      } else if (/\/Reports(\/|$)/i.test(path) || currentPageMarker.indexOf("plw.currentPage = 'Reports'") >= 0) {
-        pageType = 'reports';
-      } else if (/\/Coverages\/Auto/i.test(path) || currentPageMarker.indexOf("plw.currentPage = 'Coverages_Auto'") >= 0) {
-        pageType = 'coverages';
-        coverageSubType = 'Auto';
-      } else if (/\/Dwelling$/i.test(path) || currentPageMarker.indexOf("plw.currentPage = 'Dwelling'") >= 0) {
-        pageType = 'dwelling';
-      } else if (/\/Coverages\//i.test(path)) {
-        pageType = 'coverages';
-        const parts = path.split('/').filter(Boolean);
-        coverageSubType = parts[parts.length - 1] || '';
-      }
-
-      return {
-        pageType: pageType,
-        coverageSubType: coverageSubType,
-        url: location.href,
-        path: path,
-        title: document.title || ''
-      };
-    }
-  };
-
-  // -----------------------------
-  // Normalizers
-  // -----------------------------
-  const Norm = {
-    phoneFromList(list, preferredType) {
-      if (!Array.isArray(list) || !list.length) return '';
-
-      const normalizeType = function (p) {
-        return U.cleanString(
-          (p && p.TypeOfPhoneNumber && p.TypeOfPhoneNumber.code) ||
-          (p && p.TypeOfPhoneNumber && p.TypeOfPhoneNumber.Code) ||
-          (p && p.Type) ||
-          ''
-        ).toLowerCase();
-      };
-
-      if (preferredType) {
-        const preferred = list.find(function (p) {
-          return normalizeType(p) === preferredType;
-        });
-        if (!preferred) return '';
-        if (preferred.Number) return U.cleanString(preferred.Number);
-        return U.cleanString([
-          preferred.AreaCode || '',
-          preferred.Exchange || '',
-          preferred.Suffix || ''
-        ].join(''));
-      }
-
-      const pick = list[0];
-      if (!pick) return '';
-      if (pick.Number) return U.cleanString(pick.Number);
-
-      return U.cleanString([
-        pick.AreaCode || '',
-        pick.Exchange || '',
-        pick.Suffix || ''
-      ].join(''));
-    },
-
-    emailFromList(list, directEmail) {
-      if (directEmail) return U.cleanString(directEmail);
-      if (!Array.isArray(list) || !list.length) return '';
-      const first = list[0];
-      return U.cleanString(first.EmailAddress || first.Value || '');
-    },
-
-    address(addr) {
-      if (!addr) {
-        return {
-          line1: '',
-          line2: '',
-          city: '',
-          state: '',
-          zip: '',
-          zipPlus4: '',
-          county: ''
-        };
-      }
-      return {
-        line1: U.cleanString(addr.AddressLine1 || addr.Line1 || ''),
-        line2: U.cleanString(addr.AddressLine2 || addr.Line2 || ''),
-        city: U.cleanString(addr.City || ''),
-        state: U.cleanString(addr.State || addr.FullState || ''),
-        zip: U.cleanString(addr.ZipCode || addr.Zip || ''),
-        zipPlus4: U.cleanString(addr.ZipPlus4 || ''),
-        county: U.cleanString(addr.County || '')
-      };
-    },
-
-    namedInsuredFromCustomerForm(form, flags) {
-      if (!form) return null;
-
-      const firstName = U.cleanString(form.FirstName || '');
-      const lastName = U.cleanString(form.LastName || '');
-      if (!firstName && !lastName) return null;
-
-      const person = {
-        personType: 'namedInsured',
-        fullName: U.cleanString(
-          form.DisplayName || [firstName, form.MiddleName || '', lastName].join(' ')
-        ),
-        firstName: firstName,
-        middleName: U.cleanString(form.MiddleName || ''),
-        lastName: lastName,
-        suffix: U.cleanString(form.Suffix || ''),
-        dob: U.normalizeDate(
-          form.DateOfBirth ||
-          (form.DateOfBirthForm && form.DateOfBirthForm.DateOfBirth) ||
-          ''
-        ),
-        gender: U.cleanString(form.Gender || ''),
-        maritalStatus: U.cleanString(form.MaritalStatus || ''),
-        relationshipToNamedInsured: U.cleanString(form.Relationship || form.RelationshipDescription || ''),
-        isPrimary: !!(flags && flags.isPrimary),
-        isSecondary: !!(flags && flags.isSecondary),
-        license: {
-          number: U.cleanString(form.DriverLicenseNumber || ''),
-          state: U.cleanString(form.DriverLicenseState || ''),
-          dateFirstLicensed: U.cleanString(form.FirstLicenseDate || '')
-        },
-        ssn: U.cleanString(
-          form.ExistingSSN ||
-          form.SSN ||
-          (form.SSNForm && (form.SSNForm.ExistingSSN || form.SSNForm.SSN)) ||
-          ''
-        ),
-        email: Norm.emailFromList(form.EmailAddressList || form.EmailList || [], form.EmailAddress),
-        phone: {
-          mobile: Norm.phoneFromList(form.PhoneNumberList || [], 'mobile'),
-          home: Norm.phoneFromList(form.PhoneNumberList || [], 'home'),
-          work: Norm.phoneFromList(form.PhoneNumberList || [], 'work')
-        },
-        sourceKeys: {
-          id: U.cleanString(form.Id || ''),
-          erieId: U.cleanString(form.ErieID || ''),
-          cimIdentifier: U.cleanString(form.CimIdentifier || '')
-        }
-      };
-
-      return person;
-    },
-
-    driver(d) {
-      const firstName = U.cleanString(d.FirstName || '');
-      const lastName = U.cleanString(d.LastName || '');
-
-      const out = {
-        driverId: U.cleanString(d.Id || ''),
-        role: U.cleanString(d.DriverTypeDescription || d.DriverTypeCode || ''),
-        relationshipToNamedInsured: U.cleanString(d.RelationshipDescription || d.Relationship || ''),
-        isNamedInsured: !!(d.IsFirstNamedInsured || d.IsSecondNamedInsured),
-        isExcluded: /excluded/i.test(U.cleanString(d.DriverTypeCode || d.DriverTypeDescription || '')),
-        isHouseholdMember: true,
-
-        fullName: U.cleanString(d.FullName || [firstName, d.MiddleName || '', lastName].join(' ')),
-        firstName: firstName,
-        middleName: U.cleanString(d.MiddleName || ''),
-        lastName: lastName,
-        suffix: U.cleanString(d.Suffix || ''),
-
-        dob: U.normalizeDate(d.DateOfBirthForm && d.DateOfBirthForm.DateOfBirth || d.DateOfBirth || ''),
-        gender: U.cleanString(d.Gender || ''),
-        maritalStatus: U.cleanString(d.MaritalStatus || ''),
-
-        license: {
-          number: U.cleanString(d.DriverLicenseNumber || ''),
-          state: U.cleanString(d.DriverLicenseState || ''),
-          status: '',
-          dateFirstLicensed: U.cleanString(d.FirstLicenseDate || '')
-        },
-
-        ssn: U.cleanString(d.SSNForm && d.SSNForm.ExistingSSN || d.SSN || ''),
-        occupation: '',
-        education: '',
-
-        driverTraining: U.cleanString(d.HasDriverTrainingDiscount || ''),
-        sr22: '',
-        goodStudent: '',
-        distantStudent: U.cleanString(d.CollegeStudent || ''),
-
-        accidents: [],
-        violations: [],
-
-        phone: {
-          mobile: Norm.phoneFromList(d.PhoneNumberList || [], 'mobile'),
-          home: Norm.phoneFromList(d.PhoneNumberList || [], 'home'),
-          work: Norm.phoneFromList(d.PhoneNumberList || [], 'work')
-        },
-
-        sourceKeys: {
-          id: U.cleanString(d.Id || ''),
-          erieId: U.cleanString(d.ErieID || ''),
-          cimIdentifier: U.cleanString(d.CimIdentifier || ''),
-          driverLicenseId: U.cleanString(d.DriverLicenseId || '')
-        },
-
-        matchKey: ''
-      };
-
-      out.matchKey = U.makeDriverMatchKey(out);
-      return out;
-    },
-
-    vehicleFromGridItem(v) {
-      const yearMakeModel = U.cleanString(v.YearMakeModel || v.VehicleDescription || '');
-      const parts = yearMakeModel.split(/\s+/);
-
-      const year = parts.length ? parts[0] : '';
-      const make = parts.length > 1 ? parts[1] : '';
-      const model = parts.length > 2 ? parts.slice(2).join(' ') : '';
-
-      const out = {
-        vehicleId: U.cleanString(v.Id || v.VehicleId || ''),
-        unitNumber: U.cleanString(v.UnitNumber || ''),
-        vin: '',
-        vinMaskedTail: U.cleanString(v.VIN || v.VehicleIdentificationNumber || v.Vin || ''),
-        year: U.cleanString(v.Year || year),
-        make: U.cleanString(v.Make || make),
-        model: U.cleanString(v.Model || model),
-        trim: U.cleanString(v.Trim || ''),
-        style: U.cleanString(v.Style || ''),
-        bodyType: U.cleanString(v.VehicleTypeDescription || v.VehicleType || ''),
-        doors: U.cleanString(v.Doors || ''),
-        restraintType: U.cleanString(v.RestraintType || ''),
-        use: U.cleanString(v.Use || v.VehicleUse || ''),
-        annualMiles: U.cleanString(v.Annual || v.AnnualMiles || ''),
-        commuteMiles: U.cleanString(v.DaysMiles || v.CommuteMiles || ''),
-        ownership: U.cleanString(v.Ownership || ''),
-        primaryOperator: U.cleanString(v.PrimaryOperator || ''),
-        garagingAddress: {
-          line1: '',
-          line2: '',
-          city: '',
-          state: '',
-          zip: ''
-        },
-        lienholder: {
-          name: '',
-          loanLease: ''
-        },
-        driversAssigned: [],
-        coverages: [],
-        sourceKeys: {
-          id: U.cleanString(v.Id || v.VehicleId || '')
-        },
-        matchKey: ''
-      };
-
-      return out;
-    },
-
-    enrichVehicleFromDom(vehicle) {
-      const out = U.clone(vehicle);
-
-      const vin = U.inputValue('#VehicleIdentificationNumber, #Vin, input[name="VehicleIdentificationNumber"], input[name="VIN"]');
-      if (vin) out.vin = vin;
-
-      const year = U.inputValue('#ModelYear, input[name="ModelYear"], input[name="Year"]');
-      if (year) out.year = year;
-
-      const makeText = U.selectText('#Make, #VehicleMake, select[name="Make"], select[name="VehicleMake"]');
-      if (makeText && !/^--/.test(makeText)) out.make = makeText;
-
-      const modelText = U.selectText('#Model, #VehicleModel, select[name="Model"], select[name="VehicleModel"]');
-      if (modelText && !/^--/.test(modelText)) out.model = modelText;
-
-      const useText = U.selectText('#VehicleUse, select[name="VehicleUse"]');
-      if (useText && !/^--/.test(useText)) out.use = useText;
-
-      const annualMiles = U.inputValue('#AnnualMiles, input[name="AnnualMiles"]');
-      if (annualMiles) out.annualMiles = annualMiles;
-
-      out.matchKey = U.makeVehicleMatchKey(out);
-      return out;
-    },
-
-    coverageItem(c) {
-      return {
-        coverageCode: U.cleanString(c.CoverageCode || c.Code || ''),
-        coverageDescription: U.cleanString(c.CoverageDescription || c.Description || ''),
-        summaryDescription: U.cleanString(c.SummaryDescription || c.Summary || ''),
-        coverageLimit: U.cleanString(c.CoverageLimit || c.Limit || ''),
-        premium: c.Premium,
-        premium2: c.Premium2,
-        subcategory: U.cleanString(c.CoverageSubcategory || c.Subcategory || ''),
-        displayOrder: c.CoverageDisplayOrder != null ? c.CoverageDisplayOrder : c.DisplayOrder
-      };
-    }
-  };
-
-  // -----------------------------
-  // Extractors
-  // -----------------------------
-  const Extractors = {
-    customer(ctx) {
-      const vm = Readers.findBestCustomerVM();
-      const partial = {
-        meta: {
-          currentPageType: 'customer'
-        },
-        customer: {},
-        namedInsureds: [],
-        raw: {
-          customer: {}
-        }
-      };
-
-      if (!vm) {
-        return partial;
-      }
-
-      partial.raw.customer.customerVM = vm;
-
-      const primary = vm.FirstNamedInsured || null;
-      const secondary = vm.SecondNamedInsured || null;
-
-      const named1 = Norm.namedInsuredFromCustomerForm(primary, { isPrimary: true });
-      const named2 = Norm.namedInsuredFromCustomerForm(secondary, { isSecondary: true });
-
-      if (named1) partial.namedInsureds.push(named1);
-      if (named2) partial.namedInsureds.push(named2);
-
-      partial.meta.products = partial.meta.products || [];
-      if (vm.HasAuto) U.pushUnique(partial.meta.products, 'Auto');
-      if (vm.HasUmbrella) U.pushUnique(partial.meta.products, 'Umbrella');
-      if (vm.HasHome) U.pushUnique(partial.meta.products, 'Home');
-      if (vm.HasDwelling) U.pushUnique(partial.meta.products, 'Dwelling');
-      if (vm.HasLife) U.pushUnique(partial.meta.products, 'Life');
-
-      const mailingAddress = Norm.address(
-        vm.MailingAddress ||
-        vm.MailingAddressForm ||
-        {}
-      );
-
-      const residenceAddress = Norm.address(
-        vm.ResidenceAddress ||
-        vm.ResidentialAddress ||
-        vm.ResidenceAddressForm ||
-        vm.MailingAddress ||
-        {}
-      );
-
-      partial.customer = {
-        fullName: named1 ? named1.fullName : '',
-        firstName: named1 ? named1.firstName : '',
-        middleName: named1 ? named1.middleName : '',
-        lastName: named1 ? named1.lastName : '',
-        suffix: named1 ? named1.suffix : '',
-        dob: named1 ? named1.dob : '',
-        email: named1 ? named1.email : '',
-        phone: {
-          mobile: named1 && named1.phone ? named1.phone.mobile : '',
-          home: named1 && named1.phone ? named1.phone.home : '',
-          work: named1 && named1.phone ? named1.phone.work : ''
-        },
-        maritalStatus: named1 ? named1.maritalStatus : '',
-        gender: named1 ? named1.gender : '',
-        mailingAddress: mailingAddress,
-        residenceAddress: residenceAddress,
-        currentInsurance: {
-          currentAutoInsurer: U.cleanString(vm.CurrentAutoInsurer || ''),
-          priorAutoEriePolicyNumber: U.cleanString(vm.PriorAutoEriePolicyNumber || ''),
-          autoPriorBILimits: U.cleanString(vm.AutoPriorBILimits || ''),
-          rewriteSpinoff: U.cleanString(vm.ErieAutoRewriteSpinoff || '')
-        },
-        sourceKeys: {
-          customerId: U.cleanString(vm.Id || (named1 && named1.sourceKeys && named1.sourceKeys.id) || ''),
-          erieId: U.cleanString(vm.ErieID || (named1 && named1.sourceKeys && named1.sourceKeys.erieId) || ''),
-          cimIdentifier: U.cleanString(vm.CimIdentifier || (named1 && named1.sourceKeys && named1.sourceKeys.cimIdentifier) || '')
-        }
-      };
-
-      return partial;
-    },
-
-    drivers(ctx) {
-      const viewData = Readers.findDriverViewData();
-      const partial = {
-        meta: {
-          currentPageType: 'drivers',
-          effectiveDate: '',
-          riskState: ''
-        },
-        drivers: [],
-        raw: {
-          drivers: {}
-        }
-      };
-
-      if (!viewData) return partial;
-
-      partial.raw.drivers.viewData = viewData;
-      partial.meta.effectiveDate = U.cleanString(viewData.AutoPolicyEffectiveDate || '');
-      partial.meta.riskState = U.cleanString(viewData.RiskState || '');
-
-      const list = Array.isArray(viewData.DriverFormList) ? viewData.DriverFormList : [];
-      partial.drivers = list.map(Norm.driver);
-
-      return partial;
-    },
-
-    vehicles(ctx) {
-      const data = Readers.findVehicleData();
-      const partial = {
-        meta: {
-          currentPageType: 'vehicles'
-        },
-        vehicles: [],
-        raw: {
-          vehicles: {}
-        }
-      };
-
-      if (!data) return partial;
-
-      partial.raw.vehicles.data = data;
-
-      const grid = Array.isArray(data.VehicleGridItems) ? data.VehicleGridItems : [];
-      partial.vehicles = grid.map(function (item) {
-        const v = Norm.vehicleFromGridItem(item);
-        v.matchKey = U.makeVehicleMatchKey(v);
-        return v;
-      });
-
-      // Enrich open vehicle from form DOM if present
-      const fullVin = U.inputValue('#VehicleIdentificationNumber, #Vin, input[name="VehicleIdentificationNumber"], input[name="VIN"]');
-      if (fullVin) {
-        let target = null;
-
-        const targetId = U.inputValue('#Id, input[name="Id"], input[name="VehicleId"]');
-        if (targetId) {
-          target = partial.vehicles.find(function (v) {
-            return U.cleanString(v.vehicleId) === U.cleanString(targetId);
-          });
-        }
-
-        if (!target && partial.vehicles.length === 1) {
-          target = partial.vehicles[0];
-        }
-
-        if (!target) {
-          const maskedTail = fullVin.slice(-4);
-          target = partial.vehicles.find(function (v) {
-            return U.cleanString(v.vinMaskedTail).slice(-4) === maskedTail;
-          });
-        }
-
-        const enriched = Norm.enrichVehicleFromDom(target || {});
-        if (target) {
-          Object.assign(target, enriched);
-        } else {
-          partial.vehicles.push(enriched);
-        }
-      }
-
-      return partial;
-    },
-
-    coverages(ctx) {
-      const data = Readers.findCoverageData();
-      const payloadVehicles = (Storage.loadPayload().vehicles || []);
-      const partial = {
-        meta: {
-          currentPageType: 'coverages',
-          coverageSubType: ctx.coverageSubType || ''
-        },
-        coverages: {
-          policy: {
-            effectiveDate: '',
-            payPlan: '',
-            riskState: '',
-            lineOfBusinessList: [],
-            policyCoverages: [],
-            coveragesThatOnlyAppearOncePremiums: []
-          },
-          vehicleCoverages: [],
-          discounts: [],
-          endorsements: [],
-          rawCoverageFields: {}
-        },
-        raw: {
-          coverages: {}
-        }
-      };
-
-      partial.coverages.policy.effectiveDate = U.inputValue('#EffectiveDate') || U.text('#EffectiveDate');
-      partial.coverages.policy.payPlan = U.selectText('#PayPlan, select[name="PayPlan"]');
-      partial.coverages.policy.riskState = U.inputValue('#RiskState') || '';
-
-      if (data) {
-        partial.raw.coverages = {
-          data: data
-        };
-
-        partial.coverages.policy.lineOfBusinessList = U.asArray(data.LineOfBusinessList).slice();
-        partial.coverages.policy.policyCoverages = U.asArray(data.PolicyCoverageItems).map(Norm.coverageItem);
-        partial.coverages.policy.coveragesThatOnlyAppearOncePremiums = U.asArray(data.CoveragesThatOnlyAppearOncePremiums).map(Norm.coverageItem);
-        partial.coverages.vehicleCoverages = U.asArray(data.VehicleCoverageItems).map(function (v) {
-          return {
-            vehicleId: U.cleanString(v.VehicleId || v.Id || ''),
-            vehicleDescription: U.cleanString(v.VehicleDescription || v.YearMakeModel || ''),
-            primaryOperator: U.cleanString(v.PrimaryOperator || ''),
-            vehicleType: U.cleanString(v.VehicleTypeDescription || v.VehicleType || ''),
-            premium: v.Premium,
-            premium2: v.Premium2,
-            discounts: U.asArray(v.Discounts).map(function (d) {
-              return {
-                name: U.cleanString(d.Name || d.Description || ''),
-                premiumIncluded: U.cleanString(d.PremiumIncluded || ''),
-                premium2Included: U.cleanString(d.Premium2Included || '')
-              };
-            }),
-            coverages: U.asArray(v.Coverages).map(Norm.coverageItem)
-          };
-        });
-
-        return partial;
-      }
-
-      // Fallback to visible coverage controls when structured arrays are missing.
-      function readCoverageDescription(row) {
-        const attr = U.cleanString(
-          row.getAttribute('data-coveragedescription') ||
-          row.getAttribute('data-coverage-description') ||
-          ''
-        );
-        if (attr) return attr;
-
-        const labelEl = row.querySelector('label, .coverage-description, .coverageDescription, [data-role="description"], th, td');
-        if (labelEl) return U.cleanString(labelEl.textContent || '');
-
-        return U.cleanString(row.textContent || '');
-      }
-
-      function isJunkSelectedValue(value) {
-        const s = U.cleanString(value);
-        if (!s) return false;
-        if (U.isJunkCoverageText(s)) return true;
-        if (s.length > 120 && /- None -/i.test(s)) return true;
-        return false;
-      }
-
-      function rowToCoverage(row, idx) {
-        return {
-          coverageCode: U.cleanString(
-            row.getAttribute('data-coveragecode') ||
-            row.getAttribute('data-coverage-code') ||
-            ''
-          ),
-          coverageDescription: readCoverageDescription(row),
-          summaryDescription: '',
-          coverageLimit: U.selectedControlValue(row),
-          premium: null,
-          premium2: null,
-          subcategory: '',
-          displayOrder: idx
-        };
-      }
-
-      function shouldIncludeCoverage(item) {
-        const hasIdentity = !!(U.cleanString(item.coverageCode) || U.cleanString(item.coverageDescription));
-        if (!hasIdentity) return false;
-        if (U.isJunkCoverageText(item.coverageDescription)) return false;
-        if (isJunkSelectedValue(item.coverageLimit)) return false;
-        return true;
-      }
-
-
-      const policyRows = U.safeQueryAll('[data-coveragelevel="Policy"]');
-      policyRows.forEach(function (row, idx) {
-        const item = rowToCoverage(row, idx);
-        if (shouldIncludeCoverage(item)) {
-          partial.coverages.policy.policyCoverages.push(item);
-        }
-      });
-      partial.coverages.policy.policyCoverages = U.dedupeCoverageItems(partial.coverages.policy.policyCoverages);
-
-      const vehicleRows = U.safeQueryAll('[data-coveragelevel="Vehicle"]');
-      const groups = {};
-      const groupOrder = [];
-
-      vehicleRows.forEach(function (row, idx) {
-        const rowVehicleId = U.cleanString(
-          row.getAttribute('data-vehicleid') ||
-          row.getAttribute('data-vehicle-id') ||
-          ''
-        );
-        const ownerWithVehicleId = row.closest('[data-vehicleid], [data-vehicle-id]');
-        const vehicleId = rowVehicleId || U.cleanString(
-          ownerWithVehicleId &&
-          (
-            ownerWithVehicleId.getAttribute('data-vehicleid') ||
-            ownerWithVehicleId.getAttribute('data-vehicle-id')
-          ) ||
-          ''
-        );
-
-        const rowVehicleIndex = U.cleanString(row.getAttribute('data-vehicleindex') || '');
-        const ownerWithIndex = row.closest('[data-vehicleindex]');
-        const vehicleIndex = rowVehicleIndex || U.cleanString(
-          ownerWithIndex && ownerWithIndex.getAttribute('data-vehicleindex') || ''
-        );
-
-        const rowVehicleDescription = U.cleanString(
-          row.getAttribute('data-vehicledescription') ||
-          row.getAttribute('data-vehicle-description') ||
-          ''
-        );
-        const ownerWithDescription = row.closest('[data-vehicledescription], [data-vehicle-description]');
-        let vehicleDescription = rowVehicleDescription || U.cleanString(
-          ownerWithDescription &&
-          (
-            ownerWithDescription.getAttribute('data-vehicledescription') ||
-            ownerWithDescription.getAttribute('data-vehicle-description')
-          ) ||
-          ''
-        );
-
-        if (!vehicleDescription) {
-          const block = row.closest('section, fieldset, table, div');
-          if (block) {
-            const heading = block.querySelector('h1, h2, h3, h4, legend, .vehicle-title, .vehicleHeader, .panel-title');
-            if (heading) vehicleDescription = U.cleanString(heading.textContent || '');
-          }
-        }
-
-        if (!vehicleDescription) {
-          let prev = row.previousElementSibling;
-          let hops = 0;
-          while (prev && hops < 6 && !vehicleDescription) {
-            if (/^(H1|H2|H3|H4|LEGEND)$/.test(prev.tagName)) {
-              vehicleDescription = U.cleanString(prev.textContent || '');
-              break;
-            }
-            const nested = prev.querySelector('h1, h2, h3, h4, legend');
-            if (nested) {
-              vehicleDescription = U.cleanString(nested.textContent || '');
-              break;
-            }
-            prev = prev.previousElementSibling;
-            hops++;
-          }
-        }
-
-        if (!vehicleDescription) {
-          vehicleDescription = vehicleIndex ? ('Vehicle ' + vehicleIndex) : 'Vehicle';
-        }
-
-        const groupKey = vehicleId ? ('VID|' + vehicleId) : (vehicleIndex ? ('IDX|' + vehicleIndex) : ('DESC|' + U.upper(vehicleDescription)));
-        if (!groups[groupKey]) {
-          groups[groupKey] = {
-            vehicleId: vehicleId,
-            _vehicleIndex: vehicleIndex,
-            vehicleDescription: vehicleDescription,
-            primaryOperator: '',
-            vehicleType: '',
-            premium: null,
-            premium2: null,
-            discounts: [],
-            coverages: []
-          };
-          groupOrder.push(groupKey);
-        }
-
-        const item = rowToCoverage(row, idx);
-        if (shouldIncludeCoverage(item)) {
-          groups[groupKey].coverages.push(item);
-        }
-      });
-
-      partial.coverages.vehicleCoverages = groupOrder.map(function (key) {
-        const group = groups[key];
-        group.coverages = U.dedupeCoverageItems(group.coverages);
-
-        const existingById = payloadVehicles.find(function (v) {
-          return U.cleanString(v.vehicleId) === U.cleanString(group.vehicleId);
-        });
-
-        if (!existingById) {
-          const matched = U.matchVehicleByDescription(group.vehicleDescription, payloadVehicles);
-          if (matched && matched.vehicleId) {
-            group.vehicleId = U.cleanString(matched.vehicleId);
-          }
-        }
-
-        if (!group.vehicleId) {
-          group.vehicleId = U.cleanString(group._vehicleIndex || '');
-        }
-
-        delete group._vehicleIndex;
-        return group;
-      }).filter(function (group) {
-        return !!(
-          group &&
-          (
-            (Array.isArray(group.coverages) && group.coverages.length) ||
-            U.cleanString(group.vehicleId) ||
-            U.cleanString(group.vehicleDescription)
-          )
-        );
-      });
-
-      return partial;
-    },
-
-    // Reports V1: additive extractor for Erie Reports page only.
-    reports(ctx) {
-      const partial = {
-        meta: {
-          currentPageType: 'reports'
-        },
-        reports: {
-          rows: [],
-          summary: {
-            hasInsuranceScore: false,
-            hasClue: false,
-            hasMvr: false,
-            insuranceScoreCount: 0,
-            clueCount: 0,
-            mvrCount: 0,
-            hitCount: 0,
-            noClaimsCount: 0,
-            noViolationsCount: 0
-          }
-        },
-        raw: {
-          reports: {}
-        }
-      };
-
-      function firstNonEmpty(values) {
-        for (let i = 0; i < values.length; i++) {
-          const value = U.cleanString(values[i]);
-          if (value) return value;
-        }
-        return '';
-      }
-
-      function mapDisputed(value) {
-        const bool = U.boolFromErie(value);
-        if (bool != null) return bool;
-        const s = U.cleanString(value).toLowerCase();
-        return s === 'y' || s === 'yes' || s === '1';
-      }
-
-      function mapReportRow(row) {
-        const r = row || {};
-        return {
-          listSequenceId: firstNonEmpty([r.ListSequenceId, r.ListSequenceID, r.listSequenceId, r.Id, r.ID]),
-          viewType: firstNonEmpty([r.ViewType, r.viewType]),
-          name: firstNonEmpty([r.Name, r.DriverName, r.InsuredName, r.FullName]),
-          driverType: firstNonEmpty([r.DriverType, r.DriverTypeDescription]),
-          reportType: firstNonEmpty([r.ReportType, r.ReportTypeDescription, r.Type]),
-          policyDescription: firstNonEmpty([r.PolicyDescription, r.PolicyDesc, r.Policy]),
-          reportDate: firstNonEmpty([r.ReportDate, r.Date]),
-          statusType: firstNonEmpty([r.StatusType, r.Status, r.Result]),
-          eventDate: firstNonEmpty([r.EventDate, r.ClaimDate, r.ViolationDate]),
-          amount: firstNonEmpty([r.Amount, r.LossAmount]),
-          score: firstNonEmpty([r.Score, r.InsuranceScore]),
-          indicatedTier: firstNonEmpty([r.IndicatedTier, r.Tier]),
-          disputed: mapDisputed(
-            firstNonEmpty([r.Disputed, r.IsDisputed, r.IsDisputedClaim, r.disputed])
-          )
-        };
-      }
-
-      function createSummary(rows) {
-        const summary = {
-          hasInsuranceScore: false,
-          hasClue: false,
-          hasMvr: false,
-          insuranceScoreCount: 0,
-          clueCount: 0,
-          mvrCount: 0,
-          hitCount: 0,
-          noClaimsCount: 0,
-          noViolationsCount: 0
-        };
-
-        (rows || []).forEach(function (row) {
-          const reportType = U.upper(row && row.reportType || '');
-          const statusType = U.upper(row && row.statusType || '');
-
-          if (reportType.indexOf('INSURANCE SCORE') >= 0) {
-            summary.insuranceScoreCount++;
-          }
-          if (reportType.indexOf('CLUE') >= 0) {
-            summary.clueCount++;
-          }
-          if (reportType.indexOf('MVR') >= 0) {
-            summary.mvrCount++;
-          }
-          if (statusType === 'HIT') {
-            summary.hitCount++;
-          }
-          if (statusType.indexOf('NO CLAIMS') >= 0) {
-            summary.noClaimsCount++;
-          }
-          if (statusType.indexOf('NO VIOLATIONS') >= 0) {
-            summary.noViolationsCount++;
-          }
-        });
-
-        summary.hasInsuranceScore = summary.insuranceScoreCount > 0;
-        summary.hasClue = summary.clueCount > 0;
-        summary.hasMvr = summary.mvrCount > 0;
-
-        return summary;
-      }
-
-      function extractRowsFromDomFallback() {
-        const tables = U.safeQueryAll('table[id*="Report"], table[class*="Report"], table[id*="report"], table[class*="report"]');
-        if (!tables.length) return [];
-
-        for (let t = 0; t < tables.length; t++) {
-          const table = tables[t];
-          const headerCells = Array.from(table.querySelectorAll('thead th'));
-          const headers = headerCells.map(function (th) { return U.upper(th.textContent || ''); });
-
-          if (!headers.length) continue;
-
-          const bodyRows = Array.from(table.querySelectorAll('tbody tr'));
-          if (!bodyRows.length) continue;
-
-          function findHeaderIndex(tokens) {
-            for (let i = 0; i < headers.length; i++) {
-              for (let j = 0; j < tokens.length; j++) {
-                if (headers[i].indexOf(tokens[j]) >= 0) return i;
-              }
-            }
-            return -1;
-          }
-
-          const idx = {
-            listSequenceId: findHeaderIndex(['LIST SEQUENCE', 'SEQUENCE', 'LIST ID']),
-            viewType: findHeaderIndex(['VIEW TYPE']),
-            name: findHeaderIndex(['NAME', 'DRIVER']),
-            driverType: findHeaderIndex(['DRIVER TYPE']),
-            reportType: findHeaderIndex(['REPORT TYPE', 'TYPE']),
-            policyDescription: findHeaderIndex(['POLICY DESCRIPTION', 'POLICY']),
-            reportDate: findHeaderIndex(['REPORT DATE', 'DATE']),
-            statusType: findHeaderIndex(['STATUS']),
-            eventDate: findHeaderIndex(['EVENT DATE', 'CLAIM DATE', 'VIOLATION DATE']),
-            amount: findHeaderIndex(['AMOUNT']),
-            score: findHeaderIndex(['SCORE']),
-            indicatedTier: findHeaderIndex(['TIER']),
-            disputed: findHeaderIndex(['DISPUTED'])
-          };
-
-          const rows = bodyRows.map(function (tr) {
-            const cells = Array.from(tr.querySelectorAll('td')).map(function (td) {
-              return U.cleanString(td.textContent || td.innerText || '');
-            });
-
-            function cell(i) {
-              return i >= 0 ? U.cleanString(cells[i] || '') : '';
-            }
-
-            return mapReportRow({
-              ListSequenceId: cell(idx.listSequenceId),
-              ViewType: cell(idx.viewType),
-              Name: cell(idx.name),
-              DriverType: cell(idx.driverType),
-              ReportType: cell(idx.reportType),
-              PolicyDescription: cell(idx.policyDescription),
-              ReportDate: cell(idx.reportDate),
-              StatusType: cell(idx.statusType),
-              EventDate: cell(idx.eventDate),
-              Amount: cell(idx.amount),
-              Score: cell(idx.score),
-              IndicatedTier: cell(idx.indicatedTier),
-              Disputed: cell(idx.disputed)
-            });
-          }).filter(function (row) {
-            return !!(
-              row &&
-              (
-                row.listSequenceId ||
-                row.reportType ||
-                row.name ||
-                row.statusType ||
-                row.reportDate
-              )
-            );
-          });
-
-          if (rows.length) return rows;
-        }
-
-        return [];
-      }
-
-      const model = Readers.findReportsData();
-      const modelRows = model && Array.isArray(model.ReportGrid) ? model.ReportGrid : null;
-
-      if (modelRows) {
-        partial.raw.reports.model = model;
-        partial.reports.rows = modelRows.map(mapReportRow);
-        partial.reports.summary = createSummary(partial.reports.rows);
-        U.debug('Erie Master Extractor Reports V1 rows:', partial.reports.rows.length);
-        return partial;
-      }
-
-      U.debug('Erie Master Extractor Reports V1: no ReportGrid model found; trying DOM fallback.');
-
-      const fallbackRows = extractRowsFromDomFallback();
-      if (fallbackRows.length) {
-        partial.raw.reports.domFallback = {
-          extractedRows: fallbackRows.length
-        };
-      }
-
-      partial.reports.rows = fallbackRows;
-      partial.reports.summary = createSummary(partial.reports.rows);
-      U.debug('Erie Master Extractor Reports V1 rows (fallback):', partial.reports.rows.length);
-
-      return partial;
-    },
-
-    dwelling(ctx) {
-      const vm = Readers.findDwellingVM();
-
-      function radioValue(name) {
-        const checked = U.safeQuery('input[type="radio"][name="' + name + '"]:checked');
-        if (!checked) return '';
-
-        const raw = U.cleanString(checked.value);
-        if (/^(true|yes|y|1)$/i.test(raw)) return 'Yes';
-        if (/^(false|no|n|0)$/i.test(raw)) return 'No';
-
-        const label = checked.closest('label');
-        if (label) {
-          const labelText = U.cleanString(label.textContent || label.innerText || '');
-          if (labelText) return labelText;
-        }
-
-        const td = checked.closest('td');
-        if (td) {
-          const yesNoLabels = Array.from(td.querySelectorAll('label')).map(function (el) {
-            return U.cleanString(el.textContent || el.innerText || '');
-          }).filter(Boolean);
-          if (yesNoLabels.length) return raw;
-        }
-
-        return raw;
-      }
-
-      function checkboxValue(selector) {
-        const el = U.safeQuery(selector);
-        if (!el) return '';
-        return !!el.checked;
-      }
-
-      function textOrInputValue(selector) {
-        const el = U.safeQuery(selector);
-        if (!el) return '';
-        if ('value' in el) return U.cleanString(el.value);
-        return U.cleanString(el.textContent || el.innerText || '');
-      }
-
-      function selectValue(selector) {
-        const el = U.safeQuery(selector);
-        if (!el) return '';
-        if (el.tagName === 'SELECT') {
-          if (el.selectedIndex >= 0) {
-            return U.cleanString(el.options[el.selectedIndex].text || el.value || '');
-          }
-          return U.cleanString(el.value || '');
-        }
-        return U.cleanString(el.textContent || el.innerText || '');
-      }
-
-      function radioYesNo(name) {
-        const val = radioValue(name);
-        if (!val) return '';
-        if (/^(true|yes|y|1)$/i.test(val)) return 'Yes';
-        if (/^(false|no|n|0)$/i.test(val)) return 'No';
-        return val;
-      }
-
-      function addressBlock() {
-        let host = U.safeQuery('#LocationAddress');
-
-        if (!host) {
-          const rows = U.safeQueryAll('table.FormTable tr');
-          for (let i = 0; i < rows.length; i++) {
-            const row = rows[i];
-            const firstCell = row.querySelector('td');
-            if (!firstCell) continue;
-
-            const labelText = U.cleanString(firstCell.textContent || firstCell.innerText || '');
-            if (labelText.indexOf('Location Address') !== -1) {
-              const cells = row.querySelectorAll('td');
-              if (cells.length > 1) {
-                host = cells[1].querySelector('.dataDisplay') || cells[1];
-                break;
-              }
-            }
-          }
-        }
-
-        if (!host) {
-          return {
-            full: '',
-            line1: '',
-            line2: '',
-            city: '',
-            state: '',
-            zip: '',
-            zipPlus4: ''
-          };
-        }
-
-        const raw = host.innerText || host.textContent || '';
-        const lines = raw
-          .split(/\n+/)
-          .map(function (s) { return U.cleanString(s); })
-          .filter(Boolean);
-
-        let line1 = '';
-        let line2 = '';
-        let city = '';
-        let state = '';
-        let zip = '';
-        let zipPlus4 = '';
-
-        if (lines.length) {
-          line1 = lines[0] || '';
-        }
-
-        if (lines.length >= 2) {
-          const cityLine = U.cleanString(lines[1] || '');
-          const stateLine = U.cleanString(lines[2] || '');
-          const zipLine = U.cleanString(lines[3] || '');
-          const plus4Line = U.cleanString(lines[4] || '');
-
-          if (cityLine && stateLine && zipLine) {
-            city = cityLine.replace(/,$/, '');
-            state = stateLine.toUpperCase();
-            zip = (zipLine.match(/\d{5}/) || [''])[0];
-            zipPlus4 = (plus4Line.match(/\d{4}/) || [''])[0];
-          } else {
-            const joined = U.cleanString(lines.slice(1).join(' '));
-            const m = joined.match(/^(.*?),\s*([A-Z]{2})\s+(\d{5})(?:\s*-\s*(\d{4}))?$/i);
-            if (m) {
-              city = U.cleanString(m[1]);
-              state = U.cleanString(m[2]).toUpperCase();
-              zip = U.cleanString(m[3]);
-              zipPlus4 = U.cleanString(m[4] || '');
-            }
-          }
-        }
-
-        let full = U.cleanString(raw);
-
-        if (!full) {
-          const cityStateZip = city && state && zip
-            ? city + ', ' + state + ' ' + zip + (zipPlus4 ? '-' + zipPlus4 : '')
-            : [city, state, zip].filter(Boolean).join(' ');
-
-          full = [line1, line2, cityStateZip]
-            .filter(Boolean)
-            .join(' ')
-            .replace(/\s+-\s+/g, ' - ');
-        }
-
-        return {
-          full: U.cleanString(full),
-          line1: line1,
-          line2: line2,
-          city: city,
-          state: state,
-          zip: zip,
-          zipPlus4: zipPlus4
-        };
-      }
-
-      const addr = addressBlock();
-
-      const domFields = {
-        homePolicyType: U.inputValue('#CurrentHomePolicy') || U.inputValue('#HomePolicyType'),
-        locationAddressText: addr.full,
-        locationAddressLine1: addr.line1,
-        locationAddressLine2: addr.line2,
-        locationCity: addr.city,
-        locationState: addr.state,
-        locationZip: addr.zip,
-        locationZipPlus4: addr.zipPlus4,
-        locationCounty: selectValue('#LocationAddress_CountyNumericCode') || selectValue('select[name="LocationAddress.CountyNumericCode"]'),
-        mailDeclarationToAgency: checkboxValue('#ShouldMailToAgent') || checkboxValue('input[name="ShouldMailToAgent"]'),
-
-        constructionYear: U.inputValue('#ConstructionYear') || U.inputValue('input[name="ConstructionYear"]'),
-        livingArea: U.inputValue('#txtLivingArea') || U.inputValue('input[name="LivingArea"]'),
-        numberOfFamilies: selectValue('#NumberOfFamilies') || selectValue('select[name="NumberOfFamilies"]'),
-        constructionType: selectValue('#ConstructionType') || selectValue('select[name="ConstructionType"]'),
-        dwellingStyle: selectValue('#MSBModalDropdown') || selectValue('#DwellingStyle') || selectValue('select[name="DwellingStyle"]'),
-        alarm: radioYesNo('HasAlarm') || radioYesNo('Alarm'),
-        sprinklerSystem: radioYesNo('HasSprinklers') || radioYesNo('HasSprinklerSystem') || radioYesNo('SprinklerSystem'),
-        swimmingPool: radioYesNo('HasSwimmingPool') || radioYesNo('SwimmingPool'),
-
-        distanceToFireHydrant: selectValue('#DistanceToFireHydrant') || selectValue('select[name="DistanceToFireHydrant"]'),
-        distanceToFireDepartment: selectValue('#DistanceToFireStation') || selectValue('select[name="DistanceToFireStation"]'),
-        protectionClass: selectValue('#ProtectionClass') || selectValue('select[name="ProtectionClass"]'),
-
-        roofInstallationYear: U.inputValue('#RoofInstallationYear') || U.inputValue('input[name="RoofInstallationYear"]'),
-        roofMaterial: selectValue('#roofMaterialTypeDropdown') || selectValue('select[name="RoofMaterialType"]'),
-        manuallyEnteredOtherRoofMaterial: U.inputValue('#txtManuallyEnteredOtherRoofMaterial') || U.inputValue('input[name="ManuallyEnteredOtherRoofMaterial"]'),
-        acvWindHailRoofSurfacing: selectValue('#HasRoofSurfacesWindHail') || selectValue('select[name="HasRoofSurfacesWindHail"]'),
-
-        dwellingLossSettlement: selectValue('#DwellingLossSettlement') || selectValue('select[name="DwellingLossSettlement"]'),
-        dwellingPerils: selectValue('#DwellingPerils') || selectValue('select[name="DwellingPerils"]'),
-
-        personalPropertyLossSettlement: selectValue('#PersonalPropertyLossSettlement') || selectValue('select[name="PersonalPropertyLossSettlement"]'),
-        personalPropertyPerils: selectValue('#PersonalPropertyPerils') || selectValue('select[name="PersonalPropertyPerils"]'),
-
-        usedHighValueVendor: checkboxValue('#UsedHighValueVendor'),
-        homeCostEstimatorAction: selectValue('#msbAction') || selectValue('select[name="msbAction"]'),
-
-        dwellingAmount: U.inputValue('#DwellingAmount') || U.inputValue('input[name="DwellingAmount"]'),
-        otherStructuresValue: U.inputValue('#OtherStructuresValue') || U.inputValue('input[name="OtherStructuresValue"]'),
-        personalPropertyValue: U.inputValue('#PersonalPropertyValue') || U.inputValue('input[name="PersonalPropertyValue"]'),
-        lossOfUseValue: U.inputValue('#LossOfUseValue') || U.inputValue('input[name="LossOfUseValue"]'),
-
-        riskState: U.inputValue('#RiskState'),
-        hasWindHailExclusionEndorsement: U.inputValue('#HasWindHailExclusionEndorsement'),
-        inquiryHasStormMitigation: U.inputValue('#InquiryHasStormMitigation')
-      };
-
-      const normalized = {
-        policyType: domFields.homePolicyType,
-        address: {
-          full: domFields.locationAddressText,
-          line1: domFields.locationAddressLine1,
-          line2: domFields.locationAddressLine2,
-          city: domFields.locationCity,
-          state: domFields.locationState,
-          zip: domFields.locationZip,
-          zipPlus4: domFields.locationZipPlus4,
-          county: domFields.locationCounty
-        },
-        options: {
-          mailDeclarationToAgency: domFields.mailDeclarationToAgency,
-          swimmingPool: domFields.swimmingPool,
-          alarm: domFields.alarm,
-          sprinklerSystem: domFields.sprinklerSystem,
-          usedHighValueVendor: domFields.usedHighValueVendor,
-          homeCostEstimatorAction: domFields.homeCostEstimatorAction,
-          acvWindHailRoofSurfacing: domFields.acvWindHailRoofSurfacing
-        },
-        structure: {
-          yearBuilt: domFields.constructionYear,
-          squareFeet: domFields.livingArea,
-          numberOfFamilies: domFields.numberOfFamilies,
-          constructionType: domFields.constructionType,
-          dwellingStyle: domFields.dwellingStyle,
-          protectionClass: domFields.protectionClass
-        },
-        fireProtection: {
-          distanceToFireHydrant: domFields.distanceToFireHydrant,
-          distanceToFireDepartment: domFields.distanceToFireDepartment
-        },
-        roof: {
-          installationYear: domFields.roofInstallationYear,
-          material: domFields.roofMaterial,
-          manuallyEnteredOtherRoofMaterial: domFields.manuallyEnteredOtherRoofMaterial
-        },
-        coverages: {
-          dwellingLossSettlement: domFields.dwellingLossSettlement,
-          dwellingPerils: domFields.dwellingPerils,
-          personalPropertyLossSettlement: domFields.personalPropertyLossSettlement,
-          personalPropertyPerils: domFields.personalPropertyPerils,
-          dwellingAmount: U.normalizeMoney(domFields.dwellingAmount),
-          otherStructuresAmount: U.normalizeMoney(domFields.otherStructuresValue),
-          personalPropertyAmount: U.normalizeMoney(domFields.personalPropertyValue),
-          lossOfUseAmount: U.normalizeMoney(domFields.lossOfUseValue)
-        },
-        hiddenFlags: {
-          riskState: domFields.riskState,
-          hasWindHailExclusionEndorsement: domFields.hasWindHailExclusionEndorsement,
-          inquiryHasStormMitigation: domFields.inquiryHasStormMitigation
-        }
-      };
-
-      return {
-        meta: {
-          currentPageType: 'dwelling'
-        },
-        dwelling: normalized,
-        raw: {
-          dwelling: {
-            serverViewModelData: vm || null,
-            domFields: domFields
-          }
-        }
-      };
-    },
-  };
-
-  // -----------------------------
-  // Merge
-  // -----------------------------
-  const Merge = {
-    mergeScalar(target, key, incoming, opts) {
-      const existing = target[key];
-      target[key] = U.betterScalar(existing, incoming, opts || {});
-    },
-
-    mergeAddress(target, incoming) {
-      if (!incoming) return;
-      const keys = ['full', 'line1', 'line2', 'city', 'state', 'zip', 'zipPlus4', 'county'];
-      keys.forEach(function (k) {
-        Merge.mergeScalar(target, k, incoming[k], {});
-      });
-    },
-
-    mergeCustomer(payload, incoming) {
-      if (!incoming) return;
-      const t = payload.customer;
-
-      [
-        'fullName', 'firstName', 'middleName', 'lastName', 'suffix',
-        'dob', 'email', 'maritalStatus', 'gender'
-      ].forEach(function (k) {
-        Merge.mergeScalar(t, k, incoming[k], {});
-      });
-
-      ['mobile', 'home', 'work'].forEach(function (k) {
-        Merge.mergeScalar(t.phone, k, incoming.phone && incoming.phone[k], {});
-      });
-
-      Merge.mergeAddress(t.mailingAddress, incoming.mailingAddress || {});
-      Merge.mergeAddress(t.residenceAddress, incoming.residenceAddress || {});
-
-      const ci = incoming.currentInsurance || {};
-      const ti = t.currentInsurance;
-      ['currentAutoInsurer', 'priorAutoEriePolicyNumber', 'autoPriorBILimits', 'rewriteSpinoff'].forEach(function (k) {
-        Merge.mergeScalar(ti, k, ci[k], {});
-      });
-
-      t.sourceKeys = Object.assign({}, t.sourceKeys, incoming.sourceKeys || {});
-    },
-
-    mergeNamedInsureds(payload, incomingList) {
-      if (!Array.isArray(incomingList)) return;
-
-      incomingList.forEach(function (person) {
-        const key = [
-          U.upper(person.firstName),
-          U.upper(person.lastName),
-          U.cleanString(person.dob)
-        ].join('|');
-
-        let existing = payload.namedInsureds.find(function (p) {
-          const pKey = [
-            U.upper(p.firstName),
-            U.upper(p.lastName),
-            U.cleanString(p.dob)
-          ].join('|');
-          return pKey === key;
-        });
-
-        if (!existing) {
-          payload.namedInsureds.push(U.clone(person));
-          return;
-        }
-
-        ['fullName', 'firstName', 'middleName', 'lastName', 'suffix', 'dob', 'gender', 'maritalStatus', 'relationshipToNamedInsured', 'email'].forEach(function (k) {
-          Merge.mergeScalar(existing, k, person[k], {});
-        });
-
-        Merge.mergeScalar(existing.license, 'number', person.license && person.license.number, {
-          existingSourceRank: 50,
-          incomingSourceRank: 100
-        });
-        Merge.mergeScalar(existing.license, 'state', person.license && person.license.state, {});
-        Merge.mergeScalar(existing.license, 'dateFirstLicensed', person.license && person.license.dateFirstLicensed, {});
-        Merge.mergeScalar(existing, 'ssn', person.ssn, {
-          existingSourceRank: 50,
-          incomingSourceRank: 100
-        });
-
-        ['mobile', 'home', 'work'].forEach(function (k) {
-          Merge.mergeScalar(existing.phone, k, person.phone && person.phone[k], {});
-        });
-
-        existing.sourceKeys = Object.assign({}, existing.sourceKeys, person.sourceKeys || {});
-        existing.isPrimary = existing.isPrimary || person.isPrimary;
-        existing.isSecondary = existing.isSecondary || person.isSecondary;
-      });
-    },
-
-    mergeDrivers(payload, incomingDrivers) {
-      if (!Array.isArray(incomingDrivers)) return;
-
-      incomingDrivers.forEach(function (d) {
-        const matchKey = d.matchKey || U.makeDriverMatchKey(d);
-
-        let existing = payload.drivers.find(function (x) {
-          return x.matchKey === matchKey ||
-            (d.driverId && x.driverId && U.cleanString(x.driverId) === U.cleanString(d.driverId)) ||
-            (d.sourceKeys && d.sourceKeys.erieId && x.sourceKeys && x.sourceKeys.erieId && U.cleanString(x.sourceKeys.erieId) === U.cleanString(d.sourceKeys.erieId));
-        });
-
-        if (!existing) {
-          const copy = U.clone(d);
-          copy.matchKey = matchKey;
-          payload.drivers.push(copy);
-          return;
-        }
-
-        [
-          'driverId', 'role', 'relationshipToNamedInsured', 'fullName', 'firstName',
-          'middleName', 'lastName', 'suffix', 'dob', 'gender', 'maritalStatus',
-          'ssn', 'occupation', 'education', 'driverTraining', 'sr22',
-          'goodStudent', 'distantStudent'
-        ].forEach(function (k) {
-          Merge.mergeScalar(existing, k, d[k], {});
-        });
-
-        existing.isNamedInsured = existing.isNamedInsured || d.isNamedInsured;
-        existing.isExcluded = existing.isExcluded || d.isExcluded;
-        existing.isHouseholdMember = existing.isHouseholdMember || d.isHouseholdMember;
-
-        Merge.mergeScalar(existing.license, 'number', d.license && d.license.number, {
-          existingSourceRank: U.sourceRank('inline-viewData'),
-          incomingSourceRank: U.sourceRank('inline-viewData')
-        });
-        Merge.mergeScalar(existing.license, 'state', d.license && d.license.state, {});
-        Merge.mergeScalar(existing.license, 'status', d.license && d.license.status, {});
-        Merge.mergeScalar(existing.license, 'dateFirstLicensed', d.license && d.license.dateFirstLicensed, {});
-
-        ['mobile', 'home', 'work'].forEach(function (k) {
-          Merge.mergeScalar(existing.phone, k, d.phone && d.phone[k], {});
-        });
-
-        existing.sourceKeys = Object.assign({}, existing.sourceKeys, d.sourceKeys || {});
-        existing.matchKey = U.makeDriverMatchKey(existing);
-      });
-    },
-
-    mergeVehicles(payload, incomingVehicles) {
-      if (!Array.isArray(incomingVehicles)) return;
-
-      incomingVehicles.forEach(function (v) {
-        const matchKey = v.matchKey || U.makeVehicleMatchKey(v);
-
-        let existing = payload.vehicles.find(function (x) {
-          return x.matchKey === matchKey ||
-            (v.vehicleId && x.vehicleId && U.cleanString(x.vehicleId) === U.cleanString(v.vehicleId));
-        });
-
-        if (!existing) {
-          const copy = U.clone(v);
-          copy.matchKey = matchKey;
-          payload.vehicles.push(copy);
-          return;
-        }
-
-        [
-          'vehicleId', 'unitNumber', 'year', 'make', 'model', 'trim', 'style',
-          'bodyType', 'doors', 'restraintType', 'use', 'annualMiles', 'commuteMiles',
-          'ownership', 'primaryOperator'
-        ].forEach(function (k) {
-          Merge.mergeScalar(existing, k, v[k], {});
-        });
-
-        Merge.mergeScalar(existing, 'vin', v.vin, {
-          existingSourceRank: U.looksMasked(existing.vin) ? 0 : 100,
-          incomingSourceRank: U.looksMasked(v.vin) ? 0 : 100
-        });
-        Merge.mergeScalar(existing, 'vinMaskedTail', v.vinMaskedTail, {});
-        existing.sourceKeys = Object.assign({}, existing.sourceKeys, v.sourceKeys || {});
-        existing.matchKey = U.makeVehicleMatchKey(existing);
-      });
-    },
-
-    mergeCoverages(payload, incomingCoverages) {
-      if (!incomingCoverages) return;
-
-      const p = payload.coverages.policy;
-      const i = incomingCoverages.policy || {};
-
-      ['effectiveDate', 'payPlan', 'riskState'].forEach(function (k) {
-        Merge.mergeScalar(p, k, i[k], {});
-      });
-
-      if (Array.isArray(i.lineOfBusinessList)) {
-        i.lineOfBusinessList.forEach(function (lob) {
-          U.pushUnique(p.lineOfBusinessList, lob);
-        });
-      }
-
-      if (Array.isArray(i.policyCoverages) && i.policyCoverages.length) {
-        p.policyCoverages = U.clone(i.policyCoverages);
-      }
-
-      if (Array.isArray(i.coveragesThatOnlyAppearOncePremiums) && i.coveragesThatOnlyAppearOncePremiums.length) {
-        p.coveragesThatOnlyAppearOncePremiums = U.clone(i.coveragesThatOnlyAppearOncePremiums);
-      }
-
-      if (Array.isArray(incomingCoverages.vehicleCoverages)) {
-        const normalizedVehicleCoverages = incomingCoverages.vehicleCoverages.map(function (vc) {
-          const copy = U.clone(vc);
-          const vehicle = payload.vehicles.find(function (v) {
-            return U.cleanString(v.vehicleId) === U.cleanString(copy.vehicleId);
-          });
-
-          if (!vehicle) {
-            const matchedByDescription = U.matchVehicleByDescription(copy.vehicleDescription, payload.vehicles);
-            if (matchedByDescription && matchedByDescription.vehicleId) {
-              copy.vehicleId = U.cleanString(matchedByDescription.vehicleId);
-            }
-          }
-
-          return copy;
-        });
-
-        payload.coverages.vehicleCoverages = U.clone(normalizedVehicleCoverages);
-
-        normalizedVehicleCoverages.forEach(function (vc) {
-          const vehicle = payload.vehicles.find(function (v) {
-            return U.cleanString(v.vehicleId) === U.cleanString(vc.vehicleId);
-          });
-          if (vehicle) {
-            vehicle.coverages = U.clone(vc.coverages || []);
-            if (Array.isArray(vc.discounts)) {
-              vehicle.discounts = U.clone(vc.discounts);
-            }
-            if (vc.premium != null) {
-              vehicle.coveragePremium = vc.premium;
-            }
-            if (vc.premium2 != null) {
-              vehicle.coveragePremium2 = vc.premium2;
-            }
-          }
-        });
-      }
-
-      if (Array.isArray(payload.coverages.vehicleCoverages)) {
-        payload.coverages.vehicleCoverages.forEach(function (group) {
-          const vehicle = payload.vehicles.find(function (v) {
-            return String(v.vehicleId) === String(group.vehicleId);
-          });
-
-          if (vehicle) {
-            vehicle.coverages = group.coverages || [];
-            vehicle.discounts = group.discounts || [];
-            vehicle.coveragePremium = group.premium;
-            vehicle.coveragePremium2 = group.premium2;
-          }
-        });
-      }
-    },
-
-    // Reports V1: additive merge, isolated from existing sections.
-    mergeReports(payload, incomingReports) {
-      if (!incomingReports) return;
-
-      const defaultSummary = {
-        hasInsuranceScore: false,
-        hasClue: false,
-        hasMvr: false,
-        insuranceScoreCount: 0,
-        clueCount: 0,
-        mvrCount: 0,
-        hitCount: 0,
-        noClaimsCount: 0,
-        noViolationsCount: 0
-      };
-
-      payload.reports = payload.reports || {
-        rows: [],
-        summary: U.clone(defaultSummary)
-      };
-
-      if (Array.isArray(incomingReports.rows)) {
-        payload.reports.rows = U.clone(incomingReports.rows);
-      }
-
-      payload.reports.summary = Object.assign(
-        {},
-        defaultSummary,
-        payload.reports.summary || {},
-        incomingReports.summary || {}
-      );
-    },
-
-    mergeDwelling(payload, incoming) {
-      if (!incoming) return;
-
-      payload.dwelling = payload.dwelling || {};
-
-      Merge.mergeScalar(payload.dwelling, 'policyType', incoming.policyType, {});
-
-      payload.dwelling.address = payload.dwelling.address || {};
-      if (incoming.address) {
-        if (!incoming.address.full) {
-          incoming.address.full = [
-            incoming.address.line1,
-            incoming.address.line2,
-            incoming.address.city && incoming.address.state && incoming.address.zip
-              ? (incoming.address.city + ', ' + incoming.address.state + ' ' + incoming.address.zip + (incoming.address.zipPlus4 ? '-' + incoming.address.zipPlus4 : ''))
-              : [incoming.address.city, incoming.address.state, incoming.address.zip].filter(Boolean).join(' ')
-          ].filter(Boolean).join(' ');
-        }
-      }
-      Merge.mergeAddress(payload.dwelling.address, incoming.address || {});
-
-      payload.dwelling.options = payload.dwelling.options || {};
-      [
-        'mailDeclarationToAgency',
-        'swimmingPool',
-        'alarm',
-        'sprinklerSystem',
-        'usedHighValueVendor',
-        'homeCostEstimatorAction',
-        'acvWindHailRoofSurfacing'
-      ].forEach(function (k) {
-        Merge.mergeScalar(payload.dwelling.options, k, incoming.options && incoming.options[k], {});
-      });
-
-      payload.dwelling.structure = payload.dwelling.structure || {};
-      [
-        'yearBuilt',
-        'squareFeet',
-        'numberOfFamilies',
-        'constructionType',
-        'dwellingStyle',
-        'protectionClass'
-      ].forEach(function (k) {
-        Merge.mergeScalar(payload.dwelling.structure, k, incoming.structure && incoming.structure[k], {});
-      });
-
-      payload.dwelling.fireProtection = payload.dwelling.fireProtection || {};
-      [
-        'distanceToFireHydrant',
-        'distanceToFireDepartment'
-      ].forEach(function (k) {
-        Merge.mergeScalar(payload.dwelling.fireProtection, k, incoming.fireProtection && incoming.fireProtection[k], {});
-      });
-
-      payload.dwelling.roof = payload.dwelling.roof || {};
-      [
-        'installationYear',
-        'material',
-        'manuallyEnteredOtherRoofMaterial'
-      ].forEach(function (k) {
-        Merge.mergeScalar(payload.dwelling.roof, k, incoming.roof && incoming.roof[k], {});
-      });
-
-      payload.dwelling.coverages = payload.dwelling.coverages || {};
-      [
-        'dwellingLossSettlement',
-        'dwellingPerils',
-        'personalPropertyLossSettlement',
-        'personalPropertyPerils',
-        'dwellingAmount',
-        'otherStructuresAmount',
-        'personalPropertyAmount',
-        'lossOfUseAmount'
-      ].forEach(function (k) {
-        Merge.mergeScalar(payload.dwelling.coverages, k, incoming.coverages && incoming.coverages[k], {});
-      });
-
-      payload.dwelling.hiddenFlags = payload.dwelling.hiddenFlags || {};
-      [
-        'riskState',
-        'hasWindHailExclusionEndorsement',
-        'inquiryHasStormMitigation'
-      ].forEach(function (k) {
-        Merge.mergeScalar(payload.dwelling.hiddenFlags, k, incoming.hiddenFlags && incoming.hiddenFlags[k], {});
-      });
-    },
-    
-    mergeMeta(payload, ctx, partial) {
-      payload.meta.currentPageType = ctx.pageType || payload.meta.currentPageType;
-      payload.meta.coverageSubType = ctx.coverageSubType || payload.meta.coverageSubType;
-      const allowedPages = ['customer', 'drivers', 'vehicles', 'coverages', 'reports', 'dwelling'];
-      if (allowedPages.includes(ctx.pageType)) {
-        U.pushUnique(payload.meta.visitedPages, ctx.pageType + (ctx.coverageSubType ? ':' + ctx.coverageSubType : ''));
-      }
-      U.pushUnique(payload.meta.sourceUrls, ctx.url);
-      U.pushUnique(payload.meta.pageTitles, ctx.title);
-
-      if (partial && partial.meta) {
-        ['policyNumber', 'effectiveDate', 'expirationDate', 'routeGuid'].forEach(function (k) {
-          if (partial.meta[k]) payload.meta[k] = partial.meta[k];
-        });
-
-        if (Array.isArray(partial.meta.products)) {
-          partial.meta.products.forEach(function (p) {
-            U.pushUnique(payload.meta.products, p);
-          });
-        }
-
-        if (partial.meta.riskState && !payload.coverages.policy.riskState) {
-          payload.coverages.policy.riskState = partial.meta.riskState;
-        }
-      }
-    },
-
-    mergeRaw(payload, partial) {
-      if (!partial.raw) return;
-      payload.raw = payload.raw || {};
-
-      Object.keys(partial.raw).forEach(function (k) {
-        payload.raw[k] = Object.assign({}, payload.raw[k] || {}, partial.raw[k] || {});
-      });
-    },
-
-    audit(payload, ctx, partial) {
-      payload.sourceAudit.push({
-        timestamp: U.nowIso(),
-        pageType: ctx.pageType,
-        coverageSubType: ctx.coverageSubType || '',
-        url: ctx.url,
-        summary: {
-          namedInsureds: partial.namedInsureds ? partial.namedInsureds.length : 0,
-          drivers: partial.drivers ? partial.drivers.length : 0,
-          vehicles: partial.vehicles ? partial.vehicles.length : 0,
-          reportsRows: partial.reports && Array.isArray(partial.reports.rows) ? partial.reports.rows.length : 0,
-          hasCoverages: !!partial.coverages
-        }
-      });
-    },
-
-    apply(payload, ctx, partial) {
-      Merge.mergeMeta(payload, ctx, partial);
-
-      if (partial.customer) Merge.mergeCustomer(payload, partial.customer);
-      if (partial.namedInsureds) Merge.mergeNamedInsureds(payload, partial.namedInsureds);
-      if (partial.drivers) Merge.mergeDrivers(payload, partial.drivers);
-      if (partial.vehicles) Merge.mergeVehicles(payload, partial.vehicles);
-      if (partial.coverages) Merge.mergeCoverages(payload, partial.coverages);
-      if (partial.reports) Merge.mergeReports(payload, partial.reports);
-      if (partial.dwelling) Merge.mergeDwelling(payload, partial.dwelling);
-
-      Merge.mergeRaw(payload, partial);
-      Merge.audit(payload, ctx, partial);
-    }
-  };
-
-  // -----------------------------
-  // App actions
-  // -----------------------------
-  const Actions = {
-    harvestState: {
-      running: false,
-      total: 0,
-      current: 0,
-      harvested: 0,
-      skipped: 0
-    },
-
-    collectCurrentPage(opts) {
-      opts = opts || {};
-      const ctx = Detector.detect();
-      const payload = Storage.loadPayload();
-
-      let partial = null;
-      if (ctx.pageType === 'customer') partial = Extractors.customer(ctx);
-      else if (ctx.pageType === 'drivers') partial = Extractors.drivers(ctx);
-      else if (ctx.pageType === 'vehicles') partial = Extractors.vehicles(ctx);
-      else if (ctx.pageType === 'coverages') partial = Extractors.coverages(ctx);
-      else if (ctx.pageType === 'reports') partial = Extractors.reports(ctx);
-      else if (ctx.pageType === 'dwelling') partial = Extractors.dwelling(ctx);
-      else partial = { meta: { currentPageType: 'unknown' } };
-
-      Merge.apply(payload, ctx, partial);
-      Storage.savePayload(payload);
-      UI.refresh();
-      if (!opts.silent) {
-        UI.toast('Collected: ' + ctx.pageType + (ctx.coverageSubType ? ' / ' + ctx.coverageSubType : ''));
-      }
-      U.debug('Erie Master Extractor partial:', partial);
-      U.debug('Erie Master Extractor payload:', payload);
-      return payload;
-    },
-
-    getVehicleEditControls() {
-      const tableVehicleLinks = U.safeQueryAll('table.DataTable.tableStyle a.vehicle-name').filter(function (el) {
-        return !!(el && document.contains(el));
-      });
-      if (tableVehicleLinks.length) return tableVehicleLinks;
-
-      const fallbackCandidates = U.safeQueryAll('a, button, input[type="button"], input[type="submit"]');
-      const controls = [];
-
-      fallbackCandidates.forEach(function (el) {
-        if (!el) return;
-        if (UI.panel && UI.panel.contains(el)) return;
-        if (el.disabled) return;
-
-        const text = U.upper(
-          el.value ||
-          el.textContent ||
-          el.innerText ||
-          el.getAttribute('title') ||
-          ''
-        );
-        if (text.indexOf('VIEW/EDIT') >= 0 || text.indexOf('VIEW / EDIT') >= 0) {
-          controls.push(el);
-        }
-      });
-
-      return controls;
-    },
-
-    async waitForVinChange(previousVin, timeout) {
-      timeout = timeout || 5000;
-      const start = Date.now();
-      const prior = U.cleanString(previousVin || '');
-
-      while (Date.now() - start < timeout) {
-        const el = U.safeQuery('#VIN') ||
-          U.safeQuery('input[name="VIN"]') ||
-          U.safeQuery('#VehicleIdentificationNumber');
-
-        const val = U.cleanString(el && el.value || '');
-        if (val && val !== prior) {
-          return val;
-        }
-
-        await U.delay(150);
-      }
-
-      return null;
-    },
-
-    mergeHarvestedVin(newVin, vehicleIndex) {
-      const vin = U.cleanString(newVin);
-      if (!vin || U.looksMasked(vin)) return false;
-
-      const payload = Storage.loadPayload();
-      const vehicles = Array.isArray(payload.vehicles) ? payload.vehicles : [];
-      if (!vehicles.length) return false;
-
-      function maskedTail(masked) {
-        const s = U.cleanString(masked || '').replace(/\.\.\./g, '').replace(/[^A-Za-z0-9]/g, '');
-        return s ? s.slice(-4).toUpperCase() : '';
-      }
-
-      const vinUpper = vin.toUpperCase();
-      let target = vehicles.find(function (v) {
-        const tail = maskedTail(v.vinMaskedTail);
-        return tail && vinUpper.endsWith(tail);
-      }) || null;
-
-      if (!target && vehicleIndex >= 0 && vehicleIndex < vehicles.length) {
-        target = vehicles[vehicleIndex];
-      }
-
-      if (!target) return false;
-
-      const existingVin = U.cleanString(target.vin || '');
-      if (!existingVin || U.looksMasked(existingVin)) {
-        target.vin = vin;
-      } else if (existingVin.toUpperCase() !== vinUpper) {
-        return false;
-      }
-
-      target.matchKey = U.makeVehicleMatchKey(target);
-      Storage.savePayload(payload);
-      return true;
-    },
-
-    getVinCollectionStats(payload) {
-      const p = payload || Storage.loadPayload();
-      const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
-
-      const collected = vehicles.reduce(function (count, vehicle) {
-        const vin = U.cleanString(vehicle && vehicle.vin || '');
-        return vin && !U.looksMasked(vin) ? count + 1 : count;
-      }, 0);
-
-      return {
-        collected: collected,
-        total: vehicles.length
-      };
-    },
-
-    async harvestVins() {
-      const state = Actions.harvestState;
-      if (state.running) {
-        UI.toast('VIN harvest already running');
-        return;
-      }
-
-      const ctx = Detector.detect();
-      if (ctx.pageType !== 'vehicles') {
-        UI.toast('VIN harvest only works on Vehicle page');
-        return;
-      }
-
-      state.running = true;
-      state.total = 0;
-      state.current = 0;
-      state.harvested = 0;
-      state.skipped = 0;
-      UI.refresh();
-
-      try {
-        const vehicleLinks = Actions.getVehicleEditControls();
-        if (!vehicleLinks.length) {
-          UI.toast('No vehicle edit controls found');
-          return;
-        }
-
-        state.total = vehicleLinks.length;
-        UI.refresh();
-
-        for (let i = 0; i < vehicleLinks.length; i++) {
-          state.current = i + 1;
-          UI.refresh();
-
-          const currentLinks = Actions.getVehicleEditControls();
-          const link = currentLinks[i] || vehicleLinks[i];
-          if (!link || !document.contains(link)) {
-            state.skipped++;
-            UI.toast('VIN ' + (i + 1) + '/' + state.total + ' skipped');
-            UI.refresh();
-            continue;
-          }
-
-          const vinInput = U.safeQuery('#VIN') ||
-            U.safeQuery('input[name="VIN"]') ||
-            U.safeQuery('#VehicleIdentificationNumber');
-          const previousVin = U.cleanString(vinInput && vinInput.value || '');
-
-          try {
-            link.click();
-          } catch (e) {
-            state.skipped++;
-            U.debug('VIN harvest click failed:', e);
-            UI.toast('VIN ' + (i + 1) + '/' + state.total + ' skipped');
-            UI.refresh();
-            continue;
-          }
-
-          await U.waitFor(function () {
-            return U.safeQuery('#VehicleType') || U.safeQuery('select[name="VehicleType"]');
-          }, 4000, 175);
-
-          const newVin = await Actions.waitForVinChange(previousVin, 5000);
-          if (!newVin) {
-            state.skipped++;
-            U.debug('VIN harvest skipped; VIN did not change for vehicle index', i);
-            UI.toast('VIN ' + (i + 1) + '/' + state.total + ' skipped');
-            UI.refresh();
-            await U.delay(250);
-            continue;
-          }
-
-          const merged = Actions.mergeHarvestedVin(newVin, i);
-          if (merged) {
-            state.harvested++;
-            UI.toast('VIN ' + (i + 1) + '/' + state.total + ' captured');
-          } else {
-            state.skipped++;
-            UI.toast('VIN ' + (i + 1) + '/' + state.total + ' skipped');
-          }
-
-          UI.refresh();
-          await U.delay(350);
-        }
-
-        UI.toast('VIN harvest complete');
-      } catch (e) {
-        console.error('Erie Master Extractor VIN harvest failed:', e);
-        UI.toast('VIN harvest failed');
-      } finally {
-        state.running = false;
-        state.current = 0;
-        state.total = 0;
-        UI.refresh();
-      }
-    },
-
-    copyPayload() {
-      const payload = Storage.loadPayload();
-      const text = JSON.stringify(payload, null, 2);
-      U.copyText(text).then(function () {
-        UI.toast('Master JSON copied');
-      }).catch(function () {
-        UI.toast('Copy failed');
-      });
-    },
-
-    downloadPayload() {
-      const payload = Storage.loadPayload();
-      const filename = 'erie-master-payload-' + U.pageStamp() + '.json';
-      U.downloadText(filename, JSON.stringify(payload, null, 2));
-      UI.toast('Downloaded ' + filename);
-    },
-
-    resetPayload() {
-      if (!confirm('Reset Erie master payload?')) return;
-
-      Actions.harvestState.running = false;
-      Actions.harvestState.total = 0;
-      Actions.harvestState.current = 0;
-      Actions.harvestState.harvested = 0;
-      Actions.harvestState.skipped = 0;
-
-      Storage.resetPayload();
-      UI.refresh();
-      UI.toast('Payload reset');
-    },
-
-    showSummary() {
-      const p = Storage.loadPayload();
-      Summary.showPopup(p);
-    }
-  };
-
-  // -----------------------------
-  // Summary formatter / popup
-  // -----------------------------
-  const Summary = {
-    line(label, value) {
-      const v = U.cleanString(value);
-      return label + ': ' + (v || '-');
-    },
-
-    joinAddress(addr) {
-      if (!addr) return '';
-      return [
-        U.cleanString(addr.line1),
-        U.cleanString(addr.line2),
-        U.cleanString(addr.city),
-        U.cleanString(addr.state),
-        U.cleanString(addr.zip)
-      ].filter(Boolean).join(', ');
-    },
-
-    vehicleLabel(v) {
-      return [
-        U.cleanString(v.year),
-        U.cleanString(v.make),
-        U.cleanString(v.model)
-      ].filter(Boolean).join(' ') || U.cleanString(v.vehicleId) || 'Vehicle';
-    },
-
-    coverageLabel(c) {
-      const code = U.cleanString(c && c.coverageCode || '');
-      const desc = U.cleanString(c && c.coverageDescription || '');
-      const limit = U.cleanString(c && c.coverageLimit || '');
-      return [
-        code || desc || 'Coverage',
-        limit ? ('- ' + limit) : ''
-      ].filter(Boolean).join(' ');
-    },
-
-    escHtml(value) {
-      return U.safeString(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-    },
-
-    escAttr(value) {
-      return Summary.escHtml(U.safeString(value)).replace(/\r?\n/g, '&#10;');
-    },
-
-    fieldRow(label, value, opts) {
-      const v = U.cleanString(value);
-      const allowBlank = !!(opts && opts.allowBlank);
-      if (!v && !allowBlank) return '';
-      return `
-        <div class="eme-s-row">
-          <div class="eme-s-label">${Summary.escHtml(label)}</div>
-          <div class="eme-s-value">${Summary.escHtml(v || '-')}</div>
-          <button class="eme-s-copy" data-copy="${Summary.escAttr(v || '')}" ${v ? '' : 'disabled'}>Copy</button>
-        </div>
-      `;
-    },
-
-    section(title, innerHtml, opts) {
-      opts = opts || {};
-      const id = U.cleanString(opts.id || '').replace(/[^a-zA-Z0-9\-_]/g, '');
-      const collapsed = !!opts.collapsed;
-      const bodyId = id ? ('eme-body-' + id) : '';
-      const btnId = id ? ('eme-toggle-' + id) : '';
-
-      return `
-        <section class="eme-s-section${collapsed ? ' is-collapsed' : ''}" ${id ? `id="${Summary.escAttr(id)}"` : ''}>
-          <button
-            class="eme-s-section-title eme-s-toggle"
-            type="button"
-            ${bodyId ? `data-target="${Summary.escAttr(bodyId)}"` : ''}
-            ${btnId ? `id="${Summary.escAttr(btnId)}"` : ''}
-            aria-expanded="${collapsed ? 'false' : 'true'}"
-          >
-            <span>${Summary.escHtml(title)}</span>
-            <span class="eme-s-toggle-icon">${collapsed ? '&#9656;' : '&#9662;'}</span>
-          </button>
-          <div class="eme-s-section-body${collapsed ? ' is-hidden' : ''}" ${bodyId ? `id="${Summary.escAttr(bodyId)}"` : ''}>
-            ${innerHtml || '<div class="eme-s-empty">None</div>'}
-          </div>
-        </section>
-      `;
-    },
-
-    card(title, innerHtml) {
-      return `
-        <div class="eme-s-card">
-          <div class="eme-s-card-title">${Summary.escHtml(title)}</div>
-          <div class="eme-s-card-body">${innerHtml || '<div class="eme-s-empty">None</div>'}</div>
-        </div>
-      `;
-    },
-
-    build(p) {
-      p = p || {};
-      const lines = [];
-
-      const namedInsureds = Array.isArray(p.namedInsureds) ? p.namedInsureds : [];
-      const drivers = Array.isArray(p.drivers) ? p.drivers : [];
-      const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
-      const policyCoverages = Array.isArray(p.coverages && p.coverages.policy && p.coverages.policy.policyCoverages)
-        ? p.coverages.policy.policyCoverages
-        : [];
-      const vehicleCoverageGroups = Array.isArray(p.coverages && p.coverages.vehicleCoverages)
-        ? p.coverages.vehicleCoverages
-        : [];
-      const reportsRows = Array.isArray(p.reports && p.reports.rows) ? p.reports.rows : [];
-
-      lines.push('Erie Master Extractor');
-      lines.push('Version: ' + APP.version);
-      lines.push('');
-
-      lines.push('=== OVERVIEW ===');
-      lines.push('Visited pages: ' + ((p.meta && p.meta.visitedPages || []).join(', ') || '-'));
-      lines.push('Named insureds: ' + namedInsureds.length);
-      lines.push('Drivers: ' + drivers.length);
-      lines.push('Vehicles: ' + vehicles.length);
-      lines.push('Policy coverages: ' + policyCoverages.length);
-      lines.push('Vehicle coverage groups: ' + vehicleCoverageGroups.length);
-      lines.push('Reports rows: ' + reportsRows.length);
-      lines.push('');
-
-      lines.push('=== CUSTOMER ===');
-      lines.push(Summary.line('Full name', p.customer && p.customer.fullName));
-      lines.push(Summary.line('DOB', p.customer && p.customer.dob));
-      lines.push(Summary.line('Email', p.customer && p.customer.email));
-      lines.push(Summary.line('Mobile', p.customer && p.customer.phone && p.customer.phone.mobile));
-      lines.push(Summary.line('Home', p.customer && p.customer.phone && p.customer.phone.home));
-      lines.push(Summary.line('Work', p.customer && p.customer.phone && p.customer.phone.work));
-      lines.push(Summary.line('Mailing address', Summary.joinAddress(p.customer && p.customer.mailingAddress)));
-      lines.push(Summary.line('Residence address', Summary.joinAddress(p.customer && p.customer.residenceAddress)));
-      lines.push('');
-
-      lines.push('=== NAMED INSUREDS ===');
-      if (!namedInsureds.length) {
-        lines.push('- None');
-      } else {
-        namedInsureds.forEach(function (person, i) {
-          lines.push((i + 1) + '. ' + (U.cleanString(person.fullName) || '-'));
-          lines.push('   ' + Summary.line('DOB', person.dob));
-          lines.push('   ' + Summary.line('Relationship', person.relationshipToNamedInsured));
-          lines.push('   ' + Summary.line('License', person.license && person.license.number));
-          lines.push('   ' + Summary.line('License state', person.license && person.license.state));
-          lines.push('   ' + Summary.line('SSN', person.ssn));
-          lines.push('   ' + Summary.line('Email', person.email));
-          lines.push('   ' + Summary.line('Mobile', person.phone && person.phone.mobile));
-          lines.push('   ' + Summary.line('Home', person.phone && person.phone.home));
-          lines.push('   ' + Summary.line('Work', person.phone && person.phone.work));
-        });
-      }
-      lines.push('');
-
-      lines.push('=== DRIVERS ===');
-      if (!drivers.length) {
-        lines.push('- None');
-      } else {
-        drivers.forEach(function (driver, i) {
-          lines.push((i + 1) + '. ' + (U.cleanString(driver.fullName) || '-'));
-          lines.push('   ' + Summary.line('Role', driver.role));
-          lines.push('   ' + Summary.line('Relationship', driver.relationshipToNamedInsured));
-          lines.push('   ' + Summary.line('DOB', driver.dob));
-          lines.push('   ' + Summary.line('License', driver.license && driver.license.number));
-          lines.push('   ' + Summary.line('License state', driver.license && driver.license.state));
-          lines.push('   ' + Summary.line('Date first licensed', driver.license && driver.license.dateFirstLicensed));
-          lines.push('   ' + Summary.line('SSN', driver.ssn));
-          lines.push('   ' + Summary.line('Excluded', driver.isExcluded ? 'Yes' : 'No'));
-        });
-      }
-      lines.push('');
-
-      lines.push('=== VEHICLES ===');
-      if (!vehicles.length) {
-        lines.push('- None');
-      } else {
-        vehicles.forEach(function (vehicle, i) {
-          lines.push((i + 1) + '. ' + Summary.vehicleLabel(vehicle));
-          lines.push('   ' + Summary.line('VIN', vehicle.vin || vehicle.vinMaskedTail));
-          lines.push('   ' + Summary.line('Use', vehicle.use));
-          lines.push('   ' + Summary.line('Annual miles', vehicle.annualMiles));
-          lines.push('   ' + Summary.line('Commute miles', vehicle.commuteMiles));
-          lines.push('   ' + Summary.line('Ownership', vehicle.ownership));
-          lines.push('   ' + Summary.line('Primary operator', vehicle.primaryOperator));
-
-          const vehicleCoverages = Array.isArray(vehicle.coverages) ? vehicle.coverages : [];
-          if (vehicleCoverages.length) {
-            lines.push('   Coverages:');
-            vehicleCoverages.forEach(function (coverage) {
-              lines.push('     - ' + Summary.coverageLabel(coverage));
-            });
-          }
-        });
-      }
-      lines.push('');
-
-      lines.push('=== POLICY COVERAGES ===');
-      if (!policyCoverages.length) {
-        lines.push('- None');
-      } else {
-        policyCoverages.forEach(function (coverage, i) {
-          lines.push((i + 1) + '. ' + Summary.coverageLabel(coverage));
-        });
-      }
-      lines.push('');
-
-      lines.push('=== REPORTS ===');
-      if (!reportsRows.length) {
-        lines.push('- None');
-      } else {
-        reportsRows.forEach(function (row, i) {
-          lines.push((i + 1) + '. ' + [
-            U.cleanString(row.name) || 'Unknown',
-            U.cleanString(row.reportType) || 'Report',
-            U.cleanString(row.statusType) || ''
-          ].filter(Boolean).join(' - '));
-          lines.push('   ' + Summary.line('Report date', row.reportDate));
-          lines.push('   ' + Summary.line('Event date', row.eventDate));
-          lines.push('   ' + Summary.line('Amount', row.amount));
-          lines.push('   ' + Summary.line('Score', row.score));
-          lines.push('   ' + Summary.line('Tier', row.indicatedTier));
-        });
-      }
-
-      lines.push('');
-      lines.push('=== DWELLING ===');
-      if (!p.dwelling) {
-        lines.push('- None');
-      } else {
-        lines.push(Summary.line('Policy type', p.dwelling.policyType));
-        lines.push(Summary.line('Full address', p.dwelling.address && p.dwelling.address.full));
-        lines.push(Summary.line('County', p.dwelling.address && p.dwelling.address.county));
-        lines.push(Summary.line('Year built', p.dwelling.structure && p.dwelling.structure.yearBuilt));
-        lines.push(Summary.line('Square feet', p.dwelling.structure && p.dwelling.structure.squareFeet));
-        lines.push(Summary.line('Construction type', p.dwelling.structure && p.dwelling.structure.constructionType));
-        lines.push(Summary.line('Dwelling style', p.dwelling.structure && p.dwelling.structure.dwellingStyle));
-        lines.push(Summary.line('Protection class', p.dwelling.structure && p.dwelling.structure.protectionClass));
-        lines.push(Summary.line('Fire hydrant distance', p.dwelling.fireProtection && p.dwelling.fireProtection.distanceToFireHydrant));
-        lines.push(Summary.line('Fire department distance', p.dwelling.fireProtection && p.dwelling.fireProtection.distanceToFireDepartment));
-        lines.push(Summary.line('Roof installation year', p.dwelling.roof && p.dwelling.roof.installationYear));
-        lines.push(Summary.line('Roof material', p.dwelling.roof && p.dwelling.roof.material));
-        lines.push(Summary.line('Swimming pool', p.dwelling.options && p.dwelling.options.swimmingPool));
-        lines.push(Summary.line('Alarm', p.dwelling.options && p.dwelling.options.alarm));
-        lines.push(Summary.line('Sprinkler system', p.dwelling.options && p.dwelling.options.sprinklerSystem));
-        lines.push(Summary.line('Dwelling amount', p.dwelling.coverages && p.dwelling.coverages.dwellingAmount));
-        lines.push(Summary.line('Other structures amount', p.dwelling.coverages && p.dwelling.coverages.otherStructuresAmount));
-        lines.push(Summary.line('Personal property amount', p.dwelling.coverages && p.dwelling.coverages.personalPropertyAmount));
-        lines.push(Summary.line('Loss of use amount', p.dwelling.coverages && p.dwelling.coverages.lossOfUseAmount));
-      }
-
-      return lines.join('\n');
-    },
-
-    renderOverview(p) {
-      const namedInsureds = Array.isArray(p.namedInsureds) ? p.namedInsureds : [];
-      const drivers = Array.isArray(p.drivers) ? p.drivers : [];
-      const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
-      const policyCoverages = Array.isArray(p.coverages && p.coverages.policy && p.coverages.policy.policyCoverages)
-        ? p.coverages.policy.policyCoverages
-        : [];
-      const vehicleCoverageGroups = Array.isArray(p.coverages && p.coverages.vehicleCoverages)
-        ? p.coverages.vehicleCoverages
-        : [];
-      const reportsRows = Array.isArray(p.reports && p.reports.rows) ? p.reports.rows : [];
-
-      return Summary.section('Overview',
-        Summary.fieldRow('Visited pages', (p.meta && p.meta.visitedPages || []).join(', ')) +
-        Summary.fieldRow('Named insureds', String(namedInsureds.length), { allowBlank: true }) +
-        Summary.fieldRow('Drivers', String(drivers.length), { allowBlank: true }) +
-        Summary.fieldRow('Vehicles', String(vehicles.length), { allowBlank: true }) +
-        Summary.fieldRow('Policy coverages', String(policyCoverages.length), { allowBlank: true }) +
-        Summary.fieldRow('Vehicle coverage groups', String(vehicleCoverageGroups.length), { allowBlank: true }) +
-        Summary.fieldRow('Reports rows', String(reportsRows.length), { allowBlank: true })
-      , { id: 'overview', collapsed: true });
-    },
-
-    renderCustomer(p) {
-      return Summary.section('Customer',
-        Summary.fieldRow('Full name', p.customer && p.customer.fullName) +
-        Summary.fieldRow('DOB', p.customer && p.customer.dob) +
-        Summary.fieldRow('Email', p.customer && p.customer.email) +
-        Summary.fieldRow('Mobile', p.customer && p.customer.phone && p.customer.phone.mobile) +
-        Summary.fieldRow('Home', p.customer && p.customer.phone && p.customer.phone.home) +
-        Summary.fieldRow('Work', p.customer && p.customer.phone && p.customer.phone.work) +
-        Summary.fieldRow('Mailing address', Summary.joinAddress(p.customer && p.customer.mailingAddress)) +
-        Summary.fieldRow('Residence address', Summary.joinAddress(p.customer && p.customer.residenceAddress))
-      , { id: 'customer' });
-    },
-
-    renderNamedInsureds(p) {
-      const namedInsureds = Array.isArray(p.namedInsureds) ? p.namedInsureds : [];
-      if (!namedInsureds.length) {
-        return Summary.section('Named Insureds', '', { id: 'named-insureds' });
-      }
-
-      const html = namedInsureds.map(function (person, i) {
-        return Summary.card((i + 1) + '. ' + (U.cleanString(person.fullName) || 'Named Insured'),
-          Summary.fieldRow('DOB', person.dob) +
-          Summary.fieldRow('Relationship', person.relationshipToNamedInsured) +
-          Summary.fieldRow('License', person.license && person.license.number) +
-          Summary.fieldRow('License state', person.license && person.license.state) +
-          Summary.fieldRow('SSN', person.ssn) +
-          Summary.fieldRow('Email', person.email) +
-          Summary.fieldRow('Mobile', person.phone && person.phone.mobile) +
-          Summary.fieldRow('Home', person.phone && person.phone.home) +
-          Summary.fieldRow('Work', person.phone && person.phone.work)
-        );
-      }).join('');
-
-      return Summary.section('Named Insureds', html, { id: 'named-insureds' });
-    },
-
-    renderDrivers(p) {
-      const drivers = Array.isArray(p.drivers) ? p.drivers : [];
-      if (!drivers.length) {
-        return Summary.section('Drivers', '', { id: 'drivers' });
-      }
-
-      const html = drivers.map(function (driver, i) {
-        return Summary.card((i + 1) + '. ' + (U.cleanString(driver.fullName) || 'Driver'),
-          Summary.fieldRow('Role', driver.role) +
-          Summary.fieldRow('Relationship', driver.relationshipToNamedInsured) +
-          Summary.fieldRow('DOB', driver.dob) +
-          Summary.fieldRow('License', driver.license && driver.license.number) +
-          Summary.fieldRow('License state', driver.license && driver.license.state) +
-          Summary.fieldRow('Date first licensed', driver.license && driver.license.dateFirstLicensed) +
-          Summary.fieldRow('SSN', driver.ssn) +
-          Summary.fieldRow('Excluded', driver.isExcluded ? 'Yes' : 'No', { allowBlank: true })
-        );
-      }).join('');
-
-      return Summary.section('Drivers', html, { id: 'drivers' });
-    },
-
-    renderVehicles(p) {
-      const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
-      if (!vehicles.length) {
-        return Summary.section('Vehicles', '', { id: 'vehicles' });
-      }
-
-      const html = vehicles.map(function (vehicle, i) {
-        const vehicleCoverages = Array.isArray(vehicle.coverages) ? vehicle.coverages : [];
-        const coverageHtml = vehicleCoverages.length
-          ? `
-            <div class="eme-s-sublist">
-              <div class="eme-s-subtitle">Coverages</div>
-              ${vehicleCoverages.map(function (coverage) {
-                const label = Summary.coverageLabel(coverage);
-                return `
-                  <div class="eme-s-subrow">
-                    <div class="eme-s-value">${Summary.escHtml(label || '-')}</div>
-                    <button class="eme-s-copy" data-copy="${Summary.escAttr(label || '')}" ${label ? '' : 'disabled'}>Copy</button>
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          `
-          : '';
-
-        return Summary.card((i + 1) + '. ' + Summary.vehicleLabel(vehicle),
-          Summary.fieldRow('VIN', vehicle.vin || vehicle.vinMaskedTail) +
-          Summary.fieldRow('Use', vehicle.use) +
-          Summary.fieldRow('Annual miles', vehicle.annualMiles) +
-          Summary.fieldRow('Commute miles', vehicle.commuteMiles) +
-          Summary.fieldRow('Ownership', vehicle.ownership) +
-          Summary.fieldRow('Primary operator', vehicle.primaryOperator) +
-          coverageHtml
-        );
-      }).join('');
-
-      return Summary.section('Vehicles', html, { id: 'vehicles' });
-    },
-
-    renderPolicyCoverages(p) {
-      const policyCoverages = Array.isArray(p.coverages && p.coverages.policy && p.coverages.policy.policyCoverages)
-        ? p.coverages.policy.policyCoverages
-        : [];
-
-      if (!policyCoverages.length) {
-        return Summary.section('Policy Coverages', '', { id: 'policy-coverages' });
-      }
-
-      const html = policyCoverages.map(function (coverage, i) {
-        const label = Summary.coverageLabel(coverage);
-        return Summary.card((i + 1) + '. Policy Coverage',
-          Summary.fieldRow('Coverage', label)
-        );
-      }).join('');
-
-      return Summary.section('Policy Coverages', html, { id: 'policy-coverages' });
-    },
-
-    renderReports(p) {
-      const reportsRows = Array.isArray(p.reports && p.reports.rows) ? p.reports.rows : [];
-      if (!reportsRows.length) {
-        return Summary.section('Reports', '', { id: 'reports' });
-      }
-
-      const html = reportsRows.map(function (row, i) {
-        const title = [
-          U.cleanString(row.name) || 'Unknown',
-          U.cleanString(row.reportType) || 'Report',
-          U.cleanString(row.statusType) || ''
-        ].filter(Boolean).join(' - ');
-
-        return Summary.card((i + 1) + '. ' + title,
-          Summary.fieldRow('Report date', row.reportDate) +
-          Summary.fieldRow('Event date', row.eventDate) +
-          Summary.fieldRow('Amount', row.amount) +
-          Summary.fieldRow('Score', row.score) +
-          Summary.fieldRow('Tier', row.indicatedTier)
-        );
-      }).join('');
-
-      return Summary.section('Reports', html, { id: 'reports' });
-    },
-
-    renderDwelling(p) {
-      const d = p && p.dwelling ? p.dwelling : null;
-      if (!d) {
-        return Summary.section('Dwelling', '', { id: 'dwelling' });
-      }
-
-      const addressParts = [];
-      if (d.address) {
-        if (U.cleanString(d.address.full)) {
-          addressParts.push(Summary.fieldRow('Full address', d.address.full));
-        } else {
-          addressParts.push(Summary.fieldRow('Address line 1', d.address.line1));
-          addressParts.push(Summary.fieldRow('Address line 2', d.address.line2));
-          addressParts.push(Summary.fieldRow('City', d.address.city));
-          addressParts.push(Summary.fieldRow('State', d.address.state));
-          addressParts.push(Summary.fieldRow('ZIP', d.address.zip));
-          addressParts.push(Summary.fieldRow('ZIP+4', d.address.zipPlus4));
-        }
-        addressParts.push(Summary.fieldRow('County', d.address.county));
-      }
-
-      const html =
-        Summary.card('Policy / Address',
-          Summary.fieldRow('Policy type', d.policyType) +
-          addressParts.join('') +
-          Summary.fieldRow('Mail declaration to agency', d.options && d.options.mailDeclarationToAgency === false ? 'No' : d.options && d.options.mailDeclarationToAgency === true ? 'Yes' : '')
-        ) +
-        Summary.card('Structure',
-          Summary.fieldRow('Year built', d.structure && d.structure.yearBuilt) +
-          Summary.fieldRow('Square feet', d.structure && d.structure.squareFeet) +
-          Summary.fieldRow('Number of families', d.structure && d.structure.numberOfFamilies) +
-          Summary.fieldRow('Construction type', d.structure && d.structure.constructionType) +
-          Summary.fieldRow('Dwelling style', d.structure && d.structure.dwellingStyle) +
-          Summary.fieldRow('Protection class', d.structure && d.structure.protectionClass)
-        ) +
-        Summary.card('Fire / Roof',
-          Summary.fieldRow('Distance to fire hydrant', d.fireProtection && d.fireProtection.distanceToFireHydrant) +
-          Summary.fieldRow('Distance to fire department', d.fireProtection && d.fireProtection.distanceToFireDepartment) +
-          Summary.fieldRow('Roof installation year', d.roof && d.roof.installationYear) +
-          Summary.fieldRow('Roof material', d.roof && d.roof.material) +
-          Summary.fieldRow('Other roof material', d.roof && d.roof.manuallyEnteredOtherRoofMaterial)
-        ) +
-        Summary.card('Options',
-          Summary.fieldRow('Swimming pool', d.options && d.options.swimmingPool) +
-          Summary.fieldRow('Alarm', d.options && d.options.alarm) +
-          Summary.fieldRow('Sprinkler system', d.options && d.options.sprinklerSystem) +
-          Summary.fieldRow('Used high value vendor', d.options && d.options.usedHighValueVendor === false ? 'No' : d.options && d.options.usedHighValueVendor === true ? 'Yes' : '') +
-          Summary.fieldRow('Home cost estimator action', d.options && d.options.homeCostEstimatorAction) +
-          Summary.fieldRow('ACV wind/hail roof surfacing', d.options && d.options.acvWindHailRoofSurfacing)
-        ) +
-        Summary.card('Coverages',
-          Summary.fieldRow('Dwelling loss settlement', d.coverages && d.coverages.dwellingLossSettlement) +
-          Summary.fieldRow('Dwelling perils', d.coverages && d.coverages.dwellingPerils) +
-          Summary.fieldRow('Personal property loss settlement', d.coverages && d.coverages.personalPropertyLossSettlement) +
-          Summary.fieldRow('Personal property perils', d.coverages && d.coverages.personalPropertyPerils) +
-          Summary.fieldRow('Dwelling amount', d.coverages && d.coverages.dwellingAmount) +
-          Summary.fieldRow('Other structures amount', d.coverages && d.coverages.otherStructuresAmount) +
-          Summary.fieldRow('Personal property amount', d.coverages && d.coverages.personalPropertyAmount) +
-          Summary.fieldRow('Loss of use amount', d.coverages && d.coverages.lossOfUseAmount)
-        ) +
-        Summary.card('Hidden Flags',
-          Summary.fieldRow('Risk state', d.hiddenFlags && d.hiddenFlags.riskState) +
-          Summary.fieldRow('Wind/Hail exclusion endorsement', d.hiddenFlags && d.hiddenFlags.hasWindHailExclusionEndorsement) +
-          Summary.fieldRow('Storm mitigation', d.hiddenFlags && d.hiddenFlags.inquiryHasStormMitigation)
-        );
-
-      return Summary.section('Dwelling', html, { id: 'dwelling' });
-    },
-    renderWindowHtml(p) {
-      const rawText = Summary.build(p);
-      const rawJson = JSON.stringify(p, null, 2);
-
-      return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Erie Master Summary</title>
-  <style>
-    :root{
-      --bg:#0f1724;
-      --panel:#152235;
-      --panel2:linear-gradient(135deg, #2f73d8, #1e4fa3);
-      --text:#eef4ff;
-      --muted:#b8c7de;
-      --line:rgba(255,255,255,.12);
-      --blue:#007EF5;
-      --btn:#e8edf5;
-      --btnText:#111827;
-      --copy:#1f9d55;
-      --danger:#b83232;
-    }
-    *{box-sizing:border-box}
-    body{
-      margin:0;
-      background:var(--bg);
-      color:var(--text);
-      font:13px/1.45 system-ui,Segoe UI,Arial,sans-serif;
-    }
-    .eme-wrap{
-      max-width:1200px;
-      margin:0 auto;
-      padding:16px;
-    }
-    .eme-top{
-      position:sticky;
-      top:0;
-      z-index:5;
-      background:rgba(15,23,36,.96);
-      backdrop-filter:blur(6px);
-      border-bottom:1px solid var(--line);
-      margin:-16px -16px 16px -16px;
-      padding:10px 14px;
-    }
-    .eme-title{
-      font-size:18px;
-      font-weight:700;
-      margin-bottom:2px;
-    }
-    .eme-sub{
-      color:var(--muted);
-      font-size:11px;
-      line-height:1.3;
-      margin-bottom:8px;
-    }
-    .eme-top-buttons{
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-    }
-
-    .eme-jumpbar{
-      display:flex;
-      flex-wrap:wrap;
-      gap:6px;
-      margin-top:8px;
-      padding-bottom:2px;
-    }
-
-    .eme-jump{
-      border:1px solid rgba(255,255,255,.15);
-      border-radius:4px;
-      padding:3px 7px;
-      cursor:pointer;
-      font-size:10.5px;
-      font-weight:600;
-      background:rgba(0,181,255,.3);
-      color:#dbe7ff;
-      line-height:1.2;
-      white-space:nowrap;
-      transition: all 0.15s ease;
-    }
-
-    .eme-jump:hover{
-      background:rgba(255, 255, 255, 0.52);
-      color:#fff;
-    }
-
-    .eme-jump.active {
-      background: #7c3aed !important; /* your purple */
-      color: #fff !important;
-      box-shadow: 0 0 0 1px rgba(0,0,0,0.3) inset;
-    }
-
-    .eme-btn{
-      border:0;
-      border-radius:10px;
-      padding:9px 12px;
-      cursor:pointer;
-      font-size:12px;
-      font-weight:600;
-    }
-    .eme-btn-main{ background:var(--blue); color:#fff; }
-    .eme-btn-copy{ background:var(--copy); color:#fff; }
-    .eme-btn-light{ background:var(--btn); color:var(--btnText); }
-    .eme-grid{
-      display:grid;
-      grid-template-columns:1fr;
-      gap:14px;
-    }
-    .eme-s-section{
-      background:var(--panel);
-      border:1px solid var(--line);
-      border-radius:14px;
-      overflow:hidden;
-    }
-    .eme-s-section-title{
-      width:100%;
-      background:var(--panel2);
-      padding:10px 12px;
-      font-weight:700;
-      font-size:14px;
-      border:0;
-      border-bottom:1px solid var(--line);
-      color:#fff;
-      text-align:left;
-    }
-    .eme-s-toggle{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      cursor:pointer;
-    }
-    .eme-s-toggle-icon{
-      color:var(--muted);
-      font-size:12px;
-      margin-left:10px;
-    }
-    .eme-s-section-body.is-hidden{
-      display:none;
-    }
-    .eme-s-section-body{
-      padding:12px;
-    }
-    .eme-s-card{
-      border:1px solid var(--line);
-      border-radius:12px;
-      padding:10px;
-      margin-bottom:10px;
-      background:rgba(255,255,255,.03);
-    }
-    .eme-s-card:last-child{ margin-bottom:0; }
-    .eme-s-card-title{
-      font-weight:700;
-      margin-bottom:8px;
-      color:#fff;
-      background-color:rgba(0, 126, 245 ,.15);
-      padding:6px 6px;
-      border-radius: 10px 10px 0 0;
-    }
-    .eme-s-row,
-    .eme-s-subrow{
-      display:grid;
-      grid-template-columns:180px 1fr auto;
-      gap:10px;
-      align-items:start;
-      padding:6px 0;
-      border-bottom:1px dashed rgba(255,255,255,.08);
-    }
-
-    .eme-s-subrow{
-      display:grid;
-      grid-template-columns:1fr auto;
-    }
-
-    /* Adjust scroll margin for jump links to account for sticky header */
-    .eme-s-section {
-      scroll-margin-top: 85px;
-    }
-
-    .eme-s-row:last-child{ border-bottom:0; }
-    .eme-s-label{
-      color:var(--muted);
-      font-weight:600;
-    }
-    .eme-s-value{
-      color:#fff;
-      white-space:pre-wrap;
-      word-break:break-word;
-      user-select:text;
-    }
-    .eme-s-copy{
-      border:0;
-      border-radius:8px;
-      background:var(--btn);
-      color:var(--btnText);
-      padding:6px 9px;
-      cursor:pointer;
-      font-size:12px;
-      font-weight:600;
-    }
-    .eme-s-copy[disabled]{
-      opacity:.45;
-      cursor:default;
-    }
-    .eme-s-sublist{
-      margin-top:10px;
-      padding-top:10px;
-      border-top:1px solid rgba(255,255,255,.12);
-    }
-    .eme-s-subtitle{
-      font-weight:700;
-      margin-bottom:6px;
-      color:var(--muted);
-    }
-    .eme-s-empty{
-      color:var(--muted);
-    }
-    .eme-raw{
-      background:#0b1320;
-      border:1px solid var(--line);
-      border-radius:12px;
-      padding:10px;
-      white-space:pre-wrap;
-      word-break:break-word;
-      color:#dfe9fb;
-      max-height:320px;
-      overflow:auto;
-      user-select:text;
-    }
-    .eme-toast{
-      position:fixed;
-      top:14px;
-      right:14px;
-      background:#111827;
-      color:#fff;
-      border-radius:10px;
-      padding:10px 12px;
-      box-shadow:0 8px 24px rgba(0,0,0,.35);
-      display:none;
-      z-index:50;
-    }
-    @media (max-width: 390px){
-      .eme-s-row,
-      .eme-s-subrow{
-        grid-template-columns:1fr;
-      }
-
-      .eme-s-subrow{
-        display:grid;
-        grid-template-columns:1fr auto;
-      }
-    }
-
-  </style>
-</head>
-<body>
-  <div class="eme-wrap">
-    <div class="eme-top">
-      <div class="eme-title">Erie Master Summary</div>
-      <div class="eme-sub">Click Summary again on the Erie page any time you want a fresh view.</div>
-
-      <div class="eme-jumpbar">
-        <button class="eme-jump" data-jump="overview">Overview</button>
-        <button class="eme-jump" data-jump="customer">Customer</button>
-        <button class="eme-jump" data-jump="named-insureds">Insureds</button>
-        <button class="eme-jump" data-jump="drivers">Drivers</button>
-        <button class="eme-jump" data-jump="vehicles">Vehicles</button>
-        <button class="eme-jump" data-jump="policy-coverages">Coverages</button>
-        <button class="eme-jump" data-jump="reports">Reports</button>
-        <button class="eme-jump" data-jump="dwelling">Dwelling</button>
-      </div>
-    </div>
-
-    <div class="eme-grid">
-      ${Summary.renderOverview(p)}
-      ${Summary.renderCustomer(p)}
-      ${Summary.renderNamedInsureds(p)}
-      ${Summary.renderDrivers(p)}
-      ${Summary.renderVehicles(p)}
-      ${Summary.renderPolicyCoverages(p)}
-      ${Summary.renderReports(p)}
-      ${Summary.renderDwelling(p)}
-
-    </div>
-  </div>
-
-  <div class="eme-toast" id="eme-toast">Copied</div>
-
-  <script>
-    (function () {
-      var rawText = ${JSON.stringify(rawText)};
-      var rawJson = ${JSON.stringify(rawJson)};
-
-      function showToast(msg) {
-        var el = document.getElementById('eme-toast');
-        if (!el) return;
-        el.textContent = msg || 'Copied';
-        el.style.display = 'block';
-        clearTimeout(showToast._t);
-        showToast._t = setTimeout(function () {
-          el.style.display = 'none';
-        }, 1200);
-      }
-
-      function copyText(text) {
-        if (!text) return;
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(function () {
-            showToast('Copied');
-          }).catch(function () {
-            fallbackCopy(text);
-          });
-        } else {
-          fallbackCopy(text);
-        }
-      }
-
-      function fallbackCopy(text) {
-        var ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.position = 'fixed';
-        ta.style.left = '-9999px';
-        document.body.appendChild(ta);
-        ta.focus();
-        ta.select();
-        try {
-          document.execCommand('copy');
-          showToast('Copied');
-        } catch (e) {}
-        ta.remove();
-      }
-
-      document.addEventListener('click', function (e) {
-        var btn = e.target.closest('[data-copy]');
-        if (btn && !btn.disabled) {
-          copyText(btn.getAttribute('data-copy') || '');
-          return;
-        }
-
-        var jumpBtn = e.target.closest('[data-jump]');
-        if (jumpBtn) {
-          var sectionId = jumpBtn.getAttribute('data-jump');
-          var section = sectionId ? document.getElementById(sectionId) : null;
-          if (section) {
-            var toggle = section.querySelector('.eme-s-toggle');
-            var body = section.querySelector('.eme-s-section-body');
-            if (toggle && body && body.classList.contains('is-hidden')) {
-              body.classList.remove('is-hidden');
-              toggle.setAttribute('aria-expanded', 'true');
-              var iconOpen = toggle.querySelector('.eme-s-toggle-icon');
-              if (iconOpen) iconOpen.innerHTML = '&#9662;';
-            }
-            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-          return;
-        }
-
-        var toggleBtn = e.target.closest('.eme-s-toggle');
-        if (toggleBtn) {
-          var targetId = toggleBtn.getAttribute('data-target');
-          var bodyEl = targetId ? document.getElementById(targetId) : null;
-          if (!bodyEl) return;
-
-          var hidden = bodyEl.classList.contains('is-hidden');
-          bodyEl.classList.toggle('is-hidden', !hidden);
-          toggleBtn.setAttribute('aria-expanded', hidden ? 'true' : 'false');
-
-          var icon = toggleBtn.querySelector('.eme-s-toggle-icon');
-          if (icon) {
-            icon.innerHTML = hidden ? '&#9662;' : '&#9656;';
-          }
-          return;
-        }
-
-        if (e.target.id === 'eme-copy-all') {
-          copyText(rawText);
-          return;
-        }
-
-        if (e.target.id === 'eme-copy-json') {
-          copyText(rawJson);
-          return;
-        }
-
-        if (e.target.id === 'eme-close') {
-          window.close();
-        }
-      });
-
-      // === Scroll Spy ===
-      (function () {
-        var buttons = Array.from(document.querySelectorAll('.eme-jump'));
-
-        var sections = buttons.map(function (btn) {
-          return document.getElementById(btn.getAttribute('data-jump'));
-        }).filter(Boolean);
-
-        if (!sections.length) return;
-
-        function setActive(id) {
-          buttons.forEach(function (b) {
-            if (b.getAttribute('data-jump') === id) {
-              b.classList.add('active');
-            } else {
-              b.classList.remove('active');
-            }
-          });
-        }
-
-        var observer = new IntersectionObserver(function (entries) {
-          var top = null;
-
-          entries.forEach(function (entry) {
-            if (entry.isIntersecting) {
-              if (!top || entry.intersectionRatio > top.intersectionRatio) {
-                top = entry;
-              }
-            }
-          });
-
-          if (top) {
-            setActive(top.target.id);
-          }
-        }, {
-          root: null, // important: you're using full page scroll, not inner container
-          threshold: [0.3, 0.6, 0.9]
-        });
-
-        sections.forEach(function (sec) {
-          observer.observe(sec);
-        });
-
-        // default first
-        if (sections[0]) {
-          setActive(sections[0].id);
-        }
-      })();
-    })();
-  </script>
-</body>
-</html>`;
-    },
-
-    showPopup(p) {
-      p = p || {};
-      const popup = window.open('', 'erie-master-summary-window', 'width=520,height=820,resizable=yes,scrollbars=yes');
-      if (!popup) {
-        UI.toast('Popup blocked');
-        return;
-      }
-
-      popup.document.open();
-      popup.document.write(Summary.renderWindowHtml(p));
-      popup.document.close();
-      popup.focus();
-    }
-  };
-
-  // -----------------------------
-  // UI
-  // -----------------------------
-  const UI = {
-    panel: null,
-    status: null,
-
-          makeDraggable() {
-            if (!UI.panel) return;
-
-            const panel = UI.panel;
-            const header = panel.querySelector('.eme-head');
-            if (!header) return;
-
-            let dragging = false;
-            let startX = 0;
-            let startY = 0;
-            let startLeft = 0;
-            let startTop = 0;
-
-            header.style.cursor = 'move';
-
-            header.addEventListener('mousedown', function (e) {
-              if (!e) return;
-
-              // don't drag when clicking buttons
-              if (e.target.closest('button')) return;
-
-              dragging = true;
-              startX = e.clientX;
-              startY = e.clientY;
-
-              const rect = panel.getBoundingClientRect();
-              startLeft = rect.left;
-              startTop = rect.top;
-
-              panel.style.left = startLeft + 'px';
-              panel.style.top = startTop + 'px';
-              panel.style.right = 'auto';
-              panel.style.bottom = 'auto';
-
-              document.body.style.userSelect = 'none';
-              e.preventDefault();
-            });
-
-            document.addEventListener('mousemove', function (e) {
-              if (!dragging) return;
-
-              const dx = e.clientX - startX;
-              const dy = e.clientY - startY;
-
-              let nextLeft = startLeft + dx;
-              let nextTop = startTop + dy;
-
-              const maxLeft = Math.max(0, window.innerWidth - panel.offsetWidth);
-              const maxTop = Math.max(0, window.innerHeight - panel.offsetHeight);
-
-              if (nextLeft < 0) nextLeft = 0;
-              if (nextTop < 0) nextTop = 0;
-              if (nextLeft > maxLeft) nextLeft = maxLeft;
-              if (nextTop > maxTop) nextTop = maxTop;
-
-              panel.style.left = nextLeft + 'px';
-              panel.style.top = nextTop + 'px';
-            });
-
-            document.addEventListener('mouseup', function () {
-              if (!dragging) return;
-              dragging = false;
-              document.body.style.userSelect = '';
-            });
-          },
-
-    init() {
-      GM_addStyle(`
-        #erie-master-extractor-panel{
-          position:fixed;
-          right:14px;
-          bottom:14px;
-          z-index:2147483647;
-          width:260px;
-          background:#0e1a2a;
-          color:#fff;
-          border:1px solid rgba(255,255,255,.16);
-          border-radius:12px;
-          box-shadow:0 12px 30px rgba(0,0,0,.35);
-          font:12px/1.35 system-ui,Segoe UI,Arial,sans-serif;
-          overflow:hidden;
-        }
-        #erie-master-extractor-panel .eme-head{
-          position:relative;
-          padding:10px 12px;
-          background:#007EF5;
-          font-weight:700;
-        }
-        #erie-master-extractor-panel .eme-close{
-          position:absolute;
-          top:6px;
-          right:8px;
-          width:20px;
-          height:20px;
-          line-height:18px;
-          border:1px solid rgba(255,255,255,.35);
-          border-radius:6px;
-          background:#f00;
-          color:#eaf2ff;
-          font-size:14px;
-          font-weight:700;
-          padding:0;
-          cursor:pointer;
-          opacity:.85;
-        }
-        #erie-master-extractor-panel .eme-close:hover{
-          opacity:1;
-          background:rgba(255,255,255,.14);
-        }
-        #erie-master-extractor-panel .eme-sub{
-          opacity:.8;
-          font-size:11px;
-          font-weight:400;
-          margin-top:2px;
-          color:#dbe8ff;
-        }
-        #erie-master-extractor-panel .eme-body{
-          padding:10px 12px;
-          color:#f3f7ff;
-        }
-        #erie-master-extractor-panel label,
-        #erie-master-extractor-panel span,
-        #erie-master-extractor-panel .eme-status,
-        #erie-master-extractor-panel .eme-row{
-          color:#f3f7ff;
-        }
-        #erie-master-extractor-panel .eme-row{
-          display:flex;
-          gap:6px;
-          margin-bottom:6px;
-        }
-        #erie-master-extractor-panel button{
-          flex:1;
-          border:0;
-          border-radius:8px;
-          padding:7px 8px;
-          cursor:pointer;
-          font-size:12px;
-        }
-        #erie-master-extractor-panel .eme-primary{ background:#2c7be5; color:#fff; }
-        #erie-master-extractor-panel .eme-secondary{ background:#e9eef5; color:#111; }
-        #erie-master-extractor-panel .eme-success{ background:#1f9d55; color:#fff; }
-        #erie-master-extractor-panel .eme-danger{ background:#b83232; color:#fff; }
-        #erie-master-extractor-panel .eme-status{
-          margin-top:8px;
-          background:rgba(255,255,255,.08);
-          border-radius:8px;
-          padding:8px;
-          white-space:pre-line;
-          color:#ffffff;
-        }
-        #erie-master-extractor-panel input[type="checkbox"]{
-          accent-color:#ffffff;
-        }
-        #erie-master-extractor-toast{
-          position:fixed;
-          top:16px;
-          left:50%;
-          transform:translateX(-50%);
-          z-index:2147483647;
-          background:#111;
-          color:#fff;
-          padding:8px 12px;
-          border-radius:8px;
-          box-shadow:0 6px 18px rgba(0,0,0,.35);
-          font:12px/1.35 system-ui,Segoe UI,Arial,sans-serif;
-        }
-
-        #erie-master-extractor-panel .eme-head{
-          position:relative;
-          padding:10px 12px;
-          padding-right:74px;
-          background:#007EF5;
-          font-weight:700;
-        }
-
-        #erie-master-extractor-panel .eme-head-main{
-          display:block;
-        }
-
-        #erie-master-extractor-panel .eme-head-tools{
-          position:absolute;
-          top:30px;
-          right:8px;
-          display:flex;
-          gap:4px;
-        }
-
-        #erie-master-extractor-panel .eme-mini-btn{
-          width:24px;
-          height:22px;
-          display:flex;
-          align-items:center;
-          justify-content:center;
-          border:1px solid rgba(255,255,255,.28);
-          border-radius:6px;
-          background:rgba(75, 40, 172, 0.47);
-          color:#fff;
-          font-size:12px;
-          line-height:1;
-          padding:0;
-          cursor:pointer;
-        }
-
-        #erie-master-extractor-panel .eme-mini-btn:hover{
-          background:rgba(255,255,255,.26);
-        }
-        .eme-summary-btn {
-          background: #8b5cf6; /* nice purple */
-          color: #fff;
-        }
-        .eme-summary-btn:hover {
-          background: #7c3aed;
-        }
-      `);
-
-      const panel = document.createElement('div');
-      panel.id = 'erie-master-extractor-panel';
-      panel.innerHTML = `
-        <div class="eme-head">
-          <button id="eme-close" class="eme-close" title="Turn off Erie extractor" aria-label="Turn off Erie extractor" type="button">&times;</button>
-
-          <div class="eme-head-main">
-            <div>Erie Master Extractor</div>
-            <div class="eme-sub">v${APP.version}</div>
-          </div>
-
-          <div class="eme-head-tools">
-            <button id="eme-copy" class="eme-mini-btn" title="Copy JSON" aria-label="Copy JSON" type="button">📋</button>
-            <button id="eme-download" class="eme-mini-btn" title="Download JSON" aria-label="Download JSON" type="button">⬇️</button>
-          </div>
-        </div>
-        <div class="eme-body">
-          <div class="eme-row">
-            <button id="eme-collect" class="eme-primary">Collect</button>
-            <button id="eme-harvest" class="eme-secondary">Harvest VINs</button>
-          </div>
-          <div class="eme-row">
-            <button id="eme-summary" class="eme-summary-btn">Summary</button>
-            <button id="eme-reset" class="eme-danger">Reset</button>
-          </div>
-          <div class="eme-row" style="align-items:center;">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-              <input type="checkbox" id="eme-autoCollect">
-              <span>Auto collect</span>
-            </label>
-          </div>
-          <div id="eme-status" class="eme-status"></div>
-        </div>
-      `;
-
-      document.body.appendChild(panel);
-      UI.panel = panel;
-      UI.status = panel.querySelector('#eme-status');
-      UI.makeDraggable();
-
-      panel.querySelector('#eme-collect').addEventListener('click', Actions.collectCurrentPage);
-      panel.querySelector('#eme-harvest').addEventListener('click', Actions.harvestVins);
-      panel.querySelector('#eme-copy').addEventListener('click', Actions.copyPayload);
-      panel.querySelector('#eme-download').addEventListener('click', Actions.downloadPayload);
-      panel.querySelector('#eme-summary').addEventListener('click', Actions.showSummary);
-      panel.querySelector('#eme-reset').addEventListener('click', Actions.resetPayload);
-      panel.querySelector('#eme-close').addEventListener('click', disableExtractorFromUiClose);
-
-      const settings = Storage.loadSettings();
-      const autoBox = panel.querySelector('#eme-autoCollect');
-      autoBox.checked = !!settings.autoCollect;
-      autoBox.addEventListener('change', function () {
-        const next = Storage.loadSettings();
-        next.autoCollect = !!autoBox.checked;
-        Storage.saveSettings(next);
-        UI.refresh();
-      });
-
-      UI.refresh();
-    },
-
-    refresh() {
-      if (!UI.status) return;
-      const ctx = Detector.detect();
-      const p = Storage.loadPayload();
-      const settings = Storage.loadSettings();
-      const hs = Actions.harvestState || {};
-      const vinStats = Actions.getVinCollectionStats(p);
-      const hasVehicles = vinStats.total > 0;
-      const harvestComplete = hasVehicles && vinStats.collected === vinStats.total;
-      const needsHarvest = hasVehicles && vinStats.collected < vinStats.total;
-
-      const harvestLine = hs.running
-        ? ('VIN harvest: Running ' + (hs.current || 0) + '/' + (hs.total || 0) + ' (ok ' + (hs.harvested || 0) + ', skip ' + (hs.skipped || 0) + ')')
-        : ('VINs collected: ' + vinStats.collected + '/' + vinStats.total);
-
-      const harvestBtn = UI.panel && UI.panel.querySelector('#eme-harvest');
-      if (harvestBtn) {
-        harvestBtn.classList.remove('eme-secondary', 'eme-success');
-
-        if (needsHarvest) {
-          harvestBtn.classList.add('eme-success');
-          harvestBtn.textContent = 'Harvest VINs';
-        } else if (harvestComplete) {
-          harvestBtn.classList.add('eme-secondary');
-          harvestBtn.textContent = 'Harvest VINs \u2713';
-        } else {
-          harvestBtn.classList.add('eme-secondary');
-          harvestBtn.textContent = 'Harvest VINs';
-        }
-      }
-
-      UI.status.textContent = [
-        'Page: ' + ctx.pageType + (ctx.coverageSubType ? ' / ' + ctx.coverageSubType : ''),
-        'Named insureds: ' + (p.namedInsureds || []).length,
-        'Drivers: ' + (p.drivers || []).length,
-        'Vehicles: ' + (p.vehicles || []).length,
-        'Policy coverages: ' + (p.coverages && p.coverages.policy && p.coverages.policy.policyCoverages || []).length,
-        'Vehicle coverages: ' + (p.coverages && p.coverages.vehicleCoverages || []).length,
-        harvestLine,
-        'Auto collect: ' + (settings.autoCollect ? 'On' : 'Off')
-      ].join('\n');
-    },
-
-    toast(msg) {
-      const old = document.getElementById('erie-master-extractor-toast');
-      if (old) old.remove();
-
-      const el = document.createElement('div');
-      el.id = 'erie-master-extractor-toast';
-      el.textContent = msg;
-      document.body.appendChild(el);
-
-      setTimeout(function () {
-        el.remove();
-      }, 1800);
-    }
-  };
-
-  // -----------------------------
-  // UI lifecycle gate
-  // -----------------------------
-  function disableExtractorFromUiClose() {
-    try {
-      localStorage.setItem(PREF_ERIE_EXTRACTOR_ENABLED_KEY, 'false');
-    } catch (e) {}
-
-    const detail = {
-      source: 'erie-extractor-ui-close',
-      enabled: false,
-      storageKey: PREF_ERIE_EXTRACTOR_ENABLED_KEY
-    };
-    try { document.dispatchEvent(new CustomEvent('mci:erie-extractor-toggle', { detail: detail })); } catch (e2) {}
-    try { window.dispatchEvent(new CustomEvent('mci:erie-extractor-toggle', { detail: detail })); } catch (e3) {}
-
-    applyExtractorEnabledState();
+  "use strict";
+
+  /*************************
+   * ENV / HOST DETECT      *
+   *************************/
+  const HOST = location.hostname.toLowerCase();
+  const PATH = (location.pathname || "").toLowerCase();
+  const PAGE_WINDOW = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+
+  const IS_QQ = /qqcatalyst/.test(HOST);
+
+  const IS_PROG =
+    /quoting\.foragentsonly\.com/i.test(HOST) ||
+    /foragentsonly\.com/i.test(HOST);
+
+  const IS_ERIE =
+    /agentexchange\.com|portal\.agentexchange\.com|customerdatamanagement\.agentexchange\.com/.test(HOST);
+
+  const IS_NG = /natgenagency\.com/.test(HOST);
+
+  const IS_TORRENT = /torrentflood\.com/.test(HOST);
+  const IS_BEYOND_HOST = /beyondfloods\.com/.test(HOST);
+
+  const IS_NFIP = IS_TORRENT && PATH.startsWith("/dashboard/agency");
+  const IS_BEYOND = IS_BEYOND_HOST || (IS_TORRENT && !IS_NFIP);
+
+  const IN_IFRAME = window.top !== window.self;
+  if (IN_IFRAME && !(IS_QQ || IS_PROG)) return;
+
+  /*************************
+   * CONSTS / IDS / PREFS   *
+   *************************/
+  const HOST_ID = "mci-shadow-host";
+  const MENU_ID = "mciSlideMenu";
+  const TRIGGER_ID = "mciSlideTrigger";
+
+  const PREF_HOVER_KEY = "mci_pref_hover_open";
+  const PREF_ERIE_EXTRACTOR_ENABLED_KEY = "mci_pref_erie_extractor_enabled";
+  const EVENT_ERIE_EXTRACTOR_TOGGLE = "mci:erie-extractor-toggle";
+  const EVENT_COUNTY_RUN = "mci-county-run";
+  const EVENT_COUNTY_MANUAL = "mci-county-manual";
+
+  const GLOBAL_STYLE_ID = "mci-global-style";
+
+  const HIGHLIGHT_COLOR_KEY = "mci_row_highlight_color";
+  const DEFAULT_ROW_COLOR = "#fffbcc";
+
+  /*************************
+   * MINI UTILS             *
+   *************************/
+  const $ = (sel, root = document) => root.querySelector(sel);
+
+  function getSystemLabel() {
+    if (IS_QQ) return "QQ Catalyst";
+    if (IS_ERIE) return "Erie";
+    if (IS_PROG) return "Progressive";
+    if (IS_NFIP) return "NFIP";
+    if (IS_BEYOND) return "Beyond Floods";
+    if (IS_NG) return "National General";
+    return location.hostname;
   }
 
-  function isExtractorEnabled() {
+  function toast(msg) {
+    let t = document.querySelector(".toast-mci");
+    if (!t) {
+      t = document.createElement("div");
+      t.className = "toast-mci";
+      Object.assign(t.style, {
+        position: "fixed",
+        right: "16px",
+        bottom: "16px",
+        zIndex: "2147483647",
+        padding: "8px 12px",
+        borderRadius: "10px",
+        background: "#111",
+        color: "#fff",
+        border: "1px solid rgba(255,255,255,.15)",
+        boxShadow: "0 6px 18px rgba(0,0,0,.35)",
+        font: "12px/1.2 system-ui,Segoe UI,Arial",
+        opacity: "0",
+        transform: "translateY(6px)",
+        transition: "opacity .18s, transform .18s",
+        maxWidth: "60vw",
+        whiteSpace: "nowrap",
+        textOverflow: "ellipsis",
+        overflow: "hidden"
+      });
+      document.documentElement.appendChild(t);
+    }
+    t.textContent = msg;
+    requestAnimationFrame(() => {
+      t.style.opacity = "1";
+      t.style.transform = "translateY(0)";
+    });
+    clearTimeout(t._hideTimer);
+    t._hideTimer = setTimeout(() => {
+      t.style.opacity = "0";
+      t.style.transform = "translateY(6px)";
+    }, 1600);
+  }
+
+  function ensureGlobalStyles() {
+    if (!document.head || document.getElementById(GLOBAL_STYLE_ID)) return;
+    const st = document.createElement("style");
+    st.id = GLOBAL_STYLE_ID;
+    st.textContent = `
+      .mci-fileNameFixed{
+        white-space:pre-line !important;
+        overflow:visible !important;
+        text-overflow:unset !important;
+      }
+    `;
+    document.head.appendChild(st);
+  }
+
+  /*************************
+   * QQ HELPERS (same logic)*
+   *************************/
+  let fileNamesFixed = false;
+  let pdfPopupObserver = null;
+
+  function qqGetCheckedBoxes() {
+    const selectors = [
+      '.DocumentsImagesListTemplateContainer input[name="MultiSelectRow"]:checked',
+      'input[name="MultiSelectRow"]:checked',
+      'input[type="checkbox"][name="MultiSelectRow"]:checked'
+    ];
+    for (let i = 0; i < selectors.length; i++) {
+      const boxes = Array.from(document.querySelectorAll(selectors[i]));
+      if (boxes.length) return boxes;
+    }
+    return [];
+  }
+
+  function qqGetRowForCheckbox(cb) {
+    return cb.closest(".TableRow, tr, .documents-row, .zebra-row, [data-row]") || cb.closest("*");
+  }
+
+  function qqGetDownloadUrlFromRow(row, origin) {
+    if (!row) return null;
+
+    const ds = row.dataset || {};
+    const id =
+      ds.blobid ||
+      ds.blobId ||
+      ds.fileid ||
+      ds.fileId ||
+      ds.documentid ||
+      ds.documentId ||
+      ds.id;
+
+    if (id) return origin + "/FileUpload/DownloadFile/" + id + "?preview=true";
+
+    const cb = row.querySelector('input[type="checkbox"][name="MultiSelectRow"]');
+    if (cb && cb.value) {
+      if (/^[\w-]+$/.test(cb.value)) {
+        return origin + "/FileUpload/DownloadFile/" + cb.value + "?preview=true";
+      }
+      try {
+        const u = new URL(cb.value, origin);
+        const qid = u.searchParams.get("id");
+        if (qid) return origin + "/FileUpload/DownloadFile/" + qid + "?preview=true";
+        const m = u.pathname.match(/\/FileUpload\/DownloadFile\/([^/?#]+)/);
+        if (m && m[1]) return origin + "/FileUpload/DownloadFile/" + m[1] + "?preview=true";
+        return u.href;
+      } catch (e) {}
+    }
+
+    const anchor = row.querySelector(
+      'a[href*="/FileUpload/DownloadFile/"], a[href*="DownloadQuickFile"], a[href*="DownloadFile?"], a[href*="/Download/"]'
+    );
+    if (anchor) {
+      try {
+        const u2 = new URL(anchor.getAttribute("href"), origin);
+        const qid2 = u2.searchParams.get("id");
+        if (qid2) return origin + "/FileUpload/DownloadFile/" + qid2 + "?preview=true";
+        const m2 = u2.pathname.match(/\/FileUpload\/DownloadFile\/([^/?#]+)/);
+        if (m2 && m2[1]) return origin + "/FileUpload/DownloadFile/" + m2[1] + "?preview=true";
+        return u2.href;
+      } catch (e2) {}
+    }
+
+    return null;
+  }
+
+  function addOpenPdfButtonToPopup() {
+    const popup = document.querySelector("#preview.file-edit-popup");
+    if (!popup || getComputedStyle(popup).display === "none") return;
+
+    const img = popup.querySelector("img");
+    if (!img || !/DownloadQuickFile/i.test(img.src || "")) return;
+    if (popup.querySelector(".mci-open-popup-btn")) return;
+
+    let id = "";
+    try { id = new URL(img.src, location.origin).searchParams.get("id") || ""; } catch (e) {}
+    if (!id) return;
+
+    const btn = document.createElement("button");
+    btn.textContent = "Open PDF in New Tab";
+    btn.className = "mci-open-popup-btn";
+    Object.assign(btn.style, {
+      marginTop: "10px",
+      display: "block",
+      background: "#1f6feb",
+      color: "#fff",
+      padding: "8px 12px",
+      border: "none",
+      borderRadius: "6px",
+      cursor: "pointer"
+    });
+
+    btn.addEventListener("click", function () {
+      window.open(location.origin + "/FileUpload/DownloadFile/" + id + "?preview=true", "_blank");
+    });
+
+    popup.appendChild(btn);
+  }
+
+  function startPdfPopupObserver() {
+    if (!IS_QQ || pdfPopupObserver || !document.body || typeof MutationObserver === "undefined") return;
+    pdfPopupObserver = new MutationObserver(function () { addOpenPdfButtonToPopup(); });
+    pdfPopupObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
+  function smartOpenPdfs() {
+    const origin = location.origin;
+    let attempts = 0;
+
+    function tryOpen() {
+      attempts++;
+
+      const checked = qqGetCheckedBoxes();
+      if (checked.length) {
+        let opened = 0;
+        checked.forEach(function (cb) {
+          const row = qqGetRowForCheckbox(cb);
+          const url = qqGetDownloadUrlFromRow(row, origin);
+          if (url) {
+            window.open(url, "_blank");
+            opened++;
+          }
+        });
+        if (opened) {
+          toast("Opened " + opened + " PDF" + (opened > 1 ? "s" : "") + " from selected rows.");
+          return;
+        }
+      }
+
+      const iframe = document.getElementById("iframePdf");
+      if (iframe && /\/DownloadFile\//i.test(iframe.src || "")) {
+        const url2 = iframe.src.charAt(0) === "/" ? origin + iframe.src : iframe.src;
+        window.open(url2, "_blank");
+        toast("Opened PDF from iframe viewer.");
+        return;
+      }
+
+      const popupImg = document.querySelector("#preview.file-edit-popup img");
+      if (popupImg && /DownloadQuickFile/i.test(popupImg.src || "")) {
+        try {
+          const id = new URL(popupImg.src, origin).searchParams.get("id");
+          if (id) {
+            window.open(origin + "/FileUpload/DownloadFile/" + id + "?preview=true", "_blank");
+            toast("Opened PDF from popup viewer.");
+            return;
+          }
+        } catch (e) {}
+      }
+
+      if (attempts < 8) setTimeout(tryOpen, 350);
+      else toast("PDF not found. Try again after the document loads.");
+    }
+
+    tryOpen();
+  }
+
+  function toggleFileNameFix() {
+    fileNamesFixed = !fileNamesFixed;
+    const targets = document.querySelectorAll(".ContactItem.FileName");
+    targets.forEach(function (el) { el.classList.toggle("mci-fileNameFixed", fileNamesFixed); });
+    return { active: fileNamesFixed, count: targets.length };
+  }
+
+  function rowHighlightHandler(ev) {
+    const target = ev.target;
+    if (target && target.closest(
+      '.transactions.arrow, .action-south, [title="Show Transactions"], [data-url*="TransactionsList"], ' +
+      'a, button, input, select, textarea, label, [role="button"], [onclick]'
+    )) {
+      return;
+    }
+
+    ev.stopPropagation();
+    const row = ev.currentTarget;
+    const color = localStorage.getItem(HIGHLIGHT_COLOR_KEY) || DEFAULT_ROW_COLOR;
+
+    const isOn = row.dataset.mciHighlighted === "true";
+    if (isOn) {
+      row.style.backgroundColor = "";
+      row.dataset.mciHighlighted = "";
+    } else {
+      row.style.backgroundColor = color;
+      row.dataset.mciHighlighted = "true";
+    }
+  }
+
+    function attachRowHighlighter() {
+      const rows = document.querySelectorAll(
+        "div.zebra-row.email-row, .search-results-row, .TableRow.AcordItemRow"
+      );
+
+      rows.forEach(function (row) {
+        row.style.cursor = "pointer";
+
+        if (!row.dataset.mciRowListener) {
+          row.addEventListener("click", rowHighlightHandler);
+          row.dataset.mciRowListener = "1";
+        }
+      });
+
+      return rows.length;
+    }
+
+    function updateHighlightedRows(color) {
+      document.querySelectorAll('[data-mci-highlighted="true"]').forEach(function (row) {
+        row.style.backgroundColor = color;
+      });
+    }
+
+  /*************************
+   * CROSS-SITE TRIGGERS    *
+   *************************/
+  function triggerContactMapper(mode) {
+    const detail = { source: "mci-menu", mode: mode || "auto" };
+    try { window.postMessage({ __mci: "run-contact-mapper", detail: detail }, "*"); } catch (e) {}
+    try { document.dispatchEvent(new CustomEvent("mci-run-contact-mapper", { detail: detail })); } catch (e2) {}
+    try { window.dispatchEvent(new CustomEvent("mci-run-contact-mapper", { detail: detail })); } catch (e3) {}
+    try { if (window.top && window.top !== window) window.top.dispatchEvent(new CustomEvent("mci-run-contact-mapper", { detail: detail })); } catch (e4) {}
+  }
+
+  function triggerFileDownloader(tool) {
+    const detail = { source: "mci-menu", tool: tool };
+    try { window.postMessage({ __mci: "run-file-downloader", detail: detail }, "*"); } catch (e) {}
+  }
+
+  function triggerCountyFinder(mode, address) {
+    const isManual = mode === "manual";
+    const detail = {
+      source: "mci-menu",
+      mode: isManual ? "manual" : "auto",
+      address: address || ""
+    };
+    const eventName = isManual ? EVENT_COUNTY_MANUAL : EVENT_COUNTY_RUN;
+
+    try { window.dispatchEvent(new CustomEvent(eventName, { detail: detail })); } catch (e) {}
+  }
+
+  function getErieExtractorEnabled() {
     try {
       const raw = localStorage.getItem(PREF_ERIE_EXTRACTOR_ENABLED_KEY);
       if (raw == null) return true;
-      return raw === 'true';
+      return raw === "true";
     } catch (e) {
       return true;
     }
   }
 
-  function mountExtractorUI() {
-    const existing = document.getElementById('erie-master-extractor-panel');
-    if (existing && UI.panel === existing) return;
-    if (existing) existing.remove();
-
-    UI.panel = null;
-    UI.status = null;
-    UI.init();
+  function setErieExtractorEnabled(enabled) {
+    try {
+      localStorage.setItem(PREF_ERIE_EXTRACTOR_ENABLED_KEY, enabled ? "true" : "false");
+    } catch (e) {}
   }
 
-  function unmountExtractorUI() {
-    const panel = document.getElementById('erie-master-extractor-panel');
-    if (panel) panel.remove();
-
-    const toast = document.getElementById('erie-master-extractor-toast');
-    if (toast) toast.remove();
-
-    UI.panel = null;
-    UI.status = null;
+  function getErieExtractorToggleLabel(enabled) {
+    return "Erie Extractor: " + (enabled ? "On" : "Off");
   }
 
-  function applyExtractorEnabledState() {
-    if (isExtractorEnabled()) {
-      mountExtractorUI();
-      return true;
-    }
-    unmountExtractorUI();
-    return false;
+  function refreshErieExtractorToggleButton() {
+    const host = document.getElementById(HOST_ID);
+    const root = host && host.shadowRoot;
+    if (!root) return;
+
+    const btn = root.querySelector("#mci_erie_extractor_toggle");
+    if (!btn) return;
+
+    const enabled = getErieExtractorEnabled();
+    btn.textContent = getErieExtractorToggleLabel(enabled);
+    btn.setAttribute("data-on", enabled ? "1" : "0");
   }
 
-  function wireExtractorEnabledStateListeners() {
-    window.addEventListener('storage', function (event) {
+  let erieExtractorToggleSyncWired = false;
+  function wireErieExtractorToggleSyncListeners() {
+    if (erieExtractorToggleSyncWired) return;
+    erieExtractorToggleSyncWired = true;
+
+    window.addEventListener("storage", function (event) {
       if (!event || event.key !== PREF_ERIE_EXTRACTOR_ENABLED_KEY) return;
-      applyExtractorEnabledState();
+      refreshErieExtractorToggleButton();
     });
 
-    function onExtractorToggleEvent() {
-      applyExtractorEnabledState();
+    function onErieExtractorToggleEvent() {
+      refreshErieExtractorToggleButton();
     }
 
-    document.addEventListener('mci:erie-extractor-toggle', onExtractorToggleEvent);
-    window.addEventListener('mci:erie-extractor-toggle', onExtractorToggleEvent);
+    document.addEventListener(EVENT_ERIE_EXTRACTOR_TOGGLE, onErieExtractorToggleEvent);
+    window.addEventListener(EVENT_ERIE_EXTRACTOR_TOGGLE, onErieExtractorToggleEvent);
   }
 
-  // -----------------------------
-  // Boot
-  // -----------------------------
-  function boot() {
-    wireExtractorEnabledStateListeners();
-    if (!applyExtractorEnabledState()) return;
+  function broadcastErieExtractorToggle(enabled) {
+    const detail = {
+      source: "mci-menu",
+      enabled: !!enabled,
+      storageKey: PREF_ERIE_EXTRACTOR_ENABLED_KEY
+    };
+    try { window.postMessage({ __mci: "erie-extractor-toggle", detail: detail }, "*"); } catch (e) {}
+    try { document.dispatchEvent(new CustomEvent(EVENT_ERIE_EXTRACTOR_TOGGLE, { detail: detail })); } catch (e2) {}
+    try { window.dispatchEvent(new CustomEvent(EVENT_ERIE_EXTRACTOR_TOGGLE, { detail: detail })); } catch (e3) {}
+    try { if (window.top && window.top !== window) window.top.dispatchEvent(new CustomEvent(EVENT_ERIE_EXTRACTOR_TOGGLE, { detail: detail })); } catch (e4) {}
+  }
+
+  function isOnNatGenQuotePage(pathPart) {
+    const path = String(location.pathname || "").toLowerCase();
+    return !!IS_NG && path.indexOf(String(pathPart || "").toLowerCase()) >= 0;
+  }
+
+  function resolveCallableGlobal(fnName) {
+    if (!fnName) return null;
+
+    const roots = [PAGE_WINDOW, window];
+    try {
+      if (window.top && window.top !== window) roots.push(window.top);
+    } catch (e) {}
+
+    for (let i = 0; i < roots.length; i += 1) {
+      const root = roots[i];
+      if (!root) continue;
+      try {
+        const fn = root[fnName];
+        if (typeof fn === "function") return { root: root, fn: fn };
+      } catch (e2) {}
+    }
+
+    return null;
+  }
+
+  function runNatGenFillLauncher(opts) {
+    const pagePath = opts && opts.pagePath ? opts.pagePath : "";
+    const fnName = opts && opts.fnName ? opts.fnName : "";
+    const wrongPageMsg = opts && opts.wrongPageMsg ? opts.wrongPageMsg : "Open the correct NatGen page first.";
+    const missingFnMsg = opts && opts.missingFnMsg ? opts.missingFnMsg : "NatGen filler script not found on this page.";
+
+    if (!isOnNatGenQuotePage(pagePath)) {
+      toast(wrongPageMsg);
+      return;
+    }
+
+    const target = resolveCallableGlobal(fnName);
+    if (!target) {
+      toast(missingFnMsg);
+      return;
+    }
 
     try {
-      Storage.syncSharedPayload(Storage.loadPayload(), 'boot', 0);
-    } catch (e) {
-      U.debug('Erie Master Extractor boot shared sync failed:', e);
-    }
-
-    const settings = Storage.loadSettings();
-    if (settings.autoCollect) {
-      try {
-        Actions.collectCurrentPage();
-      } catch (e) {
-        console.error('Erie Master Extractor auto-collect failed:', e);
-        UI.toast('Auto collect failed');
+      const res = target.fn.call(target.root);
+      if (res && typeof res.then === "function") {
+        res.catch(function (e) {
+          console.warn("[MCI Toolbox] NatGen launcher error:", e);
+          toast("Error starting NatGen filler - see console.");
+        });
       }
+    } catch (e) {
+      console.warn("[MCI Toolbox] NatGen launcher error:", e);
+      toast("Error starting NatGen filler - see console.");
     }
   }
 
-  boot();
+  function runProgressiveFillLauncher(opts) {
+    const fnName = opts && opts.fnName ? opts.fnName : "";
+    const wrongPageMsg = opts && opts.wrongPageMsg ? opts.wrongPageMsg : "Open Progressive before running this.";
+    const missingFnMsg = opts && opts.missingFnMsg ? opts.missingFnMsg : "Progressive filler script not found on this page.";
+
+    if (!IS_PROG) {
+      toast(wrongPageMsg);
+      return;
+    }
+
+    const target = resolveCallableGlobal(fnName);
+    if (!target) {
+      toast(missingFnMsg);
+      return;
+    }
+
+    try {
+      const res = target.fn.call(target.root);
+      if (res && typeof res.then === "function") {
+        res.catch(function (e) {
+          console.warn("[MCI Toolbox] Progressive launcher error:", e);
+          toast("Error starting Progressive filler - see console.");
+        });
+      }
+    } catch (e) {
+      console.warn("[MCI Toolbox] Progressive launcher error:", e);
+      toast("Error starting Progressive filler - see console.");
+    }
+  }
+
+  /*************************
+   * CONFIG UI DSL          *
+   *************************/
+  // Supported item types:
+  // - button: {type:"button", id, text, className, onClick}
+  // - pair:   {type:"pair", left:{...button}, right:{...button}}
+  // - split:  {type:"split", className, left:{...}, right:{...}}
+  // - group:  {type:"group", className, items:[...buttons]}
+  // - panel:  {type:"panel", toggle:{...button}, panelId, items:[...]}
+  // - custom: {type:"custom", html}  (for your shortcuts card etc.)
+  // - rowControls: QQ row highlighter + color input compact row
+
+  const storedRowColor = localStorage.getItem(HIGHLIGHT_COLOR_KEY) || DEFAULT_ROW_COLOR;
+  if (IS_QQ && !localStorage.getItem(HIGHLIGHT_COLOR_KEY)) localStorage.setItem(HIGHLIGHT_COLOR_KEY, storedRowColor);
+
+  const SECTIONS = [
+    IS_QQ ? {
+      label: "QQ Helpers",
+      items: [
+      { type: "button", id: "mci_pdf_open", text: "📄 Open PDFs (Smart)", className: "mci-btn qq-pdf" },
+      { type: "button", id: "mci_fix_names", text: "🧾Show Full File Names", className: "mci-btn qq-names" },
+        { type: "rowControls" }
+      ]
+    } : null,
+
+    {
+      label: "Simple",
+      items: [
+        {
+          type: "pair",
+          left:  { id: "mci_copy",  text: "✂️Copy",  className: "mci-btn ring copy-ring" },
+          right: { id: "mci_paste", text: "📋Paste", className: "mci-btn ring paste-ring" }
+        }
+      ]
+    },
+
+    {
+      label: "Quote Export",
+      items: [
+        { type: "button", id: "mci_erie_extractor_toggle", text: getErieExtractorToggleLabel(getErieExtractorEnabled()), className: "mci-btn erie-toggle" },
+        {
+          type: "panel",
+          panelId: "mci_export_panel",
+          toggle: { id: "mci_export_toggle", text: "🚗 Erie Export Quote ▸", className: "mci-btn export" },
+          items: [
+            {
+              type: "panel",
+              panelId: "mci_natgen_fillers_panel",
+              className: "mci-subsection mci-subsection-ng",
+              toggle: { id: "mci_natgen_fillers_toggle", text: "National General", className: "mci-btn ng-parent" },
+              items: [
+                {
+                  type: "group",
+                  className: "mci-btn-group ng-group",
+                  items: [
+                    { type: "button", id: "mci_ng_fill_named", text: "Nmd", title: "Fill Named Insured", className: "mci-btn ng-named" },
+                    { type: "button", id: "mci_ng_fill_drivers", text: "Drv", title: "Fill Drivers", className: "mci-btn ng-drivers" },
+                    { type: "button", id: "mci_ng_fill_vehicles", text: "Veh", title: "Fill Vehicles", className: "mci-btn ng-vehicles" },
+                    { type: "button", id: "mci_ng_fill_coverages", text: "Cov", title: "Fill Coverages", className: "mci-btn ng-coverages" }
+                  ]
+                }
+              ]
+            },
+            {
+              type: "panel",
+              panelId: "mci_progressive_fillers_panel",
+              className: "mci-subsection mci-subsection-prog",
+              toggle: { id: "mci_progressive_fillers_toggle", text: "Progressive", className: "mci-btn prog-parent" },
+              items: [
+                {
+                  type: "group",
+                  className: "mci-btn-group prog-group",
+                  items: [
+                    { type: "button", id: "mci_prog_fill_named", text: "Nmd", title: "Fill Named Insured", className: "mci-btn prog-named" },
+                    { type: "button", id: "mci_prog_fill_products", text: "Prod", title: "Fill Products", className: "mci-btn prog-products" },
+                    { type: "button", id: "mci_prog_fill_members", text: "Mem", title: "Fill Household Members", className: "mci-btn prog-members" }
+                  ]
+                }
+              ]
+            },
+            {
+              type: "panel",
+              panelId: "mci_jones_forms_panel",
+              className: "mci-subsection mci-subsection-jones",
+              toggle: { id: "mci_jones_forms_toggle", text: "Jones Forms", className: "mci-btn jones-parent" },
+              items: [
+                {
+                  type: "group",
+                  className: "mci-btn-group jones-group",
+                  items: [
+                    { type: "button", id: "mci_export_auto", text: "Auto", title: "Auto Quote Form", className: "mci-btn jones-auto" },
+                    { type: "button", id: "mci_export_home", text: "Home", title: "Home Quote Form", className: "mci-btn jones-home" }
+                  ]
+                }
+              ]
+            },
+          ]
+        }
+      ]
+    },
+
+    {
+      label: "File Downloader",
+      items: [
+        {
+          type: "panel",
+          panelId: "mci_fd_panel",
+          toggle: { id: "mci_fd_toggle", text: "📥 File Downloader ▸", className: "mci-btn downloader" },
+          items: [
+            { type: "button", id: "mci_fd_erie", text: "Erie / NatGen", className: "mci-btn purple" },
+            {
+              type: "split",
+              className: "mci-split-btn brand",
+              left:  { id: "mci_fd_prog_res", text: "Progressive Residential", title: "Trigger Progressive Residential downloader" },
+              right: { id: "mci_fd_prog_com", text: "Progressive Commercial",  title: "Trigger Progressive Commercial downloader" }
+            },
+            {
+              type: "split",
+              className: "mci-split-btn aqua",
+              left:  { id: "mci_fd_flood_beyond", text: "Beyond Floods", title: "Trigger Beyond Floods downloader" },
+              right: { id: "mci_fd_flood_nfip",   text: "NFIP Flood",   title: "Trigger NFIP Flood downloader" }
+            },
+            { type: "button", id: "mci_fd_ncjua", text: "NCJUA", className: "mci-btn green" }
+          ]
+        }
+      ]
+    },
+
+    {
+      label: "QQC Extractor",
+      items: [
+        { type: "button", id: "mci_open_qqc", text: "📂 Get Customer Data", className: "mci-btn qqc" }
+      ]
+    },
+
+    {
+      label: "VIN Tools",
+      items: [
+        {
+          type: "panel",
+          panelId: "mci_vin_panel",
+          toggle: { id: "mci_vin_toggle", text: "🚗 VIN Lookup ▸", className: "mci-btn vin-parent" },
+          items: [
+            {
+              type: "custom",
+              html:
+                '<div class="mci-vin-wrap">' +
+                  '<input id="mci_vin_input" class="mci-vin-input" type="text" maxlength="17" placeholder="Paste or type VIN">' +
+                  '<div class="mci-btn-pair">' +
+                    '<button class="mci-btn vin-util" id="mci_vin_paste" type="button">Paste</button>' +
+                    '<button class="mci-btn vin-util" id="mci_vin_clear" type="button">Clear</button>' +
+                  '</div>' +
+                  '<div class="mci-btn-group vin-group">' +
+                    '<button class="mci-btn vin-nhtsa" id="mci_vin_nhtsa" type="button">NHTSA</button>' +
+                    '<button class="mci-btn vin-google" id="mci_vin_google" type="button">Google</button>' +
+                    '<button class="mci-btn vin-copy" id="mci_vin_copy" type="button">Copy</button>' +
+                  '</div>' +
+                '</div>'
+            }
+          ]
+        }
+      ]
+    },
+
+    {
+      label: "Tools",
+      items: [
+          {
+          type: "split",
+          className: "mci-split-btn county-split",
+          left:  { id: "mci_county_run", text: "📍 County Finder", title: "Run County Finder using selection / hover / page detection" },
+          right: { id: "mci_county_manual", text: "✏️",title: "Open manual address entry" }
+        },
+        { type: "button", id: "mci_cashCenter", text: "💵 Cash Payment", className: "mci-btn brand" },
+        { type: "button", id: "mci_fax",        text: "📠 Fax", className: "mci-btn brand" },
+        { type: "button", id: "mci_draw_tool",  text: "🎨 Draw Tool", className: "mci-btn draw-gradient" }
+      ]
+    },
+
+    {
+      label: "Shortcuts",
+      items: [
+        {
+          type: "panel",
+          panelId: "mci_shortcuts_panel",
+          toggle: { id: "mci_shortcuts_toggle", text: "⌨️ Shortcuts Help ▸", className: "mci-btn help" },
+          items: [
+            {
+              type: "custom",
+              html:
+              '<div class="mci-footer-note shortcuts v2">' +
+                '<div class="tip">💡 <b>Tip:</b> Hover text, then press the key</div>' +
+
+                '<div class="group"><div class="list">' +
+                  '<span><b>SMART LOOKUP</b></span>' +
+                  '<div><span class="kbd">ALT</span> + <span class="kbd">Right-Click</span></div>' +
+                  '<div>Name → Address → Policy #</div>' +
+                '</div></div>' +
+
+                '<hr style="border:none;border-top:1px dashed rgba(255,255,255,.2);margin:8px 0;">' +
+
+                '<div class="group"><div class="list">' +
+                  '<span><b>VIN LOOKUP</b></span>' +
+                  '<div><span class="kbd">F10</span></div>' +
+                  '<div>NHTSA Decoder</div>' +
+                '</div></div>' +
+
+                '<hr style="border:none;border-top:1px dashed rgba(255,255,255,.2);margin:8px 0;">' +
+
+                '<div class="group"><div class="list">' +
+                  '<span><b>COUNTY LOOKUP</b></span>' +
+                  '<div><span class="kbd">ALT</span> + <span class="kbd">C</span></div>' +
+                  '<div>Find County from Address</div>' +
+                '</div></div>' +
+
+              '</div>'
+            }
+          ]
+        }
+      ]
+    }
+  ].filter(Boolean);
+
+  /*************************
+   * RENDER HELPERS         *
+   *************************/
+  function escHtml(s) {
+    return String(s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function renderButton(btn) {
+    const cls = btn.className || "mci-btn";
+    const title = btn.title ? ' title="' + escHtml(btn.title) + '"' : "";
+    return '<button class="' + escHtml(cls) + '" id="' + escHtml(btn.id) + '"' + title + ' type="button">' +
+      escHtml(btn.text) +
+    "</button>";
+  }
+
+  function renderPair(pair) {
+    return (
+      '<div class="mci-btn-pair">' +
+        renderButton(pair.left) +
+        renderButton(pair.right) +
+      "</div>"
+    );
+  }
+
+  function renderSplit(split) {
+    const leftTitle = split.left.title ? ' title="' + escHtml(split.left.title) + '"' : "";
+    const rightTitle = split.right.title ? ' title="' + escHtml(split.right.title) + '"' : "";
+
+    return (
+      '<div class="' + escHtml(split.className || "mci-split-btn") + '" role="group">' +
+        '<button class="mci-split-half" id="' + escHtml(split.left.id) + '" type="button"' + leftTitle + ">" +
+          escHtml(split.left.text) +
+        "</button>" +
+        '<div class="mci-split-divider" aria-hidden="true"></div>' +
+        '<button class="mci-split-half" id="' + escHtml(split.right.id) + '" type="button"' + rightTitle + ">" +
+          escHtml(split.right.text) +
+        "</button>" +
+      "</div>"
+    );
+  }
+
+  function renderPanel(panel) {
+    const wrapperClass = "mci-downloader" + (panel.className ? (" " + panel.className) : "");
+    return (
+      '<div class="' + escHtml(wrapperClass) + '">' +
+        renderButton(panel.toggle) +
+        '<div class="mci-downloader-panel" id="' + escHtml(panel.panelId) + '">' +
+          panel.items.map(renderItem).join("") +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  function renderGroup(group) {
+    const cls = group.className || "mci-btn-group";
+    const items = Array.isArray(group.items) ? group.items : [];
+    return (
+      '<div class="' + escHtml(cls) + '" role="group">' +
+        items.map(renderButton).join("") +
+      "</div>"
+    );
+  }
+
+  function renderRowControls() {
+    return (
+      '<div class="qq-row-controls">' +
+        '<button class="mci-btn qq-highlight-live" id="mci_row_highlight" style="flex:1" type="button">🟡 Row Highlighter</button>' +
+        '<label class="color-chip" title="Pick highlight color">' +
+          '<input type="color" id="mci_row_color" value="' + escHtml(storedRowColor) + '" />' +
+        "</label>" +
+      "</div>"
+    );
+  }
+
+  function renderItem(item) {
+    if (!item || !item.type) return "";
+    if (item.type === "button") return renderButton(item);
+    if (item.type === "pair") return renderPair(item);
+    if (item.type === "split") return renderSplit(item);
+    if (item.type === "group") return renderGroup(item);
+    if (item.type === "panel") return renderPanel(item);
+    if (item.type === "custom") return item.html || "";
+    if (item.type === "rowControls") return renderRowControls();
+    return "";
+  }
+
+  function renderSections() {
+    return SECTIONS.map(function (sec) {
+      return (
+        '<div class="divider" data-label="' + escHtml(sec.label) + '"></div>' +
+        '<div class="mci-section"><div class="mci-body">' +
+          sec.items.map(renderItem).join("") +
+        "</div></div>"
+      );
+    }).join("");
+  }
+
+  /*************************
+   * MOUNT SHADOW UI        *
+   *************************/
+  function mount() {
+    let host = document.getElementById(HOST_ID);
+    if (!host) {
+      host = document.createElement("div");
+      host.id = HOST_ID;
+      Object.assign(host.style, {
+        position: "fixed",
+        top: "0",
+        left: "0",
+        width: "0",
+        height: "0",
+        zIndex: "2147483647"
+      });
+      document.documentElement.appendChild(host);
+      host.attachShadow({ mode: "open" });
+    }
+
+    const root = host.shadowRoot;
+    wireErieExtractorToggleSyncListeners();
+    if (root.getElementById(MENU_ID)) return root;
+
+    if (IS_QQ) ensureGlobalStyles();
+
+    root.innerHTML =
+      '<style>' +
+        ':host{all:initial} *,*::before,*::after{box-sizing:border-box}' +
+
+        /* TAB */
+        '#' + TRIGGER_ID + '{position:fixed;top:50%;left:0;transform:translateY(-50%);width:18px;height:54px;z-index:2147483647;background:#0a5efa;color:#fff;border:none;border-radius:0 10px 10px 0;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:6px 0;opacity:.90;box-shadow:2px 0 10px rgba(0,0,0,.35);transition:opacity .15s ease,width .15s ease,background .15s ease,box-shadow .2s ease}' +
+        '#' + TRIGGER_ID + ':hover{opacity:1;width:22px;background:#1e3a8a;box-shadow:3px 0 14px rgba(0,0,0,.45)}' +
+        '#' + TRIGGER_ID + '[data-open="1"]{opacity:.55}' +
+        '.mci-tab-mark{width:14px;height:14px;border-radius:50%;background-size:contain;background-repeat:no-repeat;background-position:center}' +
+        '.mci-tab-label{writing-mode:vertical-rl;transform:rotate(180deg);font:700 10px system-ui,Segoe UI,Arial;letter-spacing:.8px;opacity:.95;user-select:none}' +
+
+        /* MENU */
+        '#' + MENU_ID + '{position:fixed;top:0;left:-214px;width:214px;height:100vh;background:#1a1c22;color:#eef3ff;z-index:2147483646;padding-top:0;box-shadow:2px 0 10px rgba(0,0,0,.55);transition:left .22s cubic-bezier(.2,.9,.2,1),box-shadow .22s ease,filter .22s ease;overflow-x:hidden;overflow-y:auto;font:13px system-ui,Segoe UI,Arial;will-change:left}' +
+        '#' + MENU_ID + '[data-open="1"]{left:0!important;filter:brightness(1.02)}' +
+
+        '.mci-section{margin:10px 10px 6px;border:1px solid rgba(255,255,255,.06);border-radius:10px;background:#20232b;overflow:hidden}' +
+        '.mci-head{background:#0f172a;color:#fff;padding:9px 12px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;align-items:flex-start;gap:2px;font-weight:700;letter-spacing:.2px}' +
+        '.mci-head-top{display:flex;align-items:center;gap:6px}' +
+        '.mci-head-meta{display:flex;align-items:center;gap:6px;font-weight:600;font-size:12px;width:100%}' +
+        '.mci-close-btn{background:none;border:none;color:#f97373;cursor:pointer;font-size:14px;padding:0;margin:0}' +
+        '.mci-close-btn:hover{color:#fecaca}' +
+        '.mci-title{font-size:14px}' +
+        '.badge{display:inline-block;background:#334155;color:#e6eef8;border:1px solid rgba(255,255,255,.08);padding:3px 6px;border-radius:999px;font-size:11px;margin-left:6px}' +
+
+        /* HEADER HOVER TOGGLE */
+        '.mci-switch{margin-left:auto;display:flex;align-items:center;gap:6px;user-select:none;cursor:pointer;font:600 11px system-ui,Segoe UI,Arial;color:#cfe2ff}' +
+        '.mci-switch input{display:none}' +
+        '.mci-slider{width:34px;height:18px;border-radius:999px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.16);position:relative;transition:background .15s ease,border-color .15s ease}' +
+        '.mci-slider::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#9fb4d8;transition:transform .15s ease,background .15s ease}' +
+        '.mci-switch-text{opacity:.9;letter-spacing:.2px}' +
+        '.mci-switch input:checked + .mci-slider{background:rgba(19,115,51,.45);border-color:rgba(19,115,51,.65)}' +
+        '.mci-switch input:checked + .mci-slider::after{transform:translateX(16px);background:#c7f9d4}' +
+
+        /* BODY */
+        '.mci-body{padding:8px 10px}' +
+        /* BUTTONS */
+        '.mci-btn{display:block;width:100%;margin:4px 0!important;padding:3px 5px!important;border-radius:4px;border:1px solid rgba(255,255,255,.08);background:#2a2f39;color:#fff;text-align:left;cursor:pointer;line-height:1.2;transition:transform .08s ease,box-shadow .18s ease,filter .18s ease,border-color .18s ease!important}' +
+        '.mci-btn:hover{transform:translateY(-1px)!important;box-shadow:0 6px 14px rgba(0,0,0,.45)!important;filter:brightness(1.15)!important;border-color:rgba(255,255,255,.2)!important}' +
+        '.mci-btn:active{transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.4)!important}' +
+        '.mci-btn.primary{background:#1f6feb}.mci-btn.primary:hover{background:#2b79f0}' +
+        '.mci-btn.green{background:#3ba55d}.mci-btn.green:hover{background:#44b569}' +
+        '.mci-btn.blue{background:#007EF5}.mci-btn.blue:hover{background:#2b6ef5}' +
+        '.mci-btn.purple{background:#7b68ee}.mci-btn.purple:hover{background:#6c5ce7}' +
+        '.mci-btn.brand{background:#1e40af}.mci-btn.brand:hover{background:#1e3a8a}' +
+        '.mci-btn.ng-parent{background:#1e3a8a;padding:4px 8px!important;font-weight:600;opacity:.9}' +
+        '.mci-btn.ng-parent:hover{background:#1e40af;opacity:.97;transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.34)!important;filter:brightness(1.05)!important}' +
+        '.mci-btn.prog-parent{background:#813E17;padding:4px 8px!important;font-weight:600;opacity:.9}' +
+        '.mci-btn.prog-parent:hover{background:#DB7235;opacity:.97;transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.34)!important;filter:brightness(1.05)!important}' +
+        '.mci-btn.prog-named{background:#2563eb}.mci-btn.prog-named:hover{background:#2b6ef5}' +
+        '.mci-btn.prog-products{background:#d97706}.mci-btn.prog-products:hover{background:#ea860c}' +
+        '.mci-btn.prog-members{background:#2f9e58}.mci-btn.prog-members:hover{background:#36ad61}' +
+        '.mci-btn.jones-parent{background:#5b21b6;padding:4px 8px!important;font-weight:600;opacity:.9}' +
+        '.mci-btn.jones-parent:hover{background:#6d28d9;opacity:.97;transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.34)!important;filter:brightness(1.05)!important}' +
+        '.mci-disclosure-toggle{position:relative;padding-right:22px!important}' +
+        '.mci-disclosure-toggle::after{content:"";position:absolute;right:8px;top:50%;width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:6px solid rgba(255,255,255,.92);transform:translateY(-50%) rotate(0deg);transform-origin:35% 50%;transition:transform .16s ease,opacity .16s ease;opacity:.88}' +
+        '.mci-disclosure-toggle[data-open="1"]::after{transform:translateY(-50%) rotate(90deg);opacity:1}' +
+        '.mci-btn.ng-named{background:#2563eb}.mci-btn.ng-named:hover{background:#2b6ef5}' +
+        '.mci-btn.ng-drivers{background:#2f9e58}.mci-btn.ng-drivers:hover{background:#36ad61}' +
+        '.mci-btn.ng-vehicles{background:#d97706}.mci-btn.ng-vehicles:hover{background:#ea860c}' +
+        '.mci-btn.ng-coverages{background:#0f766e}.mci-btn.ng-coverages:hover{background:#0d857c}' +
+        '.mci-btn.jones-auto{background:#1d4ed8}.mci-btn.jones-auto:hover{background:#2563eb}' +
+        '.mci-btn.jones-home{background:#4f7b2f}.mci-btn.jones-home:hover{background:#5a8a35}' +
+        '.mci-btn.erie-toggle{position:relative;padding-right:52px!important;background:#334155}' +
+        '.mci-btn.erie-toggle:hover{background:#3f4f63}' +
+        '.mci-btn.erie-toggle::before{content:"";position:absolute;right:10px;top:50%;transform:translateY(-50%);width:34px;height:18px;border-radius:999px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25)}' +
+        '.mci-btn.erie-toggle::after{content:"";position:absolute;right:27px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:50%;background:#cbd5e1;transition:right .16s ease,background .16s ease}' +
+        '.mci-btn.erie-toggle[data-on="1"]{background:#1f7a3d}' +
+        '.mci-btn.erie-toggle[data-on="1"]:hover{background:#258d47}' +
+        '.mci-btn.erie-toggle[data-on="1"]::before{background:rgba(17,94,39,.75);border-color:rgba(167,243,208,.55)}' +
+        '.mci-btn.erie-toggle[data-on="1"]::after{right:11px;background:#dcfce7}' +
+
+        '.mci-btn-pair{display:flex;gap:8px}.mci-btn-pair .mci-btn{flex:1;margin:0!important}' +
+
+        '.mci-split-btn{display:flex;width:100%;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.12);padding:0;height:37px}' +
+        '.mci-split-btn.brand{background:#1e40af}.mci-split-btn.aqua{background:#32a8a2}' +
+        '.mci-split-half{flex:1;border:none;margin:0;background:transparent;color:#fff;text-align:center;cursor:pointer;font:inherit;line-height:1.2;transition:background .15s,transform .05s,filter .18s ease}' +
+        '.mci-split-half:hover{background:rgba(0,0,0,.18);filter:brightness(1.15)}' +
+        '.mci-split-half:active{transform:scale(.99)}' +
+        '.mci-split-divider{width:1px;background:rgba(255,255,255,.18)}' +
+        /* County Finder Button (Carolina Blue) */
+        '.mci-split-btn.county-split{display:flex;align-items:center;width:100%;height:24px;min-height:20px;border-radius:6px;overflow:hidden;white-space:nowrap;background:linear-gradient(180deg,#a8cce6 0%,#7bafd4 55%,#5f95bd 100%);border:1px solid rgba(60,90,120,.35);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 3px 8px rgba(0,0,0,.22)}' +
+        '.mci-split-btn.county-split:hover{background:linear-gradient(180deg,#bdd9ec 0%,#8bb9dc 55%,#6aa2c9 100%)}' +
+        '.mci-split-btn.county-split .mci-split-half{height:30px;min-height:30px;display:flex;align-items:center;white-space:nowrap;color:#0f2a3a;font-weight:700;text-shadow:0 1px 0 rgba(255,255,255,.35)}' +
+        '.mci-split-btn.county-split .mci-split-half:hover{background:rgba(255,255,255,.12);filter:brightness(1.03)}' +
+        '.mci-split-btn.county-split .mci-split-divider{width:1px;height:70%;background:rgba(0,0,0,.2)}' +
+        '#mci_county_run{flex:1 1 auto;justify-content:flex-start;padding:0 10px;font-size:13px}' +
+        '#mci_county_manual{flex:0 0 30px;justify-content:center;padding:0;font-size:12px;letter-spacing:0}' +
+
+        '#mci_county_run.mci-split-half{flex:2 0 0}' +
+        '#mci_county_manual.mci-split-half{flex:1 0 0;font-size:12px;letter-spacing:.15px}' +
+
+        /* Erie Export Button */
+        '.mci-btn.export{background:linear-gradient(180deg,#3b82f6 0%,#2563eb 52%,#1e3a8a 100%)}' +
+        '.mci-btn.export:hover{background:linear-gradient(180deg,#60a5fa 0%,#3b82f6 52%,#1e40af 100%)}' +
+        /* Help Button */
+        '.mci-btn.help{background:#A11702}' +
+        '.mci-btn.help:hover{background:#c11a03}' +
+
+        /* DIVIDERS */
+        '.divider{margin:12px 10px 10px;border-top:1px dashed rgba(255,255,255,.25);position:relative;height:0}' +
+        '.divider::after{content:attr(data-label);position:absolute;left:50%;transform:translate(-50%,-55%);background:#1a1c22;padding:0 6px;color:#9fb4d8;font-size:11px;letter-spacing:.2px}' +
+
+        '.mci-downloader{display:flex;flex-direction:column;gap:6px}' +
+        '.mci-downloader .mci-btn{margin:0!important}' +
+        '.mci-downloader-panel{display:none;flex-direction:column;gap:6px}' +
+        '.mci-downloader-panel.open{display:flex}' +
+        '.mci-downloader-panel#mci_export_panel.open{gap:8px}' +
+        '.mci-downloader.mci-subsection{padding:5px 6px;border-radius:10px;gap:5px;overflow:hidden}' +
+        '.mci-downloader.mci-subsection-ng{background:rgba(30,58,138,.28);border:1px solid rgba(96,165,250,.24)}' +
+        '.mci-downloader.mci-subsection-prog{background:rgba(138,100,30,.20);border:1px solid rgba(250,167,96,.20)}' +
+        '.mci-downloader.mci-subsection-jones{background:rgba(91,33,182,.24);border:1px solid rgba(167,139,250,.24)}' +
+        '.mci-downloader.mci-subsection .mci-downloader-panel{padding-top:1px;gap:6px}' +
+        '.mci-btn-group{display:flex;gap:6px;width:100%;max-width:100%;min-width:0}' +
+        '.mci-btn-group .mci-btn{flex:1 1 0;width:auto!important;min-width:0;display:flex;align-items:center;justify-content:center;height:25px;min-height:25px;margin:0!important;padding:4px 6px!important;text-align:center;border-radius:6px; border: 1px solid #00b9ff;}' +
+        '.mci-downloader-panel .mci-btn-group{margin-top:0}' +
+
+        /* Downloader Buttons */
+        '.mci-btn.downloader{background:linear-gradient(180deg,#b04dff 0%,#9100f5 55%,#5e00a8 100%)}' +
+        '.mci-btn.downloader:hover{background:linear-gradient(180deg,#c066ff 0%,#a020ff 55%,#6b00c2 100%)}' +
+        /* QQ Get Customer Data Button */
+        '.mci-btn.qqc{background:linear-gradient(180deg,#ff7a33 0%,#EE6521 52%,#b94b12 100%)}' +
+        '.mci-btn.qqc:hover{background:linear-gradient(180deg,#ff8c4d 0%,#ff7029 52%,#c55418 100%)}' +
+        /* Draw Tool Button */
+        '.mci-btn.draw-gradient{background:linear-gradient(135deg,#7c3aed 0%,#2563eb 45%,#06b6d4 100%);color:#ffffff;border:1px solid rgba(255,255,255,.18);}' +
+        '.mci-btn.draw-gradient:hover{filter:brightness(1.06);transform:translateY(-1px);}' +
+        '.mci-btn.draw-gradient:active{transform:translateY(0);filter:brightness(.98);}' +
+
+        /* Copy Paste Buttons Ring*/
+        '.mci-btn.ring{border:1px solid rgba(255,255,255,.25);box-shadow:0 0 0 1px rgba(0,0,0,.65),0 0 0 2px rgba(255,255,255,.10),inset 0 2px 3px rgba(255,255,255,.15),inset 0 -3px 6px rgba(0,0,0,.7);transition:transform .12s ease,box-shadow .18s ease,filter .18s ease;}' +
+        '.mci-btn.ring:hover{filter:brightness(1.08);box-shadow:0 0 0 1px rgba(0,0,0,.65),0 0 0 2px rgba(255,255,255,.14),0 8px 18px rgba(0,0,0,.5),inset 0 2px 4px rgba(255,255,255,.2),inset 0 -4px 8px rgba(0,0,0,.75);}' +
+        '.mci-btn.ring:active{transform:translateY(1px);box-shadow:inset 0 3px 6px rgba(0,0,0,.75),inset 0 1px 2px rgba(255,255,255,.08);}' +
+
+        /* Copy button */
+        '.mci-btn.copy-ring{background:linear-gradient(180deg,#5c6675 0%,#3b434f 52%,#262c34 100%);color:#e8edf5;}' +
+        '.mci-btn.copy-ring:hover{background:linear-gradient(180deg,#6b7686 0%,#46505d 52%,#2f3640 100%);}' +
+
+        /* Paste button */
+        '.mci-btn.paste-ring{background:linear-gradient(180deg,#34d4c7 0%,#1aa39a 52%,#0f6d67 100%);color:#ffffff;}' +
+        '.mci-btn.paste-ring:hover{background:linear-gradient(180deg,#49e3d6 0%,#20b5ab 52%,#13827c 100%);}' +
+
+        /* Row Highlighter Button */
+        '.mci-btn.qq-highlight-live{color:#111;border:1px solid rgba(255,255,255,.18);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 6px 14px rgba(0,0,0,.25),inset 0 1px 2px rgba(255,255,255,.22)}' +
+        '.mci-btn.qq-highlight-live:hover{filter:brightness(1.06)!important;box-shadow:0 0 0 1px rgba(0,0,0,.45),0 8px 18px rgba(0,0,0,.35),inset 0 1px 2px rgba(255,255,255,.28)!important}' +
+
+        /* QQ Helper Buttons */
+        '.mci-btn.qq-pdf{background:linear-gradient(180deg,#38bdf8 0%,#0ea5e9 52%,#0369a1 100%);color:#fff;border:1px solid rgba(255,255,255,.18);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 10px rgba(14,165,233,.18),inset 0 1px 2px rgba(255,255,255,.18)}' +
+        '.mci-btn.qq-pdf:hover{background:linear-gradient(180deg,#67d3ff 0%,#22b8f2 52%,#0b7db8 100%);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 14px rgba(14,165,233,.28),0 6px 14px rgba(0,0,0,.35),inset 0 1px 2px rgba(255,255,255,.22)}' +
+        '.mci-btn.qq-names{background:linear-gradient(180deg,#a78bfa 0%,#8b5cf6 52%,#5b21b6 100%);color:#fff;border:1px solid rgba(255,255,255,.18);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 10px rgba(139,92,246,.18),inset 0 1px 2px rgba(255,255,255,.18)}' +
+        '.mci-btn.qq-names:hover{background:linear-gradient(180deg,#bea7ff 0%,#9d72ff 52%,#6d28d9 100%);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 14px rgba(139,92,246,.28),0 6px 14px rgba(0,0,0,.35),inset 0 1px 2px rgba(255,255,255,.22)}' +
+
+        /* VIN Tools */
+        '.mci-btn.vin-parent{background:linear-gradient(180deg,#475569 0%,#334155 52%,#1e293b 100%)}' +
+        '.mci-btn.vin-parent:hover{background:linear-gradient(180deg,#64748b 0%,#475569 52%,#334155 100%)}' +
+        '.mci-vin-wrap{display:flex;flex-direction:column;gap:6px}' +
+        '.mci-vin-input{width:100%;height:30px;padding:6px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.16);background:#111827;color:#fff;outline:none}' +
+        '.mci-vin-input:focus{border-color:rgba(96,165,250,.75);box-shadow:0 0 0 1px rgba(96,165,250,.35) inset}' +
+        '.mci-btn.vin-util{background:#374151;color:#fff}' +
+        '.mci-btn.vin-util:hover{background:#4b5563}' +
+        '.vin-group .mci-btn{flex:1 1 0;width:auto!important;min-width:0;display:flex;align-items:center;justify-content:center;height:25px;min-height:25px;margin:0!important;padding:4px 6px!important;text-align:center;border-radius:6px}' +
+        '.mci-btn.vin-nhtsa{background:#0f766e}.mci-btn.vin-nhtsa:hover{background:#0d857c}' +
+        '.mci-btn.vin-google{background:#b45309}.mci-btn.vin-google:hover{background:#c2410c}' +
+        '.mci-btn.vin-copy{background:#5b21b6}.mci-btn.vin-copy:hover{background:#6d28d9}' +
+
+        '.qq-row-controls{display:flex;gap:8px;align-items:center}' +
+        '#mci_row_color{width:26px;height:29px;border:none;padding:0;background:none;cursor:pointer;}' +
+
+        '.mci-footer-note.shortcuts.v2{margin-top:10px;padding:10px;border-radius:10px;background:rgba(255,255,255,.06);color:#d0d6e2;font-size:12px;line-height:1.25}' +
+        '.mci-footer-note.shortcuts.v2 .tip{margin-bottom:6px;color:#c7cfdb}' +
+        '.mci-footer-note.shortcuts.v2 .group{display:flex;align-items:flex-start;gap:10px;margin:6px 0 0}' +
+        '.mci-footer-note.shortcuts.v2 .kbd{flex:0 0 auto;font:600 11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:2px 6px;border-radius:6px;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.15);letter-spacing:.3px;margin-top:1px}' +
+        '.mci-footer-note.shortcuts.v2 .list{flex:1 1 auto;display:flex;flex-direction:column;gap:3px;max-width:100%;white-space:normal;word-break:break-word}' +
+        '.mci-footer-note.shortcuts.v2 .list b{color:#fff}' +
+      "</style>" +
+
+      '<button id="' + TRIGGER_ID + '" type="button" title="MCI Toolbox" aria-label="Toggle MCI Toolbox">' +
+        '<span class="mci-tab-mark" style="background-image:url(\'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2264%22%20height%3D%2264%22%20viewBox%3D%220%200%2064%2064%22%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2232%22%20r%3D%2230%22%20fill%3D%22%23ffffff%22%20fill-opacity%3D%220.16%22%2F%3E%3Cpath%20d%3D%22M16%2044V20h6l10%2014%2010-14h6v24h-6V30l-10%2014-10-14v14z%22%20fill%3D%22%23ffffff%22%2F%3E%3C%2Fsvg%3E\')"></span>' +
+        '<span class="mci-tab-label">MCI</span>' +
+      "</button>" +
+
+      '<div id="' + MENU_ID + '">' +
+        '<div class="mci-head">' +
+          '<div class="mci-head-top">' +
+            '<button id="mci_remove_header" class="mci-close-btn" title="Remove Menu">❌</button>' +
+            '<span class="mci-title">MCI Toolbox</span>' +
+          "</div>" +
+          '<div class="mci-head-meta">' +
+            '<span class="badge">' + escHtml(getSystemLabel()) + "</span>" +
+            '<label class="mci-switch" title="When ON, moving to the left edge opens the menu">' +
+              '<input type="checkbox" id="mci_hover_toggle">' +
+              '<span class="mci-slider"></span>' +
+              '<span class="mci-switch-text">Hover</span>' +
+            "</label>" +
+          "</div>" +
+        "</div>" +
+
+        renderSections() +
+      "</div>";
+
+    const $s = (sel) => root.querySelector(sel);
+    applyRowHighlightButtonColor(root);
+    const menuEl = $s("#" + MENU_ID);
+    const tabEl = $s("#" + TRIGGER_ID);
+
+    function setMenuOpen(open) {
+      if (menuEl) {
+        menuEl.style.left = open ? "0" : "-230px";
+        menuEl.setAttribute("data-open", open ? "1" : "");
+      }
+      if (tabEl) tabEl.setAttribute("data-open", open ? "1" : "");
+    }
+
+    setMenuOpen(false);
+
+    tabEl.addEventListener("click", function () {
+      const isOpen = menuEl && menuEl.getAttribute("data-open") === "1";
+      setMenuOpen(!isOpen);
+    });
+
+    $s("#mci_remove_header").addEventListener("click", function () {
+      document.getElementById(HOST_ID).remove();
+    });
+
+    /***************
+     * HOVER MODE   *
+     ***************/
+    let hoverMode = false;
+
+    function readPref() {
+      try { return !!GM_getValue(PREF_HOVER_KEY, false); } catch (e) { return false; }
+    }
+
+    function applyHoverUi() {
+      tabEl.setAttribute("data-hovermode", hoverMode ? "1" : "");
+      const ht = $s("#mci_hover_toggle");
+      if (ht) ht.checked = !!hoverMode;
+    }
+
+    function writePref(v) {
+      try { GM_setValue(PREF_HOVER_KEY, !!v); } catch (e) {}
+      hoverMode = !!v;
+      applyHoverUi();
+      toast(hoverMode ? "Hover-open: ON (edge opens menu)" : "Hover-open: OFF (click tab to open)");
+    }
+
+    hoverMode = readPref();
+
+    // Green only on the M circle (no box-shadow bleed)
+    (function injectHoverModeCss() {
+      if (root.getElementById("mci-hovermode-css")) return;
+      const st = document.createElement("style");
+      st.id = "mci-hovermode-css";
+      st.textContent =
+        "#" + TRIGGER_ID + '[data-hovermode="1"] .mci-tab-mark{background-color:#137333 !important;}';
+      root.appendChild(st);
+    })();
+
+    const hoverToggle = $s("#mci_hover_toggle");
+    hoverToggle.checked = !!hoverMode;
+    hoverToggle.addEventListener("change", function () { writePref(hoverToggle.checked); });
+
+    tabEl.addEventListener("dblclick", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      writePref(!hoverMode);
+    });
+
+    tabEl.addEventListener("contextmenu", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      writePref(!hoverMode);
+    });
+
+    let hoverCloseTimer = null;
+    let overMenuOrTab = false;
+
+    function clearHoverCloseTimer() {
+      if (hoverCloseTimer) clearTimeout(hoverCloseTimer);
+      hoverCloseTimer = null;
+    }
+
+    function scheduleCloseIfSafe() {
+      clearHoverCloseTimer();
+      hoverCloseTimer = setTimeout(function () {
+        if (!hoverMode) return;
+        if (overMenuOrTab) return;
+        const isOpen = menuEl && menuEl.getAttribute("data-open") === "1";
+        if (isOpen) setMenuOpen(false);
+      }, 220);
+    }
+
+    function bindEnterLeave(el) {
+      if (!el) return;
+      el.addEventListener("mouseenter", function () {
+        overMenuOrTab = true;
+        clearHoverCloseTimer();
+      });
+      el.addEventListener("mouseleave", function () {
+        overMenuOrTab = false;
+        scheduleCloseIfSafe();
+      });
+    }
+
+    bindEnterLeave(menuEl);
+    bindEnterLeave(tabEl);
+
+    document.addEventListener("mousemove", function (ev) {
+      if (!hoverMode) return;
+
+      if (ev.clientX <= 2) {
+        const isOpen = menuEl && menuEl.getAttribute("data-open") === "1";
+        if (!isOpen) setMenuOpen(true);
+        return;
+      }
+
+      const isOpen2 = menuEl && menuEl.getAttribute("data-open") === "1";
+      if (isOpen2 && !overMenuOrTab) {
+        // Option A: distance from left edge
+        if (ev.clientX > 260) scheduleCloseIfSafe();
+      }
+    }, true);
+
+    applyHoverUi();
+
+    /*************************
+     * PANEL TOGGLES (generic)
+     *************************/
+    function wirePanel(toggleId, panelId, openText, closedText, opts) {
+      opts = opts || {};
+      const t = $s("#" + toggleId);
+      const p = $s("#" + panelId);
+      if (!t || !p) return;
+
+      const accordionGroup = opts.accordionGroup || "";
+
+      if (opts.disclosure) {
+        t.classList.add("mci-disclosure-toggle");
+        t.setAttribute("data-open", "0");
+        t.setAttribute("aria-expanded", "false");
+      }
+
+      t.setAttribute("aria-controls", panelId);
+      if (accordionGroup) {
+        t.setAttribute("data-accordion-group", accordionGroup);
+        p.setAttribute("data-accordion-group", accordionGroup);
+      }
+
+      t.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+
+        const willOpen = !p.classList.contains("open");
+
+        if (willOpen && accordionGroup) {
+          root.querySelectorAll('.mci-downloader-panel.open[data-accordion-group="' + accordionGroup + '"]').forEach(function (otherPanel) {
+            if (otherPanel === p) return;
+
+            otherPanel.classList.remove("open");
+
+            const otherToggle = root.querySelector('[aria-controls="' + otherPanel.id + '"]');
+            if (otherToggle) {
+              otherToggle.setAttribute("data-open", "0");
+              otherToggle.setAttribute("aria-expanded", "false");
+
+              const otherPanelId = otherToggle.getAttribute("aria-controls");
+              if (otherPanelId === "mci_fd_panel") {
+                otherToggle.textContent = "📥 File Downloader ▸";
+              } else if (otherPanelId === "mci_export_panel") {
+                otherToggle.textContent = "🚗 Erie Export Quote ▸";
+              } else if (otherPanelId === "mci_vin_panel") {
+                otherToggle.textContent = "🚗 VIN Lookup ▸";
+              } else if (otherPanelId === "mci_natgen_fillers_panel") {
+                otherToggle.textContent = "National General";
+              } else if (otherPanelId === "mci_progressive_fillers_panel") {
+                otherToggle.textContent = "Progressive";
+              } else if (otherPanelId === "mci_jones_forms_panel") {
+                otherToggle.textContent = "Jones Forms";
+              }
+            }
+          });
+        }
+
+        const open = p.classList.toggle("open");
+
+        if (opts.disclosure) {
+          t.setAttribute("data-open", open ? "1" : "0");
+          t.setAttribute("aria-expanded", open ? "true" : "false");
+        }
+
+        if (typeof openText === "string" && typeof closedText === "string") {
+          t.textContent = open ? openText : closedText;
+        }
+      });
+    }
+
+    wirePanel("mci_natgen_fillers_toggle", "mci_natgen_fillers_panel", null, null, {
+      disclosure: true,
+      accordionGroup: "export-submenus"
+    });
+
+    wirePanel("mci_progressive_fillers_toggle", "mci_progressive_fillers_panel", null, null, {
+      disclosure: true,
+      accordionGroup: "export-submenus"
+    });
+
+    wirePanel("mci_jones_forms_toggle", "mci_jones_forms_panel", null, null, {
+      disclosure: true,
+      accordionGroup: "export-submenus"
+    });
+
+    wirePanel("mci_fd_toggle", "mci_fd_panel", "📥 File Downloader ▾", "📥 File Downloader ▸", {
+      accordionGroup: "main-sections"
+    });
+
+    wirePanel("mci_export_toggle", "mci_export_panel", "🚗 Export Quote ▾", "🚗 Erie Export Quote ▸", {
+      accordionGroup: "main-sections"
+    });
+
+    wirePanel("mci_vin_toggle", "mci_vin_panel", "🚗 VIN Lookup ▾", "🚗 VIN Lookup ▸", {
+      accordionGroup: "main-sections"
+    });
+
+    const vinToggleBtn = $s("#mci_vin_toggle");
+    if (vinToggleBtn) {
+      vinToggleBtn.addEventListener("click", function () {
+        setTimeout(function () {
+          const input = $s("#mci_vin_input");
+          if (!input) return;
+          if (!input.value) {
+            const vin = getSelectedTextVin();
+            if (vin) input.value = vin;
+          }
+        }, 0);
+      });
+    }
+
+    wirePanel("mci_shortcuts_toggle", "mci_shortcuts_panel", "⌨️ Shortcuts Help ▾", "⌨️ Shortcuts Help ▸");
+
+    /*************************
+     * WIRE BUTTON ACTIONS    *
+     *************************/
+    function onClick(id, fn) {
+      const el = $s("#" + id);
+      if (el) el.addEventListener("click", fn);
+    }
+
+    // QQ
+    if (IS_QQ) {
+      startPdfPopupObserver();
+
+      onClick("mci_pdf_open", function () { smartOpenPdfs(); });
+
+      onClick("mci_fix_names", function () {
+        const res = toggleFileNameFix();
+        if (!res.count) toast("No file name cells found on this page.");
+        else if (res.active) toast("Showing full file names on " + res.count + " cell(s).");
+        else toast("File names returned to normal.");
+      });
+
+      onClick("mci_row_highlight", function () {
+        const count = attachRowHighlighter();
+        toast(count ? ("Row highlighter active on " + count + " row(s).") : "No rows found to highlight on this page.");
+      });
+
+      const c = $s("#mci_row_color");
+      if (c) {
+        c.addEventListener("input", function (e) {
+          const color = e.target.value || DEFAULT_ROW_COLOR;
+          localStorage.setItem(HIGHLIGHT_COLOR_KEY, color);
+          updateHighlightedRows(color);
+          applyRowHighlightButtonColor(root); // 👈 ADD THIS LINE
+          toast("Highlight color set to " + color + ".");
+        });
+      }
+    }
+
+    function applyRowHighlightButtonColor(root) {
+      if (!root) return;
+      const btn = root.querySelector("#mci_row_highlight");
+      if (!btn) return;
+
+      const color = localStorage.getItem(HIGHLIGHT_COLOR_KEY) || DEFAULT_ROW_COLOR;
+
+      function adjust(hex, amt) {
+        hex = hex.replace("#", "");
+        let r = parseInt(hex.substring(0, 2), 16);
+        let g = parseInt(hex.substring(2, 4), 16);
+        let b = parseInt(hex.substring(4, 6), 16);
+
+        r = Math.min(255, Math.max(0, r + amt));
+        g = Math.min(255, Math.max(0, g + amt));
+        b = Math.min(255, Math.max(0, b + amt));
+
+        return "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
+      }
+
+      const light = adjust(color, 25);
+      const dark  = adjust(color, -35);
+
+      btn.style.background = `linear-gradient(180deg, ${light} 0%, ${color} 55%, ${dark} 100%)`;
+
+      // Text contrast (same logic you already had)
+      const hex = color.replace("#", "");
+      const r = parseInt(hex.substring(0, 2), 16);
+      const g = parseInt(hex.substring(2, 4), 16);
+      const b = parseInt(hex.substring(4, 6), 16);
+      const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+
+      btn.style.color = brightness >= 150 ? "#111" : "#fff";
+    }
+
+    function getVinValue() {
+      const input = $s("#mci_vin_input");
+      if (!input) return "";
+      return String(input.value || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 17);
+    }
+
+    function setVinValue(value) {
+      const input = $s("#mci_vin_input");
+      if (!input) return "";
+      const vin = String(value || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 17);
+      input.value = vin;
+      return vin;
+    }
+
+    function getSelectedTextVin() {
+      try {
+        return String(window.getSelection ? window.getSelection().toString() : "")
+          .replace(/[^A-Za-z0-9]/g, "")
+          .toUpperCase()
+          .slice(0, 17);
+      } catch (e) {
+        return "";
+      }
+    }
+
+    function requireVin() {
+      let vin = getVinValue();
+      if (!vin) {
+        vin = setVinValue(getSelectedTextVin());
+      }
+      if (!vin || vin.length < 11) {
+        toast("Paste, type, or select a VIN first.");
+        return "";
+      }
+      return vin;
+    }
+
+    // VIN tools
+    onClick("mci_vin_paste", async function () {
+      try {
+        const txt = await navigator.clipboard.readText();
+        const vin = setVinValue(txt);
+        toast(vin ? "VIN pasted." : "Clipboard did not contain a VIN.");
+      } catch (e) {
+        toast("Clipboard paste was blocked.");
+      }
+    });
+
+    onClick("mci_vin_clear", function () {
+      setVinValue("");
+      toast("VIN cleared.");
+    });
+
+    onClick("mci_vin_nhtsa", function () {
+      const vin = requireVin();
+      if (!vin) return;
+      window.open("https://vpic.nhtsa.dot.gov/decoder/VinDecoder?VIN=" + encodeURIComponent(vin) + "&ModelYear=", "_blank");
+    });
+
+    onClick("mci_vin_google", function () {
+      const vin = requireVin();
+      if (!vin) return;
+      window.open("https://www.google.com/search?q=" + encodeURIComponent(vin), "_blank");
+    });
+
+    onClick("mci_vin_copy", function () {
+      const vin = requireVin();
+      if (!vin) return;
+      try {
+        GM_setClipboard(vin);
+        toast("VIN copied.");
+      } catch (e) {
+        toast("Could not copy VIN.");
+      }
+    });
+
+    // Cross-site tools (your separate script listens)
+
+    onClick("mci_copy", function () {
+      window.dispatchEvent(new CustomEvent("mci:copy"));
+      toast("Copy requested…");
+    });
+
+    onClick("mci_paste", function () {
+      window.dispatchEvent(new CustomEvent("mci:paste"));
+      toast("Paste requested…");
+    });
+
+    onClick("mci_county_run", function () {
+      try {
+        triggerCountyFinder("auto");
+        toast("County Finder triggered.");
+      } catch (e) {
+        console.warn("[MCI Toolbox] County Finder trigger error:", e);
+        toast("County Finder trigger failed.");
+      }
+    });
+
+    onClick("mci_county_manual", function () {
+      try {
+        triggerCountyFinder("manual");
+        toast("County Finder manual entry opened.");
+      } catch (e) {
+        console.warn("[MCI Toolbox] County Finder manual trigger error:", e);
+        toast("County Finder manual trigger failed.");
+      }
+    });
+
+    // QQC extractor
+    onClick("mci_open_qqc", function () {
+      if (/qqcatalyst\.com$/i.test(location.hostname)) {
+        toast("Get Customer Data is for carrier sites (not QQ).");
+        return;
+      }
+      triggerContactMapper("auto");
+    });
+
+    // Export quote (expects global functions available)
+    onClick("mci_export_auto", function () {
+      try {
+        if (PAGE_WINDOW.mciRunErieAutoExport) PAGE_WINDOW.mciRunErieAutoExport();
+        else if (window.top && window.top.mciRunErieAutoExport) window.top.mciRunErieAutoExport();
+        else toast("Auto export script not found on this page.");
+      } catch (e) {
+        console.warn("[MCI Toolbox] Auto export error:", e);
+        toast("Error starting Auto export – see console.");
+      }
+    });
+
+    onClick("mci_export_home", function () {
+      try {
+        if (PAGE_WINDOW.mciRunErieHomeExport) PAGE_WINDOW.mciRunErieHomeExport();
+        else if (window.top && window.top.mciRunErieHomeExport) window.top.mciRunErieHomeExport();
+        else toast("Home export script not found on this page.");
+      } catch (e) {
+        console.warn("[MCI Toolbox] Home export error:", e);
+        toast("Error starting Home export – see console.");
+      }
+    });
+
+    onClick("mci_ng_fill_named", function () {
+      runNatGenFillLauncher({
+        pagePath: "/quote/quotenamedinsured.aspx",
+        fnName: "testNatGenNamed",
+        wrongPageMsg: "Open NatGen Named Insured page before running this.",
+        missingFnMsg: "NatGen Named Insured filler not found (expected: testNatGenNamed)."
+      });
+    });
+
+    onClick("mci_ng_fill_drivers", function () {
+      runNatGenFillLauncher({
+        pagePath: "/quote/quotedriver.aspx",
+        fnName: "testNatGenDrivers",
+        wrongPageMsg: "Open NatGen Drivers page before running this.",
+        missingFnMsg: "NatGen Drivers filler not found (expected: testNatGenDrivers)."
+      });
+    });
+
+    onClick("mci_ng_fill_vehicles", function () {
+      runNatGenFillLauncher({
+        pagePath: "/quote/quoteauto.aspx",
+        fnName: "testNatGenVehicles",
+        wrongPageMsg: "Open NatGen Vehicles page before running this.",
+        missingFnMsg: "NatGen Vehicles filler not found (expected: testNatGenVehicles)."
+      });
+    });
+
+    onClick("mci_ng_fill_coverages", function () {
+      runNatGenFillLauncher({
+        pagePath: "/quote/quotecoverages",
+        fnName: "runNatGenCoverages",
+        wrongPageMsg: "Open NatGen Coverages page before running this.",
+        missingFnMsg: "NatGen Coverages filler not found (expected: runNatGenCoverages)."
+      });
+    });
+
+    onClick("mci_prog_fill_named", function () {
+      runProgressiveFillLauncher({
+        fnName: "testProgressiveNamedInsured",
+        wrongPageMsg: "Open Progressive before running Named Insured.",
+        missingFnMsg: "Progressive Named Insured filler not found (expected: testProgressiveNamedInsured)."
+      });
+    });
+
+    onClick("mci_prog_fill_products", function () {
+      runProgressiveFillLauncher({
+        fnName: "testProgressiveProducts",
+        wrongPageMsg: "Open Progressive before running Products.",
+        missingFnMsg: "Progressive Products filler not found (expected: testProgressiveProducts)."
+      });
+    });
+
+    onClick("mci_prog_fill_members", function () {
+      runProgressiveFillLauncher({
+        fnName: "testProgressiveHouseholdMembers",
+        wrongPageMsg: "Open Progressive before running Household Members.",
+        missingFnMsg: "Progressive Household Members filler not found (expected: testProgressiveHouseholdMembers)."
+      });
+    });
+
+    // File downloader triggers
+    onClick("mci_fd_erie", function () {
+      $s("#mci_fd_panel").classList.remove("open");
+      $s("#mci_fd_toggle").textContent = "📥 File Downloader ▸";
+      triggerFileDownloader("erie-natgen");
+      toast("Erie/NatGen downloader triggered.");
+    });
+
+    onClick("mci_fd_prog_res", function () {
+      $s("#mci_fd_panel").classList.remove("open");
+      $s("#mci_fd_toggle").textContent = "📥 File Downloader ▸";
+      try {
+        window.dispatchEvent(new CustomEvent("mci:progressive-residential"));
+        window.dispatchEvent(new CustomEvent("mci:progressive-downloader")); // back-compat
+      } catch (e) {}
+      toast("Progressive Residential triggered.");
+    });
+
+    onClick("mci_fd_prog_com", function () {
+      $s("#mci_fd_panel").classList.remove("open");
+      $s("#mci_fd_toggle").textContent = "📥 File Downloader ▸";
+      try { window.dispatchEvent(new CustomEvent("mci:progressive-commercial")); } catch (e) {}
+      toast("Progressive Commercial triggered.");
+    });
+
+    onClick("mci_fd_flood_beyond", function () {
+      $s("#mci_fd_panel").classList.remove("open");
+      $s("#mci_fd_toggle").textContent = "📥 File Downloader ▸";
+      try { window.dispatchEvent(new CustomEvent("mci:flood-beyond")); } catch (e) {}
+      toast("Beyond Floods triggered.");
+    });
+
+    onClick("mci_fd_flood_nfip", function () {
+      $s("#mci_fd_panel").classList.remove("open");
+      $s("#mci_fd_toggle").textContent = "📥 File Downloader ▸";
+      try { window.dispatchEvent(new CustomEvent("mci:flood-nfip")); } catch (e) {}
+      toast("NFIP Flood triggered.");
+    });
+
+    onClick("mci_fd_ncjua", function () {
+      // close sub panel + menu
+      $s("#mci_fd_panel").classList.remove("open");
+      $s("#mci_fd_toggle").textContent = "📥 File Downloader ▸";
+      setMenuOpen(false);
+
+      triggerFileDownloader("ncjua");
+      toast("NCJUA downloader triggered.");
+    });
+
+    // Menu links
+    refreshErieExtractorToggleButton();
+
+    onClick("mci_erie_extractor_toggle", function () {
+      const enabled = !getErieExtractorEnabled();
+      setErieExtractorEnabled(enabled);
+      refreshErieExtractorToggleButton();
+      broadcastErieExtractorToggle(enabled);
+      toast("Erie extractor " + (enabled ? "enabled." : "disabled."));
+    });
+
+    onClick("mci_cashCenter", function () {
+      window.open(
+        "https://script.google.com/macros/s/AKfycbyna22X-JzASUbS4pR6IdvPrtd_m_lYzUAXqbwxHAVBqYRHvkOCehY1uzY3wC_4gavu/exec",
+        "_blank",
+        "noopener,noreferrer"
+      );
+    });
+
+    onClick("mci_fax", function () {
+      const onSite = location.hostname.indexOf("gotfreefax.com") >= 0;
+      if (!onSite) {
+        window.open("https://www.gotfreefax.com/", "_blank", "noopener,noreferrer");
+        return;
+      }
+      // If you have your fax enhancer function elsewhere, call it here.
+      toast("Fax page detected.");
+    });
+
+    onClick("mci_draw_tool", function () {
+      try {
+        if (typeof window.runMciDrawTool === "function") {
+          window.runMciDrawTool();
+          toast("Draw Tool toggled.");
+          return;
+        }
+
+        window.dispatchEvent(new CustomEvent("mci:draw-tool-toggle"));
+        toast("Draw Tool trigger sent.");
+      } catch (e) {
+        console.warn("[MCI Toolbox] Draw Tool launcher error:", e);
+        toast("Draw Tool failed - see console.");
+      }
+    });
+    return root;
+  }
+
+  /***************************
+   * Extractor function to pick carrier
+   */
+  function triggerContactMapper(mode) {
+    mode = mode || "auto";
+
+    const host = location.hostname.toLowerCase();
+
+    // carrier detection
+    let key = null;
+    if (host.includes("agentexchange.com")) key = "erie";
+    else if (host.includes("natgenagency.com") || host.includes("nationalgeneral.torrentflood.com")) key = "natgen";
+    else if (host.includes("foragents.progressive.com")) key = "progressive";
+    else if (host.includes("quoting.foragentsonly.com") || host.includes("foragentsonly.com")) key = "progressive";
+    else if (host.includes("beyondfloods.com")) key = "beyondfloods";
+    else if (host.includes("ncjuanciua.org") || host.includes("insure.ncjuanciua.org")) key = "ncjua";
+    // add more as we create them…
+
+    if (!key) {
+      toast("No exporter for this site yet.");
+      return;
+    }
+
+    // prefer direct API (same page)
+    const exp = (window.MCI_EXPORTERS && window.MCI_EXPORTERS[key]) ? window.MCI_EXPORTERS[key] : null;
+
+    if (exp) {
+      if (mode === "send") exp.sendToQQ();
+      else if (mode === "get") exp.getCustomerData();
+      else exp.openUI(); // auto
+      return;
+    }
+
+    // fallback: postMessage (works even when sandboxed)
+    window.postMessage({
+      mci: "mciExporter",
+      carrier: key,
+      action: (mode === "send") ? "sendToQQ" : (mode === "get") ? "getCustomerData" : "openUI"
+    }, "*");
+
+    toast("Exporter not detected on this page (is it installed/enabled?)");
+  }
+  /*************************
+   * BOOT                  *
+   *************************/
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount);
+  else mount();
+
 })();
