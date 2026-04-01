@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MCI Draw Tool
 // @namespace    mci-tools
-// @version      1.0.1
+// @version      1.0.2
 // @description  Toggle page draw tool overlay
 // @match        *://*/*
 // @run-at       document-idle
@@ -1557,75 +1557,194 @@ html.__mci_draw_cursor_pin, html.__mci_draw_cursor_pin * { cursor: ${svgCursor(p
     });
 
     wrap.innerHTML = `
-<div id="__mci_pill__" title="Click to open/close" style="
-  width:56px;height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:2px;border-radius:14px;background:rgba(15,23,42,.92);color:#fff;
-  border:1px solid rgba(255,255,255,.16);box-shadow:0 10px 28px rgba(0,0,0,.42);
-  cursor:pointer;backdrop-filter:blur(6px);font-weight:800;letter-spacing:.6px;
-">
+<!-- =========================
+     MCI STYLE BLOCK
+     Centralized styling (no inline mess)
+========================= -->
+<style>
+
+/* Panel */
+.mci-panel{
+  position:absolute;
+  right:68px;
+  top:50%;
+  transform:translateY(-50%);
+  width:320px;
+  background:linear-gradient(180deg,#1e293b 0%, #111827 55%, #020617 100%);
+  color:#f8fafc;
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:18px;
+  box-shadow:
+    0 20px 50px rgba(0,0,0,.55),
+    inset 0 1px 0 rgba(255,255,255,.06);
+  padding:16px;
+  display:none;
+}
+
+/* Floating pill */
+.mci-pill{
+  width:58px;
+  height:56px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:2px;
+  border-radius:16px;
+  background:linear-gradient(180deg,#1e3f73 0%, #274d87 100%);
+  color:#f7fbff;
+  border:1px solid rgba(255,255,255,.22);
+  box-shadow:0 12px 30px rgba(0,0,0,.28);
+  cursor:pointer;
+  font-weight:800;
+  letter-spacing:.6px;
+}
+
+/* Buttons */
+.mci-btn{
+  padding:6px 12px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.14);
+  background:linear-gradient(180deg,#334155 0%, #1f2937 100%);
+  color:#f8fafc;
+  cursor:pointer;
+  font-weight:700;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+  transition:all .15s ease;
+}
+
+.mci-btn:hover{
+  background:#475569;
+  transform:translateY(-1px);
+}
+
+.mci-btn:active{
+  transform:scale(.96);
+}
+
+/* Special buttons */
+.mci-btn.blue{
+  background:rgba(59,130,246,.25);
+  border:1px solid rgba(96,165,250,.7);
+}
+
+.mci-btn.red{
+  background:rgba(239,68,68,.2);
+  border:1px solid rgba(239,68,68,.6);
+}
+
+/* Labels */
+.mci-label{
+  color:#e2e8f0;
+  font-weight:700;
+}
+
+/* Divider */
+.mci-divider{
+  height:1px;
+  background:rgba(255,255,255,.18);
+  margin:6px 0;
+}
+
+/* Help box */
+.mci-help{
+  display:none;
+  padding:12px 14px;
+  border-radius:16px;
+  background:linear-gradient(180deg,#1e3a8a 0%, #1e40af 40%, #1e293b 100%);
+  border:1px solid rgba(96,165,250,.35);
+  color:#eaf2ff;
+}
+
+.mci-help-title{
+  font-weight:800;
+  margin-bottom:8px;
+  color:#ffffff;
+}
+
+.mci-help-text{
+  color:#cbd5f5;
+  line-height:1.5;
+  font-size:13px;
+}
+
+</style>
+
+<!-- =========================
+     FLOATING PILL BUTTON
+========================= -->
+<div id="__mci_pill__" class="mci-pill">
   <span id="__mci_mode__">IDLE</span>
-  <span id="__mci_sz__" style="font-size:11px;opacity:.85;font-weight:700;letter-spacing:.2px;">${sizeDraw}</span>
+  <span id="__mci_sz__" style="font-size:11px;opacity:.85;">${sizeDraw}</span>
 </div>
 
-<div id="__mci_panel__" style="
-  position:absolute; right:64px; top:50%; transform:translateY(-50%);
-  width:300px;background:rgba(15,23,42,.94);color:#fff;border:1px solid rgba(255,255,255,.16);
-  border-radius:16px;box-shadow:0 16px 36px rgba(0,0,0,.55);padding:12px;display:none;
-  backdrop-filter:blur(8px);
-">
-  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">
-    <div style="font-weight:800;opacity:.95;">Marker Tools</div>
-    <button id="__mci_print__" style="padding:6px 10px;border-radius:999px;border:1px solid rgba(96,165,250,.75);background:rgba(59,130,246,.28);color:#fff;cursor:pointer;font-weight:700;">Print</button>
-    <button id="__mci_close__" title="Close (Esc)" style="padding:4px 10px;border-radius:999px;border:1px solid rgba(239,68,68,.6);background:rgba(239,68,68,.2);color:#fff;cursor:pointer;">Close</button>
+<!-- =========================
+     MAIN PANEL
+========================= -->
+<div id="__mci_panel__" class="mci-panel">
+
+  <!-- Header -->
+  <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
+    <div style="font-weight:900;font-size:22px;color: #4EA7FF;">Marker Tools</div>
+
+    <div style="display:flex;gap:6px;">
+      <button id="__mci_print__" class="mci-btn blue">Print</button>
+      <button id="__mci_close__" class="mci-btn red">Close</button>
+    </div>
   </div>
 
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-    <button id="__mci_undo__" style="padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;">Undo</button>
-    <button id="__mci_redo__" style="padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;">Redo</button>
-
-    <button id="__mci_hl__"  title="Toggle Highlighter (or hold H)" style="padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;">HL</button>
-    <button id="__mci_ar__"  title="Toggle Arrows (or hold A)" style="padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;">AR</button>
-    <button id="__mci_pin__" title="Toggle Pins/Notes (or hold P + click)" style="padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;">PIN</button>
-    <button id="__mci_del__" title="Toggle delete mode (or hold X)" style="padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;">DEL</button>
-
+  <!-- Tool buttons -->
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+    <button id="__mci_undo__" class="mci-btn">Undo</button>
+    <button id="__mci_redo__" class="mci-btn">Redo</button>
+    <button id="__mci_hl__" class="mci-btn">HL</button>
+    <button id="__mci_ar__" class="mci-btn">AR</button>
+    <button id="__mci_pin__" class="mci-btn">PIN</button>
+    <button id="__mci_del__" class="mci-btn">DEL</button>
   </div>
 
+  <!-- Settings -->
   <div style="display:flex;flex-direction:column;gap:10px;">
-    <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-      <span style="opacity:.85;">Pen Color</span>
-      <input id="__mci_color__" type="color" value="${color}" style="width:40px;height:24px;border:0;background:transparent;padding:0;">
+
+    <label style="display:flex;justify-content:space-between;">
+      <span class="mci-label">Pen Color</span>
+      <input id="__mci_color__" type="color" value="${color}">
     </label>
 
-    <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-      <span style="opacity:.85;">Pen Opacity</span>
-      <input id="__mci_alpha__" type="range" min="5" max="100" value="${Math.round(alphaDraw*100)}" style="width:170px;">
+    <label style="display:flex;justify-content:space-between;">
+      <span class="mci-label">Pen Opacity</span>
+      <input id="__mci_alpha__" type="range" min="5" max="100" value="${Math.round(alphaDraw*100)}">
     </label>
 
-    <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-      <span style="opacity:.85;">Active Size</span>
-      <input id="__mci_size__" type="range" min="1" max="80" value="${sizeDraw}" style="width:170px;">
+    <label style="display:flex;justify-content:space-between;">
+      <span class="mci-label">Size</span>
+      <input id="__mci_size__" type="range" min="1" max="80" value="${sizeDraw}">
     </label>
 
-    <div style="height:1px;background:rgba(255,255,255,.12);margin:2px 0;"></div>
+    <div class="mci-divider"></div>
 
-    <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-      <span style="opacity:.85;">HL Color</span>
-      <input id="__mci_hl_color__" type="color" value="${colorHL}" style="width:40px;height:24px;border:0;background:transparent;padding:0;">
+    <label style="display:flex;justify-content:space-between;">
+      <span class="mci-label">High Light Color</span>
+      <input id="__mci_hl_color__" type="color" value="${colorHL}">
     </label>
 
-    <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-      <span style="opacity:.85;">HL Opacity</span>
-      <input id="__mci_hl_alpha__" type="range" min="5" max="100" value="${Math.round(alphaHL*100)}" style="width:170px;">
+    <label style="display:flex;justify-content:space-between;">
+      <span class="mci-label">High Light Opacity</span>
+      <input id="__mci_hl_alpha__" type="range" min="5" max="100" value="${Math.round(alphaHL*100)}">
     </label>
 
-    <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button id="__mci_clear__" style="padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;">Clear</button>
-      <button id="__mci_help__" style="padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;">Help</button>
+    <!-- Bottom buttons -->
+    <div style="display:flex;gap:8px;margin-top:6px;">
+      <button id="__mci_clear__" class="mci-btn">Clear</button>
+      <button id="__mci_help__" class="mci-btn">Help</button>
     </div>
 
-    <div id="__mci_tip__" style="display:none;padding:8px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);white-space:normal;">
-    <div style="font-weight:700;margin-bottom:6px;">Controls</div>
-      <div style="opacity:.9;">
+    <!-- Help section -->
+    <div id="__mci_tip__" class="mci-help">
+
+      <div class="mci-help-title">Controls</div>
+
+      <div class="mci-help-text">
         Hold <b>D</b> + Mouse = Draw<br>
         Hold <b>E</b> + Mouse = Erase<br>
         Hold <b>H</b> + Mouse = Highlighter<br>
@@ -1637,8 +1756,11 @@ html.__mci_draw_cursor_pin, html.__mci_draw_cursor_pin * { cursor: ${svgCursor(p
         Wheel (while tool active) = Size<br>
         <b>Ctrl+Z</b> Undo • <b>Ctrl+Y</b> Redo
       </div>
+
     </div>
+
   </div>
+
 </div>
 `;
     document.body.appendChild(wrap);
