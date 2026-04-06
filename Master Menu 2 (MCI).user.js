@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      5.9.5
+// @version      5.9.6
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -351,12 +351,6 @@
       });
 
       return rows.length;
-    }
-
-    function updateHighlightedRows(color) {
-      document.querySelectorAll('[data-mci-highlighted="true"]').forEach(function (row) {
-        row.style.backgroundColor = color;
-      });
     }
 
   /*************************
@@ -967,7 +961,7 @@
         '.mci-split-half:active{transform:scale(.99)}' +
         '.mci-split-divider{width:1px;background:rgba(255,255,255,.18)}' +
         /* County Finder Button (Carolina Blue) */
-        '.mci-split-btn.county-split{display:flex;align-items:center;width:100%;height:30px;min-height:30px;border-radius:6px;overflow:hidden;white-space:nowrap;background:linear-gradient(180deg,#a8cce6 0%,#7bafd4 55%,#5f95bd 100%);border:1px solid rgba(60,90,120,.35);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 3px 8px rgba(0,0,0,.22)}' +
+        '.mci-split-btn.county-split{display:flex;align-items:center;width:100%;height:24px;min-height:20px;border-radius:6px;overflow:hidden;white-space:nowrap;background:linear-gradient(180deg,#a8cce6 0%,#7bafd4 55%,#5f95bd 100%);border:1px solid rgba(60,90,120,.35);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 3px 8px rgba(0,0,0,.22)}' +
         '.mci-split-btn.county-split:hover{background:linear-gradient(180deg,#bdd9ec 0%,#8bb9dc 55%,#6aa2c9 100%)}' +
         '.mci-split-btn.county-split .mci-split-half{height:30px;min-height:30px;display:flex;align-items:center;white-space:nowrap;color:#0f2a3a;font-weight:700;text-shadow:0 1px 0 rgba(255,255,255,.35)}' +
         '.mci-split-btn.county-split .mci-split-half:hover{background:rgba(255,255,255,.12);filter:brightness(1.03)}' +
@@ -1355,8 +1349,7 @@
         c.addEventListener("input", function (e) {
           const color = e.target.value || DEFAULT_ROW_COLOR;
           localStorage.setItem(HIGHLIGHT_COLOR_KEY, color);
-          updateHighlightedRows(color);
-          applyRowHighlightButtonColor(root); // 👈 ADD THIS LINE
+          applyRowHighlightButtonColor(root);
           toast("Highlight color set to " + color + ".");
         });
       }
