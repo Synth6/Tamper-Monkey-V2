@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      5.9.6
+// @version      5.9.7
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -895,6 +895,9 @@
         /* MENU */
         '#' + MENU_ID + '{position:fixed;top:0;left:-214px;width:214px;height:100vh;background:#1a1c22;color:#eef3ff;z-index:2147483646;padding-top:0;box-shadow:2px 0 10px rgba(0,0,0,.55);transition:left .22s cubic-bezier(.2,.9,.2,1),box-shadow .22s ease,filter .22s ease;overflow-x:hidden;overflow-y:auto;font:13px system-ui,Segoe UI,Arial;will-change:left}' +
         '#' + MENU_ID + '[data-open="1"]{left:0!important;filter:brightness(1.02)}' +
+        /* Menu scrolling hidden but still scrolls */
+        '#' + MENU_ID + '{scrollbar-width:none;-ms-overflow-style:none;}' +
+        '#' + MENU_ID + '::-webkit-scrollbar{display:none;}' +
 
         '.mci-section{margin:10px 10px 6px;border:1px solid rgba(255,255,255,.06);border-radius:10px;background:#20232b;overflow:hidden}' +
         '.mci-head{background:#0f172a;color:#fff;padding:9px 12px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;align-items:flex-start;gap:2px;font-weight:700;letter-spacing:.2px}' +
