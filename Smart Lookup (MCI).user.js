@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name        Smart Lookup (MCI)
 // @namespace    mci-tools
-// @version      4.3.2
+// @version      4.3.3
 // @description  ALT+Right-Click: pinned chooser for Address/Name/Policy. Address: Wake/Maps/Vexcel combos. Name: LinkedIn/Google/Facebook. Policy: Erie/NatGen/Progressive/NFIP/NCJUA
 // @match        *://*/*
 // @match        file://*/*
@@ -18,6 +18,8 @@
 // @match        https://www.foragentsonly.com/*
 // @match        https://nationalgeneral.torrentflood.com/*
 // @match        https://insure.ncjuanciua.org/*
+// @match        https://natgen.beyondfloods.com/*
+// @match        https://www.natgen.beyondfloods.com/*
 // @grant        GM_openInTab
 // @grant        GM_addStyle
 // @grant        GM_setValue
@@ -65,6 +67,12 @@
   const NCJUA_ORIGIN = "https://insure.ncjuanciua.org";
   const NCJUA_PATH   = "/innovation";
 
+  // Beyond Floods
+  const BF_LAUNCH_ORIGIN = "https://natgenagency.com";
+  const BF_LAUNCH_PATH   = "/Flood/FloodCenter.aspx";
+  const BF_ORIGIN        = "https://natgen.beyondfloods.com";
+  const BF_DASH_PATH     = "/Public/AgentDashboard";
+
   /* ================= STORAGE KEYS ================= */
   // Erie
   const K_ERIE_POL="carrier.erie.pol", K_ERIE_AWAIT="carrier.erie.await";
@@ -87,6 +95,15 @@
   const K_PR_PENDING_GM="carrier.pr.pending.gm"; // cross-tab safety
   const K_PR_PENDING_TS="carrier.pr.pending.ts";
 
+  // Beyond Floods
+  const K_BF_POL="carrier.bf.pol", K_BF_AWAIT="carrier.bf.await";
+  const K_BF_POL_GM="carrier.bf.pol.gm", K_BF_AWAIT_GM="carrier.bf.await.gm";
+  const K_BF_RUN="carrier.bf.run", K_BF_RUN_GM="carrier.bf.run.gm";
+  const K_BF_OWNER_GM="carrier.bf.owner.gm";
+  const K_BF_TAB_ID="carrier.bf.tabid";
+  const K_BF_LAUNCHED="carrier.bf.launched";
+
+
   // Arming gate (generic; NOT tied to hotkey anymore)
   const K_ARMED   = "mci.lookup.armed";
   const K_ARMED_TS= "mci.lookup.armed.ts";
@@ -104,6 +121,23 @@
       return new URLSearchParams(qs);
     }catch(_){}
     return new URLSearchParams("");
+  }
+
+  function makeRunId(){
+    return "bf_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+  }
+
+  function getBfTabId(){
+    try{
+      let id = sessionStorage.getItem(K_BF_TAB_ID) || "";
+      if (!id) {
+        id = "bftab_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+        sessionStorage.setItem(K_BF_TAB_ID, id);
+      }
+      return id;
+    }catch(_){
+      return "bftab_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+    }
   }
 
   function tokenOKFromLocation(){
@@ -217,7 +251,10 @@
     DIGITS_8_10:/^\d{8,10}$/,
     DIGITS_11P: /^\d{11,}$/,
     // NCJUA common policy prefixes
-    NCJUA_POLICY: /\b((?:DW|DP|HO|HW|WH|CP)[A-Z0-9-]{4,})\b/i
+    NCJUA_POLICY: /\b((?:DW|DP|HO|HW|WH|CP)[A-Z0-9-]{4,})\b/i,
+
+    // Beyond Floods common policy format: 11111-12345
+    BF_POLICY: /\b(\d{5}-\d{5})\b/
   };
 
   const norm=s=>(s||"").replace(/\s+/g," ").trim();
@@ -283,8 +320,13 @@
     const ncjua = s.match(RE.NCJUA_POLICY);
     if (ncjua) return ncjua[1].toUpperCase();
 
+    // Beyond Floods 11111-12345 style
+    const bf = s.match(RE.BF_POLICY);
+    if (bf) return bf[1];
+
     // Erie "Q..."
     const q = s.match(/\bQ\d{5,}\b/i);
+
     if(q) return q[0].toUpperCase();
 
     const erieExact = s.match(RE.ERIE_FMT1)?.[0];
@@ -464,6 +506,40 @@
     toast(`Progressive: ${digits}`);
   }
 
+  // ================= Beyond Floods =================
+  function openBeyondFloods(pol){
+    const ts = armAutomations(Date.now());
+    const p = String(pol || "").trim();
+    if(!p){ toast("No Beyond Floods policy detected."); return; }
+
+    const runId = makeRunId();
+
+    try{
+      sessionStorage.setItem(K_BF_POL, p);
+      sessionStorage.setItem(K_BF_AWAIT, "1");
+      sessionStorage.setItem(K_BF_RUN, runId);
+      sessionStorage.removeItem(K_BF_LAUNCHED);
+    }catch(_){}
+
+    try{
+      if (typeof GM_setValue === "function") {
+        GM_setValue(K_BF_POL_GM, p);
+        GM_setValue(K_BF_AWAIT_GM, "1");
+        GM_setValue(K_BF_RUN_GM, runId);
+        GM_deleteValue(K_BF_OWNER_GM);
+      }
+    }catch(_){}
+
+    window.open(
+      BF_LAUNCH_ORIGIN + BF_LAUNCH_PATH +
+      "#bfpol=" + encodeURIComponent(p) +
+      "&bfrun=" + encodeURIComponent(runId) +
+      "&mci=1&ts=" + encodeURIComponent(String(ts)),
+      "_blank"
+    );
+    toast(`Beyond Floods: ${p}`);
+  }
+
   /* ================= ALT+RIGHT-CLICK CHOOSER (PINNED) ================= */
   GM_addStyle(`
     #mci-hover-chooser{
@@ -613,6 +689,7 @@
             {value:"pol_natgen",      label:"Policy: NatGen"},
             {value:"pol_progressive", label:"Policy: Progressive"},
             {value:"pol_nfip",        label:"Policy: NFIP"},
+            {value:"pol_beyondfloods",label:"Policy: Beyond Floods"},
             {value:"pol_ncjua",       label:"Policy: NCJUA"}
           ],
           {pol},
@@ -652,6 +729,7 @@
     if(action==="pol_natgen")      return openNatGen(payload.pol);
     if(action==="pol_progressive") return openProgressive(payload.pol);
     if(action==="pol_nfip")        return openNFIP(payload.pol);
+    if(action==="pol_beyondfloods") return openBeyondFloods(payload.pol);
     if(action==="pol_ncjua")       return openNCJUA(payload.pol);
   }
 
@@ -944,12 +1022,17 @@ const visible = el => {
         try { if (window.top !== window.self) return; } catch(_) {}
 
         const isMainPage = /\/MainMenu\.aspx$/i.test(location.pathname);
+        const isFloodCenterPage = /\/Flood\/FloodCenter\.aspx$/i.test(location.pathname);
 
         // Detect if we're on the login screen (URL patterns OR common login controls)
         const isLoginPage =
           /\/Login\.aspx$/i.test(location.pathname) ||
           /\/Account\/Login/i.test(location.pathname) ||
           !!document.querySelector("input[name*='User' i], input[name*='Login' i], input[type='password'], #btnLogin, #btnSignIn");
+
+        if (isFloodCenterPage) {
+          return;
+        }
 
         if (!isMainPage) {
           // Always persist state so it's ready after login / redirect
@@ -1093,6 +1176,327 @@ const visible = el => {
         if(btn) btn.click();
 
         finish();
+      })();
+    })();
+  }
+
+  // BEYOND FLOODS — launch from NatGen Flood Center, open portal, search policy, click View, then View Docs
+  if (location.hostname === "natgenagency.com" || location.hostname === "natgen.beyondfloods.com" || location.hostname === "www.natgen.beyondfloods.com") {
+    (function beyondFloodsAuto(){
+      const tok = tokenOKFromLocation();
+      if (tok.ok) armAutomations(tok.ts);
+      if (!isArmed()) return;
+
+      // Run only in top frame
+      try { if (window.top !== window.self) return; } catch(_) {}
+
+      const hp = getHashParams();
+      const polFromHash = hp.get("bfpol") || "";
+      const runFromHash = hp.get("bfrun") || "";
+      let pol = polFromHash;
+      let runId = runFromHash;
+
+      if (!pol) {
+        let awaiting = false;
+        try { awaiting = sessionStorage.getItem(K_BF_AWAIT) === "1"; } catch(_) {}
+
+        if (!awaiting) {
+          try {
+            if (typeof GM_getValue === "function") {
+              awaiting = GM_getValue(K_BF_AWAIT_GM, "") === "1";
+            }
+          } catch(_) {}
+        }
+
+        if (!awaiting) return;
+
+        try { pol = sessionStorage.getItem(K_BF_POL) || ""; } catch(_) {}
+        try { runId = runId || sessionStorage.getItem(K_BF_RUN) || ""; } catch(_) {}
+
+        if (!pol) {
+          try {
+            if (typeof GM_getValue === "function") {
+              pol = String(GM_getValue(K_BF_POL_GM, "") || "").trim();
+            }
+          } catch(_) {}
+        }
+
+        if (!runId) {
+          try {
+            if (typeof GM_getValue === "function") {
+              runId = String(GM_getValue(K_BF_RUN_GM, "") || "").trim();
+            }
+          } catch(_) {}
+        }
+
+        if (!pol || !runId) return;
+      }
+
+      // Only the active Beyond Floods run should continue.
+      try {
+        const activeRun = typeof GM_getValue === "function"
+          ? String(GM_getValue(K_BF_RUN_GM, "") || "").trim()
+          : "";
+        if (!runId || !activeRun || runId !== activeRun) return;
+      } catch(_) {
+        return;
+      }
+
+      // Only ONE Beyond Floods portal tab may own the run.
+      const isBFHost =
+        location.hostname === "natgen.beyondfloods.com" ||
+        location.hostname === "www.natgen.beyondfloods.com";
+      const myBfTabId = getBfTabId();
+
+      if (isBFHost) {
+        try {
+          let owner = typeof GM_getValue === "function"
+            ? String(GM_getValue(K_BF_OWNER_GM, "") || "").trim()
+            : "";
+
+          if (!owner && typeof GM_setValue === "function") {
+            GM_setValue(K_BF_OWNER_GM, myBfTabId);
+            owner = myBfTabId;
+          }
+
+          if (!owner || owner !== myBfTabId) return;
+        } catch(_) {
+          return;
+        }
+      }
+
+      const keepTs = hp.get("ts") || String(Date.now());
+
+      const finish = () => {
+        try { history.replaceState(null, "", location.pathname + location.search); } catch(_) {}
+        try {
+          sessionStorage.removeItem(K_BF_POL);
+          sessionStorage.removeItem(K_BF_AWAIT);
+          sessionStorage.removeItem(K_BF_RUN);
+          sessionStorage.removeItem(K_BF_LAUNCHED);
+        } catch(_) {}
+        try {
+          if (typeof GM_deleteValue === "function") {
+            const owner = String(GM_getValue(K_BF_OWNER_GM, "") || "").trim();
+            if (owner && owner === myBfTabId) {
+              GM_deleteValue(K_BF_OWNER_GM);
+            }
+            GM_deleteValue(K_BF_POL_GM);
+            GM_deleteValue(K_BF_AWAIT_GM);
+            GM_deleteValue(K_BF_RUN_GM);
+          }
+        } catch(_) {}
+        disarmAutomations();
+      };
+
+      function visible(el){
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        return !!(el.offsetParent || r.width || r.height);
+      }
+
+      function waitForSel(selector, timeout=15000){
+        return new Promise(resolve => {
+          const t0 = performance.now();
+          const iv = setInterval(() => {
+            const el = document.querySelector(selector);
+            if (el && visible(el)) {
+              clearInterval(iv);
+              resolve(el);
+            } else if (performance.now() - t0 > timeout) {
+              clearInterval(iv);
+              resolve(null);
+            }
+          }, 150);
+        });
+      }
+
+      function sleep(ms){
+        return new Promise(r => setTimeout(r, ms));
+      }
+
+      function setNativeValue(el, value){
+        try{
+          const proto = (el.tagName === "TEXTAREA") ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          const desc = Object.getOwnPropertyDescriptor(proto, "value");
+          if (desc && desc.set) desc.set.call(el, value);
+          else el.value = value;
+        }catch(_){
+          try{ el.value = value; }catch(__){}
+        }
+      }
+
+      (async () => {
+        const host = location.hostname.toLowerCase();
+        const path = location.pathname || "";
+
+        // Keep state alive across redirects/pages
+        try {
+          sessionStorage.setItem(K_BF_POL, pol);
+          sessionStorage.setItem(K_BF_AWAIT, "1");
+        } catch(_) {}
+
+        // STEP 1: NatGen Flood Center page -> click Beyond Floods access button ONCE
+        if (host === "natgenagency.com" && /\/Flood\/FloodCenter\.aspx$/i.test(path)) {
+          try {
+            const launched = sessionStorage.getItem(K_BF_LAUNCHED) === "1";
+            const launchedRun = sessionStorage.getItem(K_BF_RUN) || "";
+            if (launched && launchedRun && launchedRun === runId) {
+              return;
+            }
+          } catch(_) {}
+
+          const btn = await waitForSel("#ctl00_MainContent_btnNatGenFlood", 15000);
+          if (!btn) {
+            toast("Beyond Floods: access button not found.", 3000);
+            finish();
+            return;
+          }
+
+          try {
+            sessionStorage.setItem(K_BF_LAUNCHED, "1");
+            sessionStorage.setItem(K_BF_RUN, runId);
+          } catch(_) {}
+
+          // Stop THIS launcher tab from looping, but keep cross-tab armed state alive
+          try {
+            sessionStorage.removeItem(K_BF_AWAIT);
+            sessionStorage.removeItem(K_BF_POL);
+            sessionStorage.removeItem(K_ARMED);
+            sessionStorage.removeItem(K_ARMED_TS);
+          } catch(_) {}
+
+          try {
+            const s = document.createElement("script");
+            s.textContent = `
+              try {
+                if (typeof __doPostBack === "function") {
+                  __doPostBack('ctl00$MainContent$btnNatGenFlood','');
+                } else {
+                  var el = document.getElementById('ctl00_MainContent_btnNatGenFlood');
+                  if (el) el.click();
+                }
+              } catch (e) {}
+            `;
+            document.documentElement.appendChild(s);
+            s.remove();
+          } catch(_) {
+            btn.click();
+          }
+
+          toast('Beyond Floods: opening portal...', 2200);
+          return;
+        }
+
+        // If we're on natgenagency.com but NOT the Flood Center page, send user there first
+        if (host === "natgenagency.com" && !/\/Flood\/FloodCenter\.aspx$/i.test(path)) {
+          location.replace(
+            BF_LAUNCH_ORIGIN + BF_LAUNCH_PATH +
+            "#bfpol=" + encodeURIComponent(pol) +
+            "&bfrun=" + encodeURIComponent(runId) +
+            "&mci=1&ts=" + encodeURIComponent(keepTs)
+          );
+          return;
+        }
+
+        // STEP 2: Portal landing page -> go to Dashboard in same tab
+        if ((host === "natgen.beyondfloods.com" || host === "www.natgen.beyondfloods.com") && /\/Public\/Index$/i.test(path)) {
+          const dashLink = await waitForSel('a.instanda-nav-item-link[href="/Public/AgentDashboard"]', 15000);
+          if (!dashLink) {
+            toast("Beyond Floods: Dashboard link not found.", 3000);
+            finish();
+            return;
+          }
+
+          const href = dashLink.getAttribute("href") || "/Public/AgentDashboard";
+          location.assign(href);
+          return;
+        }
+
+        // If we're on the BF site but not yet on the dashboard, go there directly
+        if ((host === "natgen.beyondfloods.com" || host === "www.natgen.beyondfloods.com") &&
+            !/\/Public\/AgentDashboard$/i.test(path) &&
+            !/\/Public\/ViewQuoteOrPolicy/i.test(path) &&
+            !/\/Public\/AgentAllDocs/i.test(path)) {
+          location.replace(
+            BF_ORIGIN + BF_DASH_PATH +
+            "#bfpol=" + encodeURIComponent(pol) +
+            "&mci=1&ts=" + encodeURIComponent(keepTs)
+          );
+          return;
+        }
+
+        // STEP 3: Dashboard -> fill Policy Number and click Search
+        if ((host === "natgen.beyondfloods.com" || host === "www.natgen.beyondfloods.com") && /\/Public\/AgentDashboard$/i.test(path)) {
+          const input = await waitForSel('input[name="SearchParams[3].ParameterValue"]', 15000);
+          if (!input) {
+            toast("Beyond Floods: policy number field not found.", 3000);
+            finish();
+            return;
+          }
+
+          input.focus();
+          setNativeValue(input, "");
+          input.dispatchEvent(new Event("input", { bubbles:true }));
+          setNativeValue(input, pol);
+          input.dispatchEvent(new Event("input", { bubbles:true }));
+          input.dispatchEvent(new Event("change", { bubbles:true }));
+
+          await sleep(150);
+
+          const searchBtn = await waitForSel("#agentSearchButton", 8000);
+          if (!searchBtn) {
+            toast("Beyond Floods: search button not found.", 3000);
+            finish();
+            return;
+          }
+
+          searchBtn.click();
+
+          const viewLink = await waitForSel('a[href*="/Public/ViewQuoteOrPolicy"]', 15000);
+          if (!viewLink) {
+            toast("Beyond Floods: View link not found in results.", 3000);
+            finish();
+            return;
+          }
+
+          const href = viewLink.getAttribute("href");
+          if (!href) {
+            toast("Beyond Floods: View link href missing.", 3000);
+            finish();
+            return;
+          }
+
+          location.assign(href);
+          return;
+        }
+
+        // STEP 4: Policy page -> go to View Docs in same tab
+        if ((host === "natgen.beyondfloods.com" || host === "www.natgen.beyondfloods.com") && /\/Public\/ViewQuoteOrPolicy/i.test(path)) {
+          const docsBtn = await waitForSel('a.btnViewDocs[href*="/Public/AgentAllDocs"]', 15000);
+          if (!docsBtn) {
+            toast("Beyond Floods: View Docs button not found.", 3000);
+            finish();
+            return;
+          }
+
+          const href = docsBtn.getAttribute("href");
+          if (!href) {
+            toast("Beyond Floods: View Docs href missing.", 3000);
+            finish();
+            return;
+          }
+
+          location.assign(href);
+          return;
+        }
+
+        // STEP 5: Already on docs page
+        if ((host === "natgen.beyondfloods.com" || host === "www.natgen.beyondfloods.com") && /\/Public\/AgentAllDocs/i.test(path)) {
+          toast(`Beyond Floods Docs: ${pol}`, 2200);
+          finish();
+          return;
+        }
       })();
     })();
   }
