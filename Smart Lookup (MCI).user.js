@@ -5,7 +5,7 @@
 // @name        Smart Lookup (MCI)
 // @namespace    mci-tools
 // @version      4.3.2
-// @description  ALT+Right-Click: pinned chooser for Address/Name/Policy. Address: Wake/Maps/Vexcel combos. Name: LinkedIn/Google/Facebook. Policy: Erie/NatGen/Progressive/NFIP
+// @description  ALT+Right-Click: pinned chooser for Address/Name/Policy. Address: Wake/Maps/Vexcel combos. Name: LinkedIn/Google/Facebook. Policy: Erie/NatGen/Progressive/NFIP/NCJUA
 // @match        *://*/*
 // @match        file://*/*
 // @match        https://services.wake.gov/realestate/*
@@ -17,6 +17,7 @@
 // @match        https://app.vexcelgroup.com/*
 // @match        https://www.foragentsonly.com/*
 // @match        https://nationalgeneral.torrentflood.com/*
+// @match        https://insure.ncjuanciua.org/*
 // @grant        GM_openInTab
 // @grant        GM_addStyle
 // @grant        GM_setValue
@@ -60,18 +61,29 @@
   const NFIP_ORIGIN = "https://nationalgeneral.torrentflood.com";
   const NFIP_PATH   = "/Dashboard/Agency";
 
+  // NCJUA
+  const NCJUA_ORIGIN = "https://insure.ncjuanciua.org";
+  const NCJUA_PATH   = "/innovation";
+
   /* ================= STORAGE KEYS ================= */
   // Erie
   const K_ERIE_POL="carrier.erie.pol", K_ERIE_AWAIT="carrier.erie.await";
+
   // NatGen
-  const K_NG_POL="carrier.ng.pol",     K_NG_AWAIT="carrier.ng.await";
+  const K_NG_POL="carrier.ng.pol", K_NG_AWAIT="carrier.ng.await";
+
   // NFIP
   const K_NFIP_POL="carrier.nfip.pol", K_NFIP_AWAIT="carrier.nfip.await";
+
+  // NCJUA
+  const K_NCJUA_POL="carrier.ncjua.pol", K_NCJUA_AWAIT="carrier.ncjua.await";
+
   // Vexcel
-  const K_VEX_ADDR="vexcel.addr",      K_VEX_AWAIT="vexcel.await";
+  const K_VEX_ADDR="vexcel.addr", K_VEX_AWAIT="vexcel.await";
+
   // Progressive
   const K_PR_POL="carrier.pr.pol";
-  const K_PR_RAN="carrier.pr.ran";         // per-tab
+  const K_PR_RAN="carrier.pr.ran"; // per-tab
   const K_PR_PENDING_GM="carrier.pr.pending.gm"; // cross-tab safety
   const K_PR_PENDING_TS="carrier.pr.pending.ts";
 
@@ -203,8 +215,11 @@
     ERIE_FMT1:  /^[A-Z]\d{2}-\d{6,}$/,
     HYPHENATED: /\b([A-Z0-9]{1,4}-\d{5,12})\b/,
     DIGITS_8_10:/^\d{8,10}$/,
-    DIGITS_11P: /^\d{11,}$/
+    DIGITS_11P: /^\d{11,}$/,
+    // NCJUA common policy prefixes
+    NCJUA_POLICY: /\b((?:DW|DP|HO|HW|WH|CP)[A-Z0-9-]{4,})\b/i
   };
+
   const norm=s=>(s||"").replace(/\s+/g," ").trim();
 
   function isLikelyAddress(s){
@@ -261,21 +276,25 @@
 
   // Policy extraction
   function extractPolicy(txt){
-    const s=String(txt||"");
+    const s = String(txt || "");
     if(!s.trim()) return null;
+
+    // NCJUA prefixed policies first
+    const ncjua = s.match(RE.NCJUA_POLICY);
+    if (ncjua) return ncjua[1].toUpperCase();
 
     // Erie "Q..."
     const q = s.match(/\bQ\d{5,}\b/i);
     if(q) return q[0].toUpperCase();
 
-    const erieExact=s.match(RE.ERIE_FMT1)?.[0];
+    const erieExact = s.match(RE.ERIE_FMT1)?.[0];
     if(erieExact) return erieExact;
 
-    const hyp=s.match(RE.HYPHENATED)?.[0];
+    const hyp = s.match(RE.HYPHENATED)?.[0];
     if(hyp) return hyp;
 
-    const digits=(s.match(/\b\d{8,}\b/)||[])[0];
-    return digits||null;
+    const digits = (s.match(/\b\d{8,}\b/) || [])[0];
+    return digits || null;
   }
 
   /* ================= OPENERS (ARM + PASS TOKEN) ================= */
@@ -415,7 +434,23 @@
     toast(`NFIP: ${p}`);
   }
 
+  // ================= NCJUA =================
+  function openNCJUA(pol){
+    const ts = armAutomations(Date.now());
+    const p = String(pol || "").trim().toUpperCase();
+    if(!p){ toast("No NCJUA policy detected."); return; }
 
+    try{
+      sessionStorage.setItem(K_NCJUA_POL, p);
+      sessionStorage.setItem(K_NCJUA_AWAIT, "1");
+    }catch(_){}
+
+    window.open(
+      NCJUA_ORIGIN + NCJUA_PATH + "#pol=" + encodeURIComponent(p) + "&mci=1&ts=" + encodeURIComponent(String(ts)),
+      "_blank"
+    );
+    toast(`NCJUA: ${p}`);
+  }
 
   function openProgressive(pol){
     const ts = armAutomations(Date.now());
@@ -577,7 +612,8 @@
             {value:"pol_erie",        label:"Policy: Erie"},
             {value:"pol_natgen",      label:"Policy: NatGen"},
             {value:"pol_progressive", label:"Policy: Progressive"},
-            {value:"pol_nfip",        label:"Policy: NFIP"}
+            {value:"pol_nfip",        label:"Policy: NFIP"},
+            {value:"pol_ncjua",       label:"Policy: NCJUA"}
           ],
           {pol},
           pol
@@ -616,18 +652,10 @@
     if(action==="pol_natgen")      return openNatGen(payload.pol);
     if(action==="pol_progressive") return openProgressive(payload.pol);
     if(action==="pol_nfip")        return openNFIP(payload.pol);
+    if(action==="pol_ncjua")       return openNCJUA(payload.pol);
   }
 
-  // ALT + RIGHT-CLICK opens chooser pinned at cursor
-  document.addEventListener("contextmenu", (e)=>{
-    if(!e.altKey) return;
-
-    const tag=(e.target&&e.target.tagName||"").toLowerCase();
-    if(tag==="input"||tag==="textarea"||(e.target&&e.target.isContentEditable)) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
+// ALT + RIGHT-CLICK opens chooser pinned at cursor
 document.addEventListener("contextmenu", (e) => {
   if (!e.altKey) return;
 
@@ -642,24 +670,24 @@ document.addEventListener("contextmenu", (e) => {
       if (node.nodeType === 3) node = node.parentNode;
       if (!node) return "";
 
-      // Try exact element text first
-      let txt = ((node.innerText || node.textContent) || "").trim();
-
-      // If too big, try a tighter child
-      if (txt && txt.length > 80) {
-        const small = node.querySelector && node.querySelector("a, span, div, td");
-        if (small) {
-          const t2 = ((small.innerText || small.textContent) || "").trim();
-          if (t2) txt = t2;
-        }
-      }
-
-      // If still too big, walk up looking for something with a policy pattern
+      // Prefer a tighter clickable/text element first
       let cur = node;
       while (cur && cur !== document.body) {
         const t = ((cur.innerText || cur.textContent) || "").trim();
         if (t && extractPolicy(t)) return t;
         cur = cur.parentElement;
+      }
+
+      // Fall back to direct node text
+      let txt = ((node.innerText || node.textContent) || "").trim();
+
+      // If too large, try a smaller child
+      if (txt && txt.length > 80 && node.querySelector) {
+        const small = node.querySelector("a, span, div, td, th, label");
+        if (small) {
+          const t2 = ((small.innerText || small.textContent) || "").trim();
+          if (t2) txt = t2;
+        }
       }
 
       return txt || "";
@@ -668,19 +696,23 @@ document.addEventListener("contextmenu", (e) => {
     }
   }
 
-      e.preventDefault();
-      e.stopPropagation();
+  // stop browser menu and most selection behavior
+  e.preventDefault();
+  e.stopPropagation();
 
-      const underCursor = getTextUnderCursor(e);
-      const selected = (window.getSelection && window.getSelection().toString().trim()) || "";
-      const hovered = getSelectedOrHoverText();
-      const txt = underCursor || selected || hovered;
+  // clear accidental selection that may have happened already
+  try {
+    const sel = window.getSelection && window.getSelection();
+    if (sel && sel.removeAllRanges) sel.removeAllRanges();
+  } catch (_) {}
 
-      HoverChooser.openPinned(txt, e.clientX, e.clientY);
-    }, true);
+  const underCursor = getTextUnderCursor(e);
+  const selected = (window.getSelection && window.getSelection().toString().trim()) || "";
+  const hovered = getSelectedOrHoverText();
+  const txt = underCursor || selected || hovered;
 
-    HoverChooser.openPinned(txt, e.clientX, e.clientY);
-  }, true);
+  HoverChooser.openPinned(txt, e.clientX, e.clientY);
+}, true);
 
   /* ================= TAB INDICATOR ================= */
   function updateTabIndicator(){
@@ -1065,7 +1097,156 @@ const visible = el => {
     })();
   }
 
+  // NCJUA — search policy and open Policy File
+  if (location.hostname === "insure.ncjuanciua.org") {
+    (function ncjuaAuto(){
+      const tok = tokenOKFromLocation();
+      if (tok.ok) armAutomations(tok.ts);
+      if (!isArmed()) return;
 
+      // Run only in top frame
+      try { if (window.top !== window.self) return; } catch(_) {}
+
+      const hp = getHashParams();
+      const polFromHash = hp.get("pol") || "";
+      let pol = polFromHash;
+
+      if (!pol) {
+        const awaiting = sessionStorage.getItem(K_NCJUA_AWAIT) === "1";
+        if (!awaiting) return;
+        pol = sessionStorage.getItem(K_NCJUA_POL) || "";
+        if (!pol) return;
+      }
+
+      const keepTs = hp.get("ts") || String(Date.now());
+
+      const finish = () => {
+        try { history.replaceState(null, "", location.pathname + location.search); } catch(_) {}
+        try {
+          sessionStorage.removeItem(K_NCJUA_POL);
+          sessionStorage.removeItem(K_NCJUA_AWAIT);
+        } catch(_) {}
+        disarmAutomations();
+      };
+
+      function visible(el){
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        return !!(el.offsetParent || r.width || r.height);
+      }
+
+      function waitForSel(selector, timeout=15000){
+        return new Promise(resolve => {
+          const t0 = performance.now();
+          const iv = setInterval(() => {
+            const el = document.querySelector(selector);
+            if (el && visible(el)) {
+              clearInterval(iv);
+              resolve(el);
+            } else if (performance.now() - t0 > timeout) {
+              clearInterval(iv);
+              resolve(null);
+            }
+          }, 150);
+        });
+      }
+
+      function runPageScript(fn, arg){
+        const s = document.createElement("script");
+        s.textContent = `(${fn})(${JSON.stringify(arg)});`;
+        document.documentElement.appendChild(s);
+        s.remove();
+      }
+
+      (async () => {
+        const isInnovation = /\/innovation/i.test(location.pathname || "");
+
+        if (!isInnovation) {
+          try {
+            sessionStorage.setItem(K_NCJUA_POL, pol);
+            sessionStorage.setItem(K_NCJUA_AWAIT, "1");
+          } catch(_) {}
+
+          location.replace(
+            NCJUA_ORIGIN + NCJUA_PATH +
+            "#pol=" + encodeURIComponent(pol) +
+            "&mci=1&ts=" + encodeURIComponent(keepTs)
+          );
+          return;
+        }
+
+        // Persist in THIS tab so if the page navigates after search, the next load can continue
+        try {
+          sessionStorage.setItem(K_NCJUA_POL, pol);
+          sessionStorage.setItem(K_NCJUA_AWAIT, "1");
+        } catch(_) {}
+
+        // Step 2 first: if Policy File is already present, click it and finish
+        const existingPolicyFile =
+          document.querySelector("#Tab_Documents") ||
+          document.querySelector("a.menu-item-link[title='Policy File']");
+
+        if (existingPolicyFile && visible(existingPolicyFile)) {
+          existingPolicyFile.click();
+          toast(`NCJUA Policy File: ${pol}`, 2200);
+          finish();
+          return;
+        }
+
+        // Step 1: perform search from the PAGE context
+        const input = await waitForSel("#ToolbarSearchText", 15000);
+        if (!input) {
+          toast("NCJUA: search box not found.", 3000);
+          finish();
+          return;
+        }
+
+        runPageScript(function(policyNumber){
+          try {
+            var input = document.getElementById("ToolbarSearchText");
+            if (!input) return;
+
+            // prevent opening in a separate window
+            var newWin = document.getElementById("SearchNewWindow");
+            if (newWin) newWin.checked = false;
+
+            input.focus();
+            input.value = policyNumber;
+            input.setAttribute("value", policyNumber);
+
+            if (window.jQuery) {
+              window.jQuery(input).val(policyNumber).trigger("input").trigger("change").trigger("blur");
+            } else {
+              input.dispatchEvent(new Event("input", { bubbles:true }));
+              input.dispatchEvent(new Event("change", { bubbles:true }));
+              input.dispatchEvent(new Event("blur", { bubbles:true }));
+            }
+
+            if (typeof siteSearchService === "function") {
+              siteSearchService();
+              return;
+            }
+
+            var btn = document.getElementById("ToolbarSearch");
+            if (btn) btn.click();
+          } catch (e) {}
+        }, pol);
+
+        // After search, the page may re-render or navigate.
+        // Wait a bit to see if Policy File appears on this same page.
+        const policyFileLink = await waitForSel("#Tab_Documents, a.menu-item-link[title='Policy File']", 15000);
+        if (policyFileLink) {
+          policyFileLink.click();
+          toast(`NCJUA Policy File: ${pol}`, 2200);
+          finish();
+          return;
+        }
+
+        // Do NOT finish here if the page is transitioning.
+        // Keep the session keys so the next page load can continue and click Policy File.
+      })();
+    })();
+  }
 
   // PROGRESSIVE (FAO) — safe automation: waits for login instead of looping
   if (location.hostname === "www.foragentsonly.com") {
