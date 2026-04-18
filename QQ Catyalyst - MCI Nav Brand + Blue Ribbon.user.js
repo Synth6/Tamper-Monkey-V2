@@ -1,36 +1,30 @@
-﻿// ==UserScript==
-// @name         QQ Catyalyst - MCI Nav Brand + Blue Ribbon
+// ==UserScript==
+// @name         QQ Catalyst - MCI Logo Brand + Blue Ribbon
 // @namespace    mci-tools
-// @version      2.3
-// @description  Adds a stacked â€œMiddle Creek / Insuranceâ€ badge in top navigation; applies blue gradient to the fixed ribbon only.
+// @version      3.0
+// @description  Replaces QQ nav logo with Middle Creek Insurance logo link and applies blue gradient to the fixed ribbon.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
 // @run-at       document-idle
 // @allFrames    true
 // @grant        GM_addStyle
-// @updateURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/QQ%20Catyalyst%20-%20MCI%20Nav%20Brand%20+%20Blue%20Ribbon.user.js
-// @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/QQ%20Catyalyst%20-%20MCI%20Nav%20Brand%20+%20Blue%20Ribbon.user.js
+// @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/QQ%20Catalyst%20-%20MCI%20Logo%20Brand%20%2B%20Blue%20Ribbon.user.js
+// @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/QQ%20Catalyst%20-%20MCI%20Logo%20Brand%20%2B%20Blue%20Ribbon.user.js
 // ==/UserScript==
 
 (() => {
   "use strict";
 
-  /* â”€â”€â”€â”€â”€â”€â”€â”€â”€ CONFIG â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-  const DRIVE_URL    = "https://sites.google.com/middlecreekins.com/easy-links/home";
+  /* ========= CONFIG ========= */
+  const DRIVE_URL = "https://sites.google.com/middlecreekins.com/easy-links/home";
+  const LOGO_URL  = "https://middlecreekins.com/wp-content/uploads/2024/02/Logo-mobile2.png";
 
-  // Nav badge size/spacing
-  const BADGE_HEIGHT = 29;   // px
-  const BADGE_PADX   = 3;   // px
-  const MARGIN_LEFT  = 10;   // px after QQ logo
+  const LOGO_WIDTH  = 150; // adjust if needed
+  const LOGO_HEIGHT = 34;  // adjust if needed
 
-  // Nav badge text sizes
-  const FONT_TOP     = 14;   // â€œMiddle Creekâ€
-  const FONT_BOTTOM  = 12;   // â€œInsuranceâ€
-
-  // Ribbon-only gradient (Carolina blue)
   const RIBBON_GRADIENT = "linear-gradient(135deg,#00223E 0%,#005792 50%,#00BBF0 100%)";
 
-  /* â”€â”€â”€â”€â”€â”€â”€â”€â”€ CSS â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ========= CSS ========= */
   GM_addStyle(`
     /* --- Ribbon theming (ONLY #fix-ribbon) --- */
     #fix-ribbon.mci-themed {
@@ -40,139 +34,145 @@
       background-position: center !important;
       background-attachment: scroll !important;
     }
+
     #fix-ribbon .mci-ribbon-sheen {
-      position: absolute; inset: 0; pointer-events: none;
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
       background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,0));
     }
 
-    /* --- Nav badge (next to #logo) --- */
+    /* --- Replace default QQ logo area with MCI linked logo --- */
+    #navigation #menu #logo.mci-logo-replaced {
+      background: none !important;
+      width: 150px !important;
+      height: 32px !important;
+      min-width: 150px !important;
+      min-height: 32px !important;
+      max-height: 32px !important;
+      display: inline-block !important;
+      margin-right: 10px !important;
+      vertical-align: middle !important;
+      overflow: hidden !important;
+      position: relative !important;
+      top: -7px !important;
+    }
+
+    #navigation #menu #logo.mci-logo-replaced.sprite-global {
+      background: none !important;
+    }
+
+     #navigation #menu #logo.mci-logo-replaced .mci-logo-link {
+      display: inline-block !important;
+      width: 150px !important;
+      height: 32px !important;
+      line-height: 32px !important;
+    }
+
+    #navigation #menu #logo.mci-logo-replaced .mci-logo-img {
+      display: block !important;
+      width: 150px !important;
+      height: 32px !important;
+      object-fit: contain !important;
+    }
+
+    /* Remove old injected text badge if an older script version left it behind */
     #navigation #menu .mci-brand {
-      position: relative;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      height: ${BADGE_HEIGHT}px;
-      padding: 0 ${BADGE_PADX}px;
-      margin-left: ${MARGIN_LEFT}px;
-      background: #000;
-      color: #fff;
-      border-bottom: 2px solid #1e90ff;
-      border-radius: 0;
-      overflow: hidden;
-      box-shadow: 0 2px 5px rgba(0,0,0,.25);
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      text-decoration: none !important;
-      line-height: 1.1;
-      vertical-align: middle;
-      top: 9px;
-    }
-    #navigation #menu .mci-brand:hover { background: #0a0a0a; }
-
-    /* Stacked title */
-    #navigation #menu .mci-brand .mci-title {
-      position: relative; z-index: 2;
-      display: flex; flex-direction: column; align-items: center;
-      text-align: center; white-space: nowrap;
-    }
-    #navigation #menu .mci-brand .mci-title span:first-child {
-      font-size: ${FONT_TOP}px; font-weight: 700; letter-spacing: .2px;
-    }
-    #navigation #menu .mci-brand .mci-title span:last-child  {
-      font-size: ${FONT_BOTTOM}px; font-weight: 600; opacity: .95;
+      display: none !important;
     }
 
-    /* Animated waves behind text (like your QQ menu header) */
-    #navigation #menu .mci-brand .mci-wave {
-      position: absolute; bottom: 0; left: 0; width: 400%; height: 100%;
-      background-repeat: repeat-x; background-size: 50% 100%;
-      animation: mciWaveFlow 10s linear infinite;
-      z-index: 1; opacity: .4; pointer-events: none;
+    #main {
+      margin-top: 70px !important;
     }
-    #navigation #menu .mci-brand .w1 { background-image: radial-gradient(ellipse at center, #70c5ff 0%, transparent 70%); animation-duration: 12s; opacity: .6; }
-    #navigation #menu .mci-brand .w2 { background-image: radial-gradient(ellipse at center, #3498db 0%, transparent 70%); animation-duration: 16s; opacity: .5; }
-    #navigation #menu .mci-brand .w3 { background-image: radial-gradient(ellipse at center, #0f6ebd 0%, transparent 70%); animation-duration: 20s; opacity: .4; }
-    @keyframes mciWaveFlow { 0% { transform: translateX(0) } 100% { transform: translateX(-50%) } }
 
-    /* Compact tweak if header gets tight */
     @media (max-width: 1200px) {
-      #navigation #menu .mci-brand { height: ${Math.max(28, BADGE_HEIGHT - 4)}px; padding: 0 ${Math.max(6, BADGE_PADX - 2)}px; }
-      #navigation #menu .mci-brand .mci-title span:first-child { font-size: ${Math.max(12, FONT_TOP - 1)}px; }
-      #navigation #menu .mci-brand .mci-title span:last-child  { font-size: ${Math.max(10, FONT_BOTTOM - 1)}px; }
+      #navigation #menu #logo.mci-logo-replaced .mci-logo-img {
+        width: ${Math.max(120, LOGO_WIDTH - 20)}px !important;
+        height: ${Math.max(28, LOGO_HEIGHT - 4)}px !important;
+      }
     }
   `);
 
-  /* â”€â”€â”€â”€â”€â”€â”€â”€â”€ DOM helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-  function insertMciBrandInNav() {
-    if (document.querySelector('#navigation #menu .mci-brand')) return;
+  /* ========= HELPERS ========= */
+  function replaceLogoWithMci() {
+    const logo = document.querySelector("#navigation #menu #logo");
+    if (!logo) return;
 
-    const menu = document.querySelector('#navigation #menu');
-    if (!menu) return;
+    // If already replaced, just make sure href/src are still correct
+    let link = logo.querySelector(".mci-logo-link");
+    let img  = logo.querySelector(".mci-logo-img");
 
-    const brand = document.createElement('a');
-    brand.className = 'mci-brand';
-    brand.href = DRIVE_URL;
-    brand.target = '_blank';
-    brand.rel = 'noopener';
-    brand.setAttribute('aria-label', 'Open Middle Creek Insurance Drive');
-    brand.innerHTML = `
-      <div class="mci-title">
-        <span>Middle Creek</span>
-        <span>Insurance</span>
-      </div>
-      <div class="mci-wave w1"></div>
-      <div class="mci-wave w2"></div>
-      <div class="mci-wave w3"></div>
-    `;
-
-    const logo = document.querySelector('#navigation #menu #logo');
-    const navList = menu.querySelector('.global-nav');
-
-    if (logo && logo.parentElement === menu) {
-      (logo.nextSibling) ? menu.insertBefore(brand, logo.nextSibling) : menu.appendChild(brand);
-    } else if (navList) {
-      menu.insertBefore(brand, navList);
-    } else {
-      menu.appendChild(brand);
+    if (!link || !img) {
+      logo.innerHTML = `
+        <a class="mci-logo-link" href="${DRIVE_URL}" target="_blank" rel="noopener" aria-label="Open Middle Creek Insurance Easy Links">
+          <img class="mci-logo-img" src="${LOGO_URL}" alt="Middle Creek Insurance">
+        </a>
+      `;
+      link = logo.querySelector(".mci-logo-link");
+      img  = logo.querySelector(".mci-logo-img");
     }
+
+    if (link) {
+      link.href = DRIVE_URL;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.setAttribute("aria-label", "Open Middle Creek Insurance Easy Links");
+    }
+
+    if (img) {
+      img.src = LOGO_URL;
+      img.alt = "Middle Creek Insurance";
+    }
+
+    logo.classList.add("mci-logo-replaced");
+  }
+
+  function removeOldInjectedBrand() {
+    const oldBrands = document.querySelectorAll("#navigation #menu .mci-brand");
+    oldBrands.forEach(el => el.remove());
   }
 
   function applyRibbonGradient() {
-    const ribbon = document.getElementById('fix-ribbon'); // per your div: <div id="fix-ribbon" class="ribbon locked-to-scroll">
+    const ribbon = document.getElementById("fix-ribbon");
     if (!ribbon) return;
-    if (!ribbon.classList.contains('mci-themed')) {
-      ribbon.classList.add('mci-themed');
+
+    if (!ribbon.classList.contains("mci-themed")) {
+      ribbon.classList.add("mci-themed");
     }
-    if (!ribbon.querySelector('.mci-ribbon-sheen')) {
-      const sheen = document.createElement('div');
-      sheen.className = 'mci-ribbon-sheen';
+
+    if (!ribbon.querySelector(".mci-ribbon-sheen")) {
+      const sheen = document.createElement("div");
+      sheen.className = "mci-ribbon-sheen";
       ribbon.appendChild(sheen);
     }
   }
 
-  /* â”€â”€â”€â”€â”€â”€â”€â”€â”€ Init + observe SPA changes â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   function init() {
-    insertMciBrandInNav();   // badge stays in navigation
-    applyRibbonGradient();   // only the ribbon gets the blue gradient
+    removeOldInjectedBrand();
+    replaceLogoWithMci();
+    applyRibbonGradient();
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init, { once: true });
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init, { once: true });
   } else {
     init();
   }
 
   const mo = new MutationObserver(() => {
-    insertMciBrandInNav();
-    applyRibbonGradient();
+    init();
   });
-  mo.observe(document.documentElement, { childList: true, subtree: true });
 
-  // Optional: Alt+D opens Drive quickly
-  document.addEventListener('keydown', (e) => {
-    if (e.altKey && !e.shiftKey && (e.key || '').toLowerCase() === 'd') {
-      window.open(DRIVE_URL, '_blank', 'noopener');
+  mo.observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
+
+  // Optional hotkey: Alt+D opens Easy Links
+  document.addEventListener("keydown", (e) => {
+    if (e.altKey && !e.shiftKey && (e.key || "").toLowerCase() === "d") {
+      window.open(DRIVE_URL, "_blank", "noopener");
       e.preventDefault();
     }
   });
 })();
-
