@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
-// @version      1.6.7
+// @version      1.6.8
 // @description  Extract from carriers and build QQC payload. Alt+Q: Extractor. (Erie Commercial Mendix fixed v2 + Website)
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
@@ -658,6 +658,73 @@
         city: '',
         state: '',
         zip: ''
+      }
+    };
+  }
+
+  function isNFIPStandardEditPage() {
+    return /nationalgeneral\.torrentflood\.com$/i.test(location.hostname) &&
+      /\/Flood\/Application\/Standard\/Edit\//i.test(location.pathname) &&
+      !!document.querySelector('#ApplicantInformation_FirstInsured_FirstName');
+  }
+
+  function extractNFIPStandardEditPage() {
+    const gv = (sel) => (document.querySelector(sel)?.value || '').trim();
+
+    const firstName = gv('#ApplicantInformation_FirstInsured_FirstName');
+    const middleName = gv('#ApplicantInformation_FirstInsured_MiddleName');
+    const lastName = gv('#ApplicantInformation_FirstInsured_LastName');
+    const suffix = gv('#ApplicantInformation_FirstInsured_Suffix');
+
+    const phoneRaw =
+      gv('#MailingAddress_HomePhone') ||
+      gv('#MailingAddress_CellPhone') ||
+      gv('#MailingAddress_WorkPhone');
+
+    const primaryPhone = phoneRaw.replace(/[^\d]/g, '').slice(0, 10);
+    const phoneType = formatPhone(primaryPhone);
+
+    const primaryEmail = gv('#MailingAddress_EMail').toLowerCase();
+
+    const line1 = gv('#PropertyAddress_Address1');
+    const line2 = gv('#PropertyAddress_Address2');
+    const city = gv('#PropertyAddress_City');
+    const zip = gv('#PropertyAddress_PostalCode');
+
+    let state = '';
+    const stateSel = document.querySelector('#PropertyAddress_State');
+    if (stateSel) {
+      const opt = stateSel.selectedOptions?.[0] || stateSel.options[stateSel.selectedIndex];
+      const txt = (opt?.textContent || '').trim();
+      const m = txt.match(/^([A-Z]{2})\b/);
+      state = m ? m[1] : txt;
+    }
+
+    return {
+      carrier: 'NFIP-TorrentFlood',
+      source: 'nfip-standard-edit-page',
+      sourceUrl: location.href,
+
+      firstName,
+      middleName,
+      lastName,
+      suffix,
+      businessName: '',
+
+      primaryPhone,
+      phoneType,
+      primaryEmail,
+
+      contactType: 'Prospects',
+      customerType: 'Personal',
+      status: 'Active',
+
+      address: {
+        line1,
+        line2,
+        city,
+        state,
+        zip
       }
     };
   }
@@ -1382,6 +1449,7 @@ function extractProgressiveFAO() {
     if (isEriePLW()) return await extractEriePLW();
     if (isErieProfile()) return await extractErieProfile();
     if (isErieMendix()) return await extractErieMendix();
+    if (isNFIPStandardEditPage()) return extractNFIPStandardEditPage();
     if (isNFIPSavedApplicationsPage()) return extractNFIPSavedApplicationsPage();
     if (isNFIPInsuredPanel()) return await extractNFIPInsuredPanel();
     if (isBeyondFloodsSummary()) return extractBeyondFloodsSummary();
