@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
-// @version      1.6.6
+// @version      1.6.7
 // @description  Extract from carriers and build QQC payload. Alt+Q: Extractor. (Erie Commercial Mendix fixed v2 + Website)
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
@@ -570,6 +570,96 @@
     set('#qqc-state', p.address?.state);
     set('#qqc-zip', p.address?.zip);
     const box = extractorPanel.querySelector('#qqc-json'); if (box) box.value = JSON.stringify(p, null, 2);
+  }
+
+  function isNFIPSavedApplicationsPage() {
+    return /nationalgeneral\.torrentflood\.com$/i.test(location.hostname) &&
+      /\/Queue\/SavedApplication/i.test(location.pathname) &&
+      !!document.querySelector('#ResultsTableRegion');
+  }
+
+  function cleanTorrentText(s) {
+    return String(s || '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function splitTorrentName(name) {
+    name = cleanTorrentText(name);
+
+    if (name.indexOf(',') >= 0) {
+      const p = name.split(',');
+      return {
+        firstName: toNameCase(cleanTorrentText(p.slice(1).join(' '))),
+        lastName: toNameCase(cleanTorrentText(p[0]))
+      };
+    }
+
+    const parts = name.split(/\s+/).filter(Boolean);
+    return {
+      firstName: toNameCase(parts[0] || ''),
+      lastName: toNameCase(parts.slice(1).join(' '))
+    };
+  }
+
+  function extractNFIPSavedApplicationsPage() {
+    const checked = document.querySelector('#ResultsTableRegion tr.SearchResultLineItem input.selectItem:checked');
+
+    if (!checked) {
+      extractorStatus('Check one NFIP quote first.');
+      return {};
+    }
+
+    const row = checked.closest('tr.SearchResultLineItem');
+    const links = Array.from(row.querySelectorAll('td.actionURLColumn a'));
+
+    const insured = cleanTorrentText(links[0]?.textContent);
+    const quoteNumber = cleanTorrentText(links[1]?.textContent);
+    const propertyAddress = cleanTorrentText(links[2]?.textContent);
+    const creationDate = cleanTorrentText(links[3]?.textContent);
+    const phoneRaw = cleanTorrentText(links[4]?.textContent);
+    let email = cleanTorrentText(links[5]?.textContent).toLowerCase();
+
+    // remove anything before the actual email
+    email = email.replace(/^[^a-z0-9]+/i, ''); // strips label junk
+    email = email.replace(/^email.*?:\s*/i, '').trim();
+
+    const names = splitTorrentName(insured);
+    const phoneDigits = phoneRaw.replace(/[^\d]/g, '').slice(0, 10);
+
+    return {
+      carrier: 'NFIP-TorrentFlood',
+      source: 'nfip-saved-applications',
+      sourceUrl: links[0] ? new URL(links[0].getAttribute('href'), location.origin).href : location.href,
+
+      firstName: names.firstName,
+      middleName: '',
+      lastName: names.lastName,
+      suffix: '',
+      businessName: '',
+
+      primaryPhone: phoneDigits,
+      phoneType: formatPhone(phoneDigits),
+      primaryEmail: email,
+      dob: '',
+      ein: '',
+
+      contactType: 'Prospects',
+      customerType: 'Personal',
+      status: 'Active',
+
+      quoteNumber: quoteNumber,
+      creationDate: creationDate,
+
+      address: {
+        line1: propertyAddress,
+        line2: '',
+        city: '',
+        state: '',
+        zip: ''
+      }
+    };
   }
 
   // ---------- NFIP / National General TorrentFlood ----------
@@ -1292,6 +1382,7 @@ function extractProgressiveFAO() {
     if (isEriePLW()) return await extractEriePLW();
     if (isErieProfile()) return await extractErieProfile();
     if (isErieMendix()) return await extractErieMendix();
+    if (isNFIPSavedApplicationsPage()) return extractNFIPSavedApplicationsPage();
     if (isNFIPInsuredPanel()) return await extractNFIPInsuredPanel();
     if (isBeyondFloodsSummary()) return extractBeyondFloodsSummary();
 
