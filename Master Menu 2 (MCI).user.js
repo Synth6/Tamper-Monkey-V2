@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      5.9.7
+// @version      5.9.8
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -550,6 +550,7 @@
       label: "QQ Helpers",
       items: [
       { type: "button", id: "mci_pdf_open", text: "📄 Open PDFs (Smart)", className: "mci-btn qq-pdf" },
+      { type: "button", id: "mci_qq_download_selected", text: "📥 Download Files", className: "mci-btn qq-download" },
       { type: "button", id: "mci_fix_names", text: "🧾Show Full File Names", className: "mci-btn qq-names" },
         { type: "rowControls" }
       ]
@@ -1031,6 +1032,8 @@
         /* QQ Helper Buttons */
         '.mci-btn.qq-pdf{background:linear-gradient(180deg,#38bdf8 0%,#0ea5e9 52%,#0369a1 100%);color:#fff;border:1px solid rgba(255,255,255,.18);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 10px rgba(14,165,233,.18),inset 0 1px 2px rgba(255,255,255,.18)}' +
         '.mci-btn.qq-pdf:hover{background:linear-gradient(180deg,#67d3ff 0%,#22b8f2 52%,#0b7db8 100%);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 14px rgba(14,165,233,.28),0 6px 14px rgba(0,0,0,.35),inset 0 1px 2px rgba(255,255,255,.22)}' +
+        '.mci-btn.qq-download{background:linear-gradient(180deg,#34d399 0%,#10b981 52%,#047857 100%);color:#fff;border:1px solid rgba(255,255,255,.18);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 10px rgba(16,185,129,.18),inset 0 1px 2px rgba(255,255,255,.18)}' +
+'.mci-btn.qq-download:hover{background:linear-gradient(180deg,#6ee7b7 0%,#22c55e 52%,#059669 100%);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 14px rgba(16,185,129,.28),0 6px 14px rgba(0,0,0,.35),inset 0 1px 2px rgba(255,255,255,.22)}' +
         '.mci-btn.qq-names{background:linear-gradient(180deg,#a78bfa 0%,#8b5cf6 52%,#5b21b6 100%);color:#fff;border:1px solid rgba(255,255,255,.18);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 10px rgba(139,92,246,.18),inset 0 1px 2px rgba(255,255,255,.18)}' +
         '.mci-btn.qq-names:hover{background:linear-gradient(180deg,#bea7ff 0%,#9d72ff 52%,#6d28d9 100%);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 14px rgba(139,92,246,.28),0 6px 14px rgba(0,0,0,.35),inset 0 1px 2px rgba(255,255,255,.22)}' +
 
@@ -1334,6 +1337,9 @@
       startPdfPopupObserver();
 
       onClick("mci_pdf_open", function () { smartOpenPdfs(); });
+      onClick("mci_qq_download_selected", function () {
+        triggerFileDownloader("qq-selected-pdfs");
+      });
 
       onClick("mci_fix_names", function () {
         const res = toggleFileNameFix();
