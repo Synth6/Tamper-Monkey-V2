@@ -81,12 +81,12 @@
 
     let fileName = cleanFileName(rawName);
 
-    const type = (item.fileType || "").toLowerCase();
+    const type = (fileType || "").toLowerCase();
 
     if (!/\.[a-z0-9]+$/i.test(fileName)) {
-    if (type === "pdf") fileName += ".pdf";
-    else if (type === "image") fileName += ".jpg";
-    else if (type) fileName += "." + type;
+      if (type === "pdf") fileName += ".pdf";
+      else if (type === "image") fileName += ".jpg";
+      else if (type) fileName += "." + type;
     }
 
     return {
@@ -121,11 +121,11 @@
       .filter(item => item.blobId);
 
     if (!items.length) {
-      toast("No checked PDF rows with data-blobid were found.");
+      toast("No checked file rows with data-blobid were found.");
       return;
     }
 
-    toast("Starting download for " + items.length + " PDF(s)...");
+    toast("Starting download for " + items.length + " Files(s)...");
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
@@ -138,7 +138,7 @@
       await sleep(650);
     }
 
-    toast("Done starting " + items.length + " PDF download(s).");
+    toast("Done starting " + items.length + " file download(s).");
   }
 
   window.addEventListener("message", function (event) {
