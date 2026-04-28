@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
-// @version      1.6.8
+// @version      1.6.9
 // @description  Extract from carriers and build QQC payload. Alt+Q: Extractor. (Erie Commercial Mendix fixed v2 + Website)
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
@@ -15,6 +15,7 @@
 // @match        https://natgen.beyondfloods.com/*
 // @match        https://nationalgeneral.torrentflood.com/*
 // @match        https://quoting.foragentsonly.com/*
+// @match        https://insure.ncjuanciua.org/*
 // @all-frames   true
 // @run-at       document-idle
 // @grant        GM_setValue
@@ -570,6 +571,104 @@
     set('#qqc-state', p.address?.state);
     set('#qqc-zip', p.address?.zip);
     const box = extractorPanel.querySelector('#qqc-json'); if (box) box.value = JSON.stringify(p, null, 2);
+  }
+
+  // ---------- NCJUA / NCIUA Quote Sheet - Insured Information ----------
+  function isNCJUAQuoteInsuredInformationPage() {
+    return /insure\.ncjuanciua\.org$/i.test(location.hostname) &&
+      !!document.getElementById('InsuredInformation') &&
+      (
+        !!document.getElementById('InsuredName.GivenName') ||
+        !!document.getElementById('InsuredName.CommercialName') ||
+        !!document.getElementById('InsuredMailingAddr.Addr1')
+      );
+  }
+
+  function extractNCJUAQuoteInsuredInformation() {
+    const gv = (id) => (document.getElementById(id)?.value || '').trim();
+    const gt = (id) => (document.getElementById(id)?.textContent || '').trim();
+
+    const selectedValue = (id) => {
+      const el = document.getElementById(id);
+      if (!el) return '';
+      return (el.value || '').trim();
+    };
+
+    const selectedText = (id) => {
+      const el = document.getElementById(id);
+      if (!el) return '';
+      const opt = el.selectedOptions?.[0] || el.options?.[el.selectedIndex];
+      return (opt?.textContent || el.value || '').trim();
+    };
+
+    const entityType = selectedValue('Insured.EntityTypeCd');
+    const fullName = gv('InsuredName.CommercialName') || gv('Insured.IndexName') || gt('Full_QuoteAppSummary_InsuredName');
+
+    let firstName = gv('InsuredName.GivenName');
+    let middleName = gv('InsuredName.OtherGivenName');
+    let lastName = gv('InsuredName.Surname');
+    let suffix = gv('InsuredName.SuffixCd');
+    let businessName = '';
+
+    if (entityType && entityType !== 'Individual') {
+      businessName = fullName;
+      firstName = '';
+      middleName = '';
+      lastName = '';
+      suffix = '';
+    } else if ((!firstName || !lastName) && fullName) {
+      const parts = fullName.split(/\s+/).filter(Boolean);
+      firstName = firstName || parts[0] || '';
+      lastName = lastName || parts.slice(1).join(' ');
+    }
+
+    const phoneRaw =
+      gv('InsuredPhonePrimary.PhoneNumber') ||
+      gv('InsuredPhoneSecondary.PhoneNumber');
+
+    const primaryPhone = phoneRaw.replace(/[^\d]/g, '').slice(0, 10);
+    const phoneType = formatPhone(primaryPhone);
+
+    const primaryEmail = gv('InsuredEmail.EmailAddr').toLowerCase();
+
+    const line1 = gv('InsuredMailingAddr.Addr1');
+    const line2 = gv('InsuredMailingAddr.Addr2');
+    const city = gv('InsuredMailingAddr.City');
+    const state = selectedValue('InsuredMailingAddr.StateProvCd') || selectedText('InsuredMailingAddr.StateProvCd');
+    const zip = gv('InsuredMailingAddr.PostalCode');
+
+    return {
+      carrier: 'NCJUA',
+      source: 'ncjua-quote-insured-information',
+      sourceUrl: location.href,
+
+      firstName: toNameCase(firstName),
+      middleName: toNameCase(middleName),
+      lastName: toNameCase(lastName),
+      suffix: suffix,
+      businessName: businessName,
+
+      primaryPhone: primaryPhone,
+      phoneType: phoneType,
+      primaryEmail: primaryEmail,
+      dob: toMMDDYYYY(gv('InsuredPersonal.BirthDt')),
+      ein: '',
+
+      contactType: 'Prospects',
+      customerType: businessName ? 'Commercial' : 'Personal',
+      status: 'Active',
+
+      quoteNumber: gt('Full_QuoteAppSummary_QuoteAppNumber'),
+      customerNumber: gt('CustomerNumberDisplay'),
+
+      address: {
+        line1: line1,
+        line2: line2,
+        city: city,
+        state: state,
+        zip: zip
+      }
+    };
   }
 
   function isNFIPSavedApplicationsPage() {
@@ -1449,6 +1548,7 @@ function extractProgressiveFAO() {
     if (isEriePLW()) return await extractEriePLW();
     if (isErieProfile()) return await extractErieProfile();
     if (isErieMendix()) return await extractErieMendix();
+    if (isNCJUAQuoteInsuredInformationPage()) return extractNCJUAQuoteInsuredInformation();
     if (isNFIPStandardEditPage()) return extractNFIPStandardEditPage();
     if (isNFIPSavedApplicationsPage()) return extractNFIPSavedApplicationsPage();
     if (isNFIPInsuredPanel()) return await extractNFIPInsuredPanel();
