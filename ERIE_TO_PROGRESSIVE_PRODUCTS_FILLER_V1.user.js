@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ERIE_TO_PROGRESSIVE_PRODUCTS_FILLER_V1
 // @namespace    https://middlecreekinsurance.com/
-// @version      1.3.1
+// @version      1.3.2
 // @description  Fill Progressive Products page from Erie Master payload. No on-page UI.
 // @match        https://quoting.foragentsonly.com/Quote/Index/*
 // @match        https://www.foragentsonly.com/Quote/Index/*
@@ -16,7 +16,7 @@
 
     const APP = {
         name: 'ERIE_TO_PROGRESSIVE_PRODUCTS_FILLER_V1',
-        version: '1.3.1',
+        version: '1.3.2',
         debug: true
     };
 
@@ -538,8 +538,14 @@
 
             while (Progressive.vehicleCount() < countNeeded && guard < 12) {
                 var btn = Progressive.addVehicleButton();
+
                 if (!btn) {
-                    throw new Error('Add A New Vehicle button not found');
+                    U.warn('Add A New Vehicle button not found; skipping vehicle slot creation', {
+                        countNeeded: countNeeded,
+                        currentVehicleCount: Progressive.vehicleCount()
+                    });
+                    U.toast('Could not add vehicle ' + countNeeded + ' - Add button not found', 2600);
+                    return false;
                 }
 
                 U.click(btn);
@@ -555,9 +561,18 @@
             }
 
             var finalVin = U.query(Progressive.fieldId(countNeeded - 1, 'Vin'));
+
             if (Progressive.vehicleCount() < countNeeded || !finalVin) {
-                throw new Error('Could not create enough vehicle slots');
+                U.warn('Could not create enough vehicle slots', {
+                    countNeeded: countNeeded,
+                    currentVehicleCount: Progressive.vehicleCount(),
+                    finalVinFound: !!finalVin
+                });
+                U.toast('Could not create vehicle slot ' + countNeeded + ' - skipped', 2600);
+                return false;
             }
+
+            return true;
         },
 
         waitForVehicleDecode: async function (index, timeoutMs) {
@@ -788,8 +803,19 @@
 
                     try {
                         if (i > 0) {
-                            await Fill.ensureVehicleSlots(i + 1);
+                            var slotReady = await Fill.ensureVehicleSlots(i + 1);
                             await U.delay(500);
+
+                            if (!slotReady) {
+                                U.warn('Vehicle slot not ready; skipping vehicle', {
+                                    index: i,
+                                    vehicle: vehicles[i]
+                                });
+                                U.toast('Vehicle ' + (i + 1) + ' skipped - slot not ready', 2600);
+                                skippedCount += 1;
+                                filled = false;
+                                continue;
+                            }
                         }
 
                         filled = await Fill.fillVehicle(i, vehicles[i], payload);
