@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ERIE_TO_PROGRESSIVE_PRODUCTS_FILLER_V1
 // @namespace    https://middlecreekinsurance.com/
-// @version      1.3.0
+// @version      1.3.1
 // @description  Fill Progressive Products page from Erie Master payload. No on-page UI.
 // @match        https://quoting.foragentsonly.com/Quote/Index/*
 // @match        https://www.foragentsonly.com/Quote/Index/*
@@ -16,7 +16,7 @@
 
     const APP = {
         name: 'ERIE_TO_PROGRESSIVE_PRODUCTS_FILLER_V1',
-        version: '1.3.0',
+        version: '1.3.1',
         debug: true
     };
 
@@ -32,6 +32,12 @@
             var args = Array.prototype.slice.call(arguments);
             args.unshift('[' + APP.name + ']');
             console.log.apply(console, args);
+        },
+
+        warn: function () {
+            var args = Array.prototype.slice.call(arguments);
+            args.unshift('[' + APP.name + '] Warning:');
+            console.warn.apply(console, args);
         },
 
         safeString: function (v) {
@@ -260,7 +266,7 @@
             var effYear = match ? parseInt(match[1], 10) : null;
             var modelYear = parseInt(U.clean(vehicle && vehicle.year), 10);
 
-            if (!effYear || isNaN(modelYear)) return 'At least 1 year but less than 3 years';
+            if (!effYear || isNaN(modelYear)) return '';
 
             var diff = effYear - modelYear;
             if (diff <= 0) return 'Less than 1 month';
@@ -505,17 +511,19 @@
             var effectiveDate = Data.getEffectiveDate(payload);
 
             if (!effectiveDate) {
-                throw new Error('No policy effective date found in payload.coverages.policy.effectiveDate');
+                U.warn('No policy effective date found in payload.coverages.policy.effectiveDate');
+                U.toast('No Erie effective date found — skipped Policy Effective Date', 2600);
+            } else {
+                var effEl = Progressive.policyEffectiveDate();
+                if (!effEl) {
+                    U.warn('Progressive policy effective date field not found; skipping Policy Effective Date');
+                    U.toast('Policy Effective Date field not found - skipped', 2600);
+                } else {
+                    U.setInputValue(effEl, effectiveDate);
+                    U.log('Set policy effective date:', effectiveDate);
+                    await U.delay(400);
+                }
             }
-
-            var effEl = Progressive.policyEffectiveDate();
-            if (!effEl) {
-                throw new Error('Progressive policy effective date field not found');
-            }
-
-            U.setInputValue(effEl, effectiveDate);
-            U.log('Set policy effective date:', effectiveDate);
-            await U.delay(400);
 
             var namedOperatorNo = Progressive.namedOperatorNo();
             if (namedOperatorNo) {
@@ -680,11 +688,15 @@
             }
 
             if (!vinEl) {
-                throw new Error('VIN field not found for vehicle index ' + index);
+                U.warn('VIN field not found for vehicle index ' + index);
+                U.toast('Vehicle ' + (index + 1) + ' skipped - VIN field not found', 2600);
+                return false;
             }
 
             if (!vehicle || !U.clean(vehicle.vin)) {
-                throw new Error('Payload vehicle VIN missing for vehicle index ' + index);
+                U.warn('Payload vehicle VIN missing for vehicle index ' + index);
+                U.toast('Vehicle ' + (index + 1) + ' skipped - Erie VIN missing', 2600);
+                return false;
             }
 
             U.setInputValue(vinEl, vehicle.vin);
@@ -713,13 +725,15 @@
                 await U.delay(250);
             }
 
-            if (ownedEl) {
-                U.setSelectByText(ownedEl, U.inferOwnedDuration(vehicle, payload));
+            var ownedDuration = U.inferOwnedDuration(vehicle, payload);
+            if (ownedEl && ownedDuration) {
+                U.setSelectByText(ownedEl, ownedDuration);
                 await U.delay(200);
             }
 
-            if (useEl) {
-                U.setSelectByText(useEl, U.mapVehicleUse(vehicle.use));
+            var vehicleUse = U.clean(vehicle && vehicle.use) ? U.mapVehicleUse(vehicle.use) : '';
+            if (useEl && vehicleUse) {
+                U.setSelectByText(useEl, vehicleUse);
                 await U.delay(200);
             }
 
@@ -732,12 +746,14 @@
                 'DeliveryVehicleIndicator'
             ], 2500);
 
-            if (annualMilesEl && vehicle.annualMiles) {
-                U.setSelectByText(annualMilesEl, U.normalizeMilesLabel(vehicle.annualMiles));
+            var annualMiles = U.normalizeMilesLabel(vehicle && vehicle.annualMiles);
+            if (annualMilesEl && annualMiles) {
+                U.setSelectByText(annualMilesEl, annualMiles);
                 await U.delay(200);
             }
 
             await U.delay(400);
+            return true;
         },
 
         run: async function () {
@@ -764,18 +780,41 @@
 
                 await Fill.fillTopSection(payload);
 
+                var filledCount = 0;
+                var skippedCount = 0;
+
                 for (var i = 0; i < vehicles.length; i++) {
-                    if (i > 0) {
-                        await Fill.ensureVehicleSlots(i + 1);
-                        await U.delay(500);
+                    var filled = false;
+
+                    try {
+                        if (i > 0) {
+                            await Fill.ensureVehicleSlots(i + 1);
+                            await U.delay(500);
+                        }
+
+                        filled = await Fill.fillVehicle(i, vehicles[i], payload);
+                    } catch (e) {
+                        U.warn('Vehicle fill failed; continuing with remaining vehicles', {
+                            index: i,
+                            vehicle: vehicles[i],
+                            error: e
+                        });
+                        U.toast('Vehicle ' + (i + 1) + ' skipped - fill error', 2600);
                     }
 
-                    await Fill.fillVehicle(i, vehicles[i], payload);
-                    U.toast('Vehicle ' + (i + 1) + ' of ' + vehicles.length + ' filled', 1200);
+                    if (filled) {
+                        filledCount += 1;
+                        U.toast('Vehicle ' + (i + 1) + ' of ' + vehicles.length + ' filled', 1200);
+                    } else {
+                        skippedCount += 1;
+                    }
                 }
 
-                U.toast('Progressive Products fill complete');
-                U.log('Done');
+                U.toast('Products fill complete: ' + filledCount + ' filled, ' + skippedCount + ' skipped', 4000);
+                U.log('Done', {
+                    filled: filledCount,
+                    skipped: skippedCount
+                });
                 return true;
             } finally {
                 STATE.running = false;
