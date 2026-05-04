@@ -1,7 +1,7 @@
-﻿// ==UserScript==
+// ==UserScript==
 // @name         Erie - File Downloader (MCI)
 // @namespace    mci-tools
-// @version      1.0.1
+// @version      1.0.2
 // @description  Click-to-open PDF + copy suggested filename for Erie downloads. Triggered from Master Menu.
 // @match        https://portal.agentexchange.com/*
 // @match        https://www.agentexchange.com/*
@@ -53,9 +53,11 @@
   function buildFilename(row) {
     const form = row.querySelector('form[action*="/api/pdf/download"]');
     const typeBtn = form ? form.querySelector('button.download-btn') : null;
-    const label = row.querySelector('.info-label');
     const tds = row.querySelectorAll('td');
-    const dateCell = Array.prototype.find.call(tds, (td) => /^\d{1,2}\/\d{1,2}\/\d{4}$/.test((td.innerText || '').trim()));
+
+    const dateCell = Array.prototype.find.call(tds, (td) =>
+      /^\d{1,2}\/\d{1,2}\/\d{4}$/.test((td.innerText || '').trim())
+    );
     const finalDate = dateCell ? formatDate((dateCell.innerText || '').trim()) : '';
 
     const policyDropdown = document.querySelector('#policy-dropdown option:checked');
@@ -63,7 +65,27 @@
     const match = policyText.match(/\((.*?)\)/);
     const eriePolicy = match ? match[1].trim() : 'UnknownPolicy';
 
-    return [eriePolicy, (typeBtn ? (typeBtn.innerText || '').trim() : ''), (label ? (label.innerText || '').trim() : ''), finalDate]
+    // Main document label, like mortgage company / invoice label
+    const mainLabel = row.querySelector('.info-label');
+    const mainLabelText = mainLabel ? (mainLabel.innerText || '').trim() : '';
+
+    // Recipient column extra name, like Wells Fargo Home Mortgage
+    let recipientExtra = '';
+    Array.prototype.forEach.call(tds, function (td) {
+      const text = (td.innerText || '').trim();
+      if (/Other Interest/i.test(text)) {
+        const info = td.querySelector('.info-label');
+        if (info) recipientExtra = (info.innerText || '').trim();
+      }
+    });
+
+    return [
+      eriePolicy,
+      typeBtn ? (typeBtn.innerText || '').trim() : '',
+      mainLabelText,
+      recipientExtra,
+      finalDate
+    ]
       .filter(Boolean)
       .join(' ')
       .replace(/[\\/:*?"<>|]/g, '-');
@@ -158,4 +180,3 @@
   document.addEventListener('mci:file-downloader', (e) => handleTrigger(e && e.detail), true);
 
 })();
-
