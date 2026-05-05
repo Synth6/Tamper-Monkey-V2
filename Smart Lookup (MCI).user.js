@@ -947,7 +947,11 @@ const visible = el => {
           input = findPolicyInput();
           if (!input) await new Promise(r => setTimeout(r, 300));
         }
-        if (!input) { finish(); return; }
+        if (!input) {
+          toast("Erie: search box not found, stopping lookup.", 3000);
+          finish();
+          return;
+        }
 
         input.focus();
         input.value = pol;
@@ -957,22 +961,31 @@ const visible = el => {
         const btn = document.querySelector("#btnSearch") ||
                     Array.from(document.querySelectorAll("button, input[type='submit'], input[type='button']"))
                       .find(b => /search/i.test(norm(b.innerText || b.textContent || b.value || "")));
-        if (btn) btn.click();
+        if (!btn) {
+          toast("Erie: search button not found, stopping lookup.", 3000);
+          finish();
+          return;
+        }
+        btn.click();
 
         const row = await observeUntil(() => {
           const r = document.querySelector("#custSrchResults .custResListArr");
           return r && visible(r) ? r : null;
         }, 9000);
 
-        if (row) {
-          const link =
-            row.querySelector("#resCustName") ||
-            row.querySelector(".custName") ||
-            row.querySelector("[ng-click*='gotoCustomerDetail']") ||
-            row.querySelector("a");
-          if (link) link.click();
-          else row.click();
+        if (!row) {
+          toast("Erie: policy not found, stopping lookup.", 3000);
+          finish();
+          return;
         }
+
+        const link =
+          row.querySelector("#resCustName") ||
+          row.querySelector(".custName") ||
+          row.querySelector("[ng-click*='gotoCustomerDetail']") ||
+          row.querySelector("a");
+        if (link) link.click();
+        else row.click();
 
         finish();
       })();
@@ -1049,7 +1062,8 @@ const visible = el => {
 
           // Runaway guard only when we aren't on MainMenu or Login
           if (typeof bumpRunawayGuard === "function" && !bumpRunawayGuard("mci.ng.redirects", 2)) {
-            toast("NatGen: auto-redirect stopped (possible login/blocked).", 3500);
+            toast("NatGen: auto-redirect stopped, stopping lookup.", 3500);
+            finish();
             return;
           }
 
@@ -1062,7 +1076,11 @@ const visible = el => {
         }
 
         const input = await waitForSel("#ctl00_MainContent_wgtMainMenuFindPolicy_txtSearchString", 12000);
-        if(!input){ finish(); return; }
+        if(!input){
+          toast("NatGen: search box not found, stopping lookup.", 3000);
+          finish();
+          return;
+        }
 
         const digits = String(pol).replace(/\D/g,"");
         input.focus();
@@ -1077,7 +1095,12 @@ const visible = el => {
         }
 
         const btn=document.querySelector("#ctl00_MainContent_wgtMainMenuFindPolicy_btnSearch");
-        if(btn) btn.click();
+        if(!btn){
+          toast("NatGen: search button not found, stopping lookup.", 3000);
+          finish();
+          return;
+        }
+        btn.click();
 
         finish();
       })();
@@ -1163,7 +1186,7 @@ const visible = el => {
         }
 
         const input = await waitForSel("#DashboardQuickSearch_SearchText", 12000);
-        if(!input){ toast("NFIP: quick search box not found.", 2800); finish(); return; }
+        if(!input){ toast("NFIP: search box not found, stopping lookup.", 3000); finish(); return; }
 
         input.focus();
         setNativeValue(input, "");
@@ -1173,7 +1196,12 @@ const visible = el => {
         input.dispatchEvent(new Event("change",{bubbles:true}));
 
         const btn = await waitForSel("#DashQuickSearchButton", 8000);
-        if(btn) btn.click();
+        if(!btn){
+          toast("NFIP: search button not found, stopping lookup.", 3000);
+          finish();
+          return;
+        }
+        btn.click();
 
         finish();
       })();
@@ -1336,6 +1364,15 @@ const visible = el => {
           sessionStorage.setItem(K_BF_AWAIT, "1");
         } catch(_) {}
 
+        const isLoginPage =
+          /\/login/i.test(path) ||
+          !!document.querySelector("input[type='password'], input[name*='user' i], input[name*='login' i], #Login, #LoginButton, #btnLogin, #btnSignIn");
+
+        if (isLoginPage) {
+          toast("Beyond Floods: login detected - automation paused. Log in, then refresh.", 4500);
+          return;
+        }
+
         // STEP 1: NatGen Flood Center page -> click Beyond Floods access button ONCE
         if (host === "natgenagency.com" && /\/Flood\/FloodCenter\.aspx$/i.test(path)) {
           try {
@@ -1348,7 +1385,7 @@ const visible = el => {
 
           const btn = await waitForSel("#ctl00_MainContent_btnNatGenFlood", 15000);
           if (!btn) {
-            toast("Beyond Floods: access button not found.", 3000);
+            toast("Beyond Floods: access button not found, stopping lookup.", 3000);
             finish();
             return;
           }
@@ -1403,7 +1440,7 @@ const visible = el => {
         if ((host === "natgen.beyondfloods.com" || host === "www.natgen.beyondfloods.com") && /\/Public\/Index$/i.test(path)) {
           const dashLink = await waitForSel('a.instanda-nav-item-link[href="/Public/AgentDashboard"]', 15000);
           if (!dashLink) {
-            toast("Beyond Floods: Dashboard link not found.", 3000);
+            toast("Beyond Floods: Dashboard link not found, stopping lookup.", 3000);
             finish();
             return;
           }
@@ -1430,7 +1467,7 @@ const visible = el => {
         if ((host === "natgen.beyondfloods.com" || host === "www.natgen.beyondfloods.com") && /\/Public\/AgentDashboard$/i.test(path)) {
           const input = await waitForSel('input[name="SearchParams[3].ParameterValue"]', 15000);
           if (!input) {
-            toast("Beyond Floods: policy number field not found.", 3000);
+            toast("Beyond Floods: policy number field not found, stopping lookup.", 3000);
             finish();
             return;
           }
@@ -1446,7 +1483,7 @@ const visible = el => {
 
           const searchBtn = await waitForSel("#agentSearchButton", 8000);
           if (!searchBtn) {
-            toast("Beyond Floods: search button not found.", 3000);
+            toast("Beyond Floods: search button not found, stopping lookup.", 3000);
             finish();
             return;
           }
@@ -1455,14 +1492,14 @@ const visible = el => {
 
           const viewLink = await waitForSel('a[href*="/Public/ViewQuoteOrPolicy"]', 15000);
           if (!viewLink) {
-            toast("Beyond Floods: View link not found in results.", 3000);
+            toast("Beyond Floods: View link not found, stopping lookup.", 3000);
             finish();
             return;
           }
 
           const href = viewLink.getAttribute("href");
           if (!href) {
-            toast("Beyond Floods: View link href missing.", 3000);
+            toast("Beyond Floods: View link href missing, stopping lookup.", 3000);
             finish();
             return;
           }
@@ -1475,14 +1512,14 @@ const visible = el => {
         if ((host === "natgen.beyondfloods.com" || host === "www.natgen.beyondfloods.com") && /\/Public\/ViewQuoteOrPolicy/i.test(path)) {
           const docsBtn = await waitForSel('a.btnViewDocs[href*="/Public/AgentAllDocs"]', 15000);
           if (!docsBtn) {
-            toast("Beyond Floods: View Docs button not found.", 3000);
+            toast("Beyond Floods: View Docs button not found, stopping lookup.", 3000);
             finish();
             return;
           }
 
           const href = docsBtn.getAttribute("href");
           if (!href) {
-            toast("Beyond Floods: View Docs href missing.", 3000);
+            toast("Beyond Floods: View Docs href missing, stopping lookup.", 3000);
             finish();
             return;
           }
@@ -1564,12 +1601,20 @@ const visible = el => {
 
       (async () => {
         const isInnovation = /\/innovation/i.test(location.pathname || "");
+        const isLoginPage =
+          /\/login/i.test(location.pathname || "") ||
+          !!document.querySelector("input[type='password'], input[name*='user' i], input[name*='login' i], #Login, #LoginButton");
 
         if (!isInnovation) {
           try {
             sessionStorage.setItem(K_NCJUA_POL, pol);
             sessionStorage.setItem(K_NCJUA_AWAIT, "1");
           } catch(_) {}
+
+          if (isLoginPage) {
+            toast("NCJUA: login detected - automation paused. Log in, then refresh.", 4500);
+            return;
+          }
 
           location.replace(
             NCJUA_ORIGIN + NCJUA_PATH +
@@ -1600,7 +1645,7 @@ const visible = el => {
         // Step 1: perform search from the PAGE context
         const input = await waitForSel("#ToolbarSearchText", 15000);
         if (!input) {
-          toast("NCJUA: search box not found.", 3000);
+          toast("NCJUA: search box not found, stopping lookup.", 3000);
           finish();
           return;
         }
@@ -1646,8 +1691,8 @@ const visible = el => {
           return;
         }
 
-        // Do NOT finish here if the page is transitioning.
-        // Keep the session keys so the next page load can continue and click Policy File.
+        toast("NCJUA: policy not found, stopping lookup.", 3000);
+        finish();
       })();
     })();
   }
@@ -1680,11 +1725,6 @@ const visible = el => {
       // If neither token nor arm exists, we still proceed (because policy is explicitly pending)
       const allowed = isArmed() || !!pending;
 
-      // Only run once per tab
-      try{
-        if (sessionStorage.getItem(K_PR_RAN) === "1") return;
-      }catch(_){}
-
       // Heuristic: login page detection
       function looksLikeLogin(){
         const u = (location.href || "").toLowerCase();
@@ -1712,6 +1752,19 @@ const visible = el => {
       }
 
       if(!allowed) return;
+
+      // Only run once per tab. If stale pending data reaches an already-used page, clear it.
+      try{
+        if (sessionStorage.getItem(K_PR_RAN) === "1") {
+          toast("Progressive: lookup already attempted, stopping lookup.", 3000);
+          try{ history.replaceState(null, "", location.pathname); }catch(_){}
+          try{ if (typeof GM_deleteValue === "function") GM_deleteValue(K_PR_PENDING_GM); }catch(_){}
+          try{ if (typeof GM_deleteValue === "function") GM_deleteValue(K_PR_POL); }catch(_){}
+          try{ if (typeof GM_deleteValue === "function") GM_deleteValue(K_PR_PENDING_TS); }catch(_){}
+          disarmAutomations();
+          return;
+        }
+      }catch(_){}
 
       function visible(el){
         if(!el) return false;
@@ -1806,6 +1859,8 @@ const visible = el => {
         try{ sessionStorage.setItem(K_PR_RAN, "1"); }catch(_){}
         try{ history.replaceState(null, "", location.pathname); }catch(_){}
         try{ if (typeof GM_deleteValue === "function") GM_deleteValue(K_PR_PENDING_GM); }catch(_){}
+        try{ if (typeof GM_deleteValue === "function") GM_deleteValue(K_PR_POL); }catch(_){}
+        try{ if (typeof GM_deleteValue === "function") GM_deleteValue(K_PR_PENDING_TS); }catch(_){}
         disarmAutomations();
       }
 
@@ -1813,7 +1868,8 @@ const visible = el => {
         // Wait for the search UI to exist; if it never appears, do NOT loop forever.
         const searchBtn = await waitForAny(["#sbp-search", "button.js-search-bar__search"], CFG.faoWaitMs);
         if(!searchBtn){
-          toast("Progressive: couldn't find policy search box yet. Navigate to Policy Search then refresh.", 3500);
+          toast("Progressive: search UI not found, stopping lookup.", 3500);
+          finish();
           return;
         }
 
@@ -1830,12 +1886,17 @@ const visible = el => {
           input.dispatchEvent(new Event("input",{bubbles:true}));
           input.dispatchEvent(new Event("change",{bubbles:true}));
         } else {
-          toast("Progressive: policy input not found. Try opening the Policy Search page first.", 3500);
+          toast("Progressive: search UI not found, stopping lookup.", 3500);
+          finish();
           return;
         }
 
         await sleep(200);
-        clickSearch();
+        if(!clickSearch()){
+          toast("Progressive: search UI not found, stopping lookup.", 3500);
+          finish();
+          return;
+        }
 
         finish();
       })();
