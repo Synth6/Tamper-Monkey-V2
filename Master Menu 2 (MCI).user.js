@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      5.9.8
+// @version      5.9.9
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -21,6 +21,7 @@
 // @match        https://*.apps.foragentsonly.com/*
 // @match        https://*.ncjua-nciua.org/*
 // @match        https://*.ncjuanciua.org/*
+// @match        https://app.orion180.com/*
 // @run-at       document-idle
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -56,6 +57,7 @@
 
   const IS_NFIP = IS_TORRENT && PATH.startsWith("/dashboard/agency");
   const IS_BEYOND = IS_BEYOND_HOST || (IS_TORRENT && !IS_NFIP);
+  const IS_ORION180 = /app\.orion180\.com/.test(HOST);
 
   const IN_IFRAME = window.top !== window.self;
   if (IN_IFRAME && !(IS_QQ || IS_PROG)) return;
@@ -90,6 +92,7 @@
     if (IS_NFIP) return "NFIP";
     if (IS_BEYOND) return "Beyond Floods";
     if (IS_NG) return "National General";
+    if (IS_ORION180) return "Orion180";
     return location.hostname;
   }
 
@@ -1711,6 +1714,7 @@
     else if (host.includes("quoting.foragentsonly.com") || host.includes("foragentsonly.com")) key = "progressive";
     else if (host.includes("beyondfloods.com")) key = "beyondfloods";
     else if (host.includes("ncjuanciua.org") || host.includes("insure.ncjuanciua.org")) key = "ncjua";
+    else if (host.includes("app.orion180.com")) key = "orion180";
     // add more as we create them…
 
     if (!key) {
