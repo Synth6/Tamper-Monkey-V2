@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
-// @version      1.6.9
+// @version      1.7.0
 // @description  Extract from carriers and build QQC payload. Alt+Q: Extractor. (Erie Commercial Mendix fixed v2 + Website)
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
@@ -16,6 +16,7 @@
 // @match        https://nationalgeneral.torrentflood.com/*
 // @match        https://quoting.foragentsonly.com/*
 // @match        https://insure.ncjuanciua.org/*
+// @match        https://app.orion180.com/*
 // @all-frames   true
 // @run-at       document-idle
 // @grant        GM_setValue
@@ -32,6 +33,7 @@
   const PAGE_WINDOW = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
   const STORAGE_KEY = 'QQC_PAYLOAD_V2';
   const PENDING_KEY = 'QQC_PENDING_V1';
+  const ORION180_PARTIAL_KEY = 'QQC_ORION180_PARTIAL_V1';
   const QQ_SAFE_URLS = [
       'https://app.qqcatalyst.com/Contacts/CustomerList',
       'https://app.qqcatalyst.com/Contacts/Customer/Index',
@@ -49,6 +51,7 @@
     if (host.includes('natgen.beyondfloods.com') || host.includes('beyondfloods.com')) return 'beyondfloods';
     if (host.includes('quoting.foragentsonly.com') || host.includes('foragentsonly.com')) return 'progressive';
     if (host.includes('ncjuanciua.org') || host.includes('ncjua-nciua.org') || host.includes('insure.ncjuanciua.org')) return 'ncjua';
+    if (host.includes('app.orion180.com')) return 'orion180';
     return null;
   }
 
@@ -1130,6 +1133,312 @@ function extractProgressiveFAO() {
   };
 }
 
+  // ---------- Extractor (Orion180) ----------
+  function isOrion180QuotePage() {
+    return /app\.orion180\.com$/i.test(location.hostname) &&
+      /^\/quote\/\d+\/?$/i.test(location.pathname);
+  }
+
+  function isOrion180StartPage() {
+    return isOrion180QuotePage() &&
+      (new URLSearchParams(location.search).get('page') || '').toLowerCase() === 'start';
+  }
+
+  function isOrion180GeneralPage() {
+    return isOrion180QuotePage() &&
+      (new URLSearchParams(location.search).get('page') || '').toLowerCase() === 'general';
+  }
+
+  function getOrion180QuoteNumber() {
+    const m = location.pathname.match(/^\/quote\/(\d+)\/?$/i);
+    return m ? m[1] : '';
+  }
+
+  function orion180BuildPageUrl(pageName) {
+    const quoteNumber = getOrion180QuoteNumber();
+    const url = new URL(location.href);
+    if (quoteNumber) url.pathname = `/quote/${quoteNumber}`;
+    url.searchParams.set('page', pageName);
+    return url.href;
+  }
+
+  function orion180FindProceedButton() {
+    return Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'))
+      .find(el => {
+        const txt = ((el.textContent || el.value || '').trim()).toLowerCase();
+        return txt === 'proceed' || txt.includes('proceed');
+      }) || null;
+  }
+
+  async function orion180WaitForPage(pageName, timeout = 15000) {
+    return await waitFor(() => {
+      const p = (new URLSearchParams(location.search).get('page') || '').toLowerCase();
+      return p === pageName ? true : null;
+    }, { timeout, interval: 200 });
+  }
+
+  async function orion180GoToGeneralPageByProceed() {
+    if (isOrion180GeneralPage()) return true;
+
+    const btn = orion180FindProceedButton();
+    if (!btn) {
+      extractorStatus('Orion180 Proceed button not found.');
+      return false;
+    }
+
+    try { btn.scrollIntoView({ block: 'center' }); } catch { }
+    btn.click();
+
+    const ok = await orion180WaitForPage('general', 20000);
+    if (!ok) {
+      extractorStatus('Clicked Proceed, but Step 2 did not load.');
+      return false;
+    }
+
+    await new Promise(r => setTimeout(r, 800));
+    return true;
+  }
+
+  function orion180NormText(s) {
+    return String(s || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function orion180CssEscape(value) {
+    if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(value);
+    return String(value || '').replace(/["\\]/g, '\\$&');
+  }
+
+  function orion180CleanValue(value) {
+    const text = orion180NormText(value);
+    if (!text || /^select\b/i.test(text) || /^choose\b/i.test(text)) return '';
+    return text;
+  }
+
+  function orion180ControlValue(el) {
+    if (!el) return '';
+    const tag = (el.tagName || '').toLowerCase();
+    if (tag === 'select') {
+      const opt = el.selectedOptions?.[0] || el.options?.[el.selectedIndex];
+      return orion180CleanValue(opt?.textContent || el.value);
+    }
+    return orion180CleanValue(el.value || el.getAttribute('value') || el.textContent);
+  }
+
+  function orion180ValueById(id) {
+    const el = document.getElementById(id);
+    return orion180ControlValue(el);
+  }
+
+  function orion180LabelMatches(text, labelText) {
+    const hay = orion180NormText(text).toLowerCase().replace(/[:*]/g, '');
+    const needle = orion180NormText(labelText).toLowerCase().replace(/[:*]/g, '');
+    return hay === needle || hay.startsWith(needle + ' ') || hay.includes(needle);
+  }
+
+  function orion180FindLabel(labelText) {
+    const candidates = Array.from(document.querySelectorAll('label, .form-label, .control-label, [class*="label"], span, div'));
+    return candidates.find(el => {
+      const text = orion180NormText(el.textContent);
+      return text && text.length <= 90 && orion180LabelMatches(text, labelText);
+    }) || null;
+  }
+
+  function orion180FindNearbyRoot(labelEl) {
+    if (!labelEl) return null;
+    return labelEl.closest('.form-group, .form-row, .row, .col, [class*="form"], [class*="field"], [class*="input"], [class*="select"]') ||
+      labelEl.parentElement;
+  }
+
+  function orion180FindControlNearLabel(labelText) {
+    const label = orion180FindLabel(labelText);
+    if (!label) return null;
+
+    const forId = label.getAttribute('for');
+    if (forId) {
+      const byFor = document.getElementById(forId) || document.querySelector(`#${orion180CssEscape(forId)}`);
+      if (byFor) return byFor;
+    }
+
+    const root = orion180FindNearbyRoot(label);
+    const controlSelector = 'input:not([type="hidden"]), select, textarea';
+    const within = root?.querySelector(controlSelector);
+    if (within) return within;
+
+    let ancestor = root?.parentElement;
+    for (let i = 0; i < 3 && ancestor; i++) {
+      const controls = Array.from(ancestor.querySelectorAll(controlSelector));
+      const afterLabel = controls.find(control => {
+        const pos = label.compareDocumentPosition(control);
+        return !!(pos & Node.DOCUMENT_POSITION_FOLLOWING);
+      });
+      if (afterLabel) return afterLabel;
+      ancestor = ancestor.parentElement;
+    }
+
+    let el = label;
+    for (let i = 0; i < 5 && el; i++) {
+      const next = el.nextElementSibling;
+      const nearby = next?.matches?.(controlSelector) ? next : next?.querySelector?.(controlSelector);
+      if (nearby) return nearby;
+      el = next;
+    }
+    return null;
+  }
+
+  function orion180MultiselectValueNearLabel(labelText) {
+    const label = orion180FindLabel(labelText);
+    const root = orion180FindNearbyRoot(label);
+    const selected = root?.querySelector('.multiselect__single, .multiselect__tags .multiselect__single, [class*="multiselect"] [class*="single"]');
+    return orion180CleanValue(selected?.textContent);
+  }
+
+  function orion180ValueByLabel(labelText) {
+    return orion180ControlValue(orion180FindControlNearLabel(labelText)) ||
+      orion180MultiselectValueNearLabel(labelText);
+  }
+
+  function orion180FirstValue(...values) {
+    return values.map(orion180CleanValue).find(Boolean) || '';
+  }
+
+  function orion180BasePayload(data = {}) {
+    const primaryPhone = (data.primaryPhone || '').replace(/[^\d]/g, '').slice(0, 10);
+    return sanitizePayloadObject({
+      carrier: 'Orion180',
+      source: 'orion180',
+      sourceUrl: location.href,
+      quoteNumber: data.quoteNumber || getOrion180QuoteNumber(),
+      firstName: data.firstName || '',
+      middleName: '',
+      lastName: data.lastName || '',
+      suffix: '',
+      businessName: '',
+      primaryPhone,
+      phoneType: data.phoneType || formatPhone(primaryPhone),
+      primaryEmail: '',
+      dob: toMMDDYYYY(data.dob || ''),
+      ein: '',
+      contactType: 'Prospects',
+      customerType: 'Personal',
+      status: 'Active',
+      address: {
+        line1: data.address?.line1 || '',
+        line2: '',
+        city: data.address?.city || '',
+        county: data.address?.county || '',
+        state: data.address?.state || '',
+        zip: data.address?.zip || ''
+      }
+    });
+  }
+
+  async function orion180ReadPartialMap() {
+    try {
+      const stored = await GM_getValue(ORION180_PARTIAL_KEY);
+      return (stored && typeof stored === 'object') ? stored : {};
+    } catch {
+      return {};
+    }
+  }
+
+  async function orion180SavePartial(quoteNumber, partial) {
+    if (!quoteNumber) return;
+    const map = await orion180ReadPartialMap();
+    map[quoteNumber] = sanitizePayloadObject({ ...(map[quoteNumber] || {}), ...partial, quoteNumber, updatedAt: Date.now() });
+    try { await GM_setValue(ORION180_PARTIAL_KEY, map); } catch { }
+  }
+
+  async function orion180LoadPartial(quoteNumber) {
+    if (!quoteNumber) return {};
+    const map = await orion180ReadPartialMap();
+    return (map && map[quoteNumber] && typeof map[quoteNumber] === 'object') ? map[quoteNumber] : {};
+  }
+
+  async function extractOrion180StartPage() {
+    const quoteNumber = getOrion180QuoteNumber();
+    const zip = orion180FirstValue(
+      orion180ValueById('zip'),
+      orion180ValueById('zipcode'),
+      orion180ValueById('zipCode'),
+      orion180ValueByLabel('Zip Code'),
+      orion180ValueByLabel('Zip')
+    );
+    const street = orion180FirstValue(
+      orion180ValueById('street'),
+      orion180ValueByLabel('Street'),
+      orion180ValueByLabel('Address')
+    );
+    const city = orion180FirstValue(orion180ValueById('city'), orion180ValueByLabel('City'));
+    const county = orion180FirstValue(orion180ValueById('county'), orion180ValueByLabel('County'));
+    const state = orion180FirstValue(orion180ValueById('state'), orion180ValueByLabel('State'));
+
+    const partial = { address: { line1: street, line2: '', city, county, state, zip } };
+    await orion180SavePartial(quoteNumber, partial);
+    return orion180BasePayload({ quoteNumber, ...partial });
+  }
+
+  async function extractOrion180GeneralPage() {
+    const quoteNumber = getOrion180QuoteNumber();
+    const saved = await orion180LoadPartial(quoteNumber);
+
+    const firstName = orion180FirstValue(orion180ValueById('fname'), orion180ValueByLabel('First Name'));
+    const lastName = orion180FirstValue(orion180ValueById('lname'), orion180ValueByLabel('Last Name'));
+    const phoneRaw = orion180FirstValue(
+      orion180ValueById('phone'),
+      orion180ValueByLabel('Mobile'),
+      orion180ValueByLabel('Primary Phone'),
+      orion180ValueByLabel('Phone')
+    );
+    const dob = orion180FirstValue(orion180ValueById('dtquoteGeneral_BirthDate'), orion180ValueByLabel('Birth Date'), orion180ValueByLabel('Date of Birth'));
+    const primaryPhone = phoneRaw.replace(/[^\d]/g, '').slice(0, 10);
+
+    const partial = { firstName, lastName, primaryPhone, phoneType: formatPhone(primaryPhone), dob };
+    await orion180SavePartial(quoteNumber, partial);
+    return orion180BasePayload({ ...saved, ...partial, quoteNumber, address: saved.address || {} });
+  }
+
+  async function extractOrion180BothPages() {
+    const quoteNumber = getOrion180QuoteNumber();
+
+    let step1Payload = {};
+    let step2Payload = {};
+
+    if (isOrion180StartPage()) {
+      extractorStatus('Reading Orion180 Step 1...');
+      step1Payload = await extractOrion180StartPage();
+
+      extractorStatus('Clicking Proceed to Step 2...');
+      const moved = await orion180GoToGeneralPageByProceed();
+      if (!moved) return step1Payload;
+
+      extractorStatus('Reading Orion180 Step 2...');
+      step2Payload = await extractOrion180GeneralPage();
+    } else if (isOrion180GeneralPage()) {
+      extractorStatus('Reading Orion180 Step 2...');
+      step2Payload = await extractOrion180GeneralPage();
+    } else {
+      return orion180BasePayload({ ...(await orion180LoadPartial(quoteNumber)), quoteNumber });
+    }
+
+    const saved = await orion180LoadPartial(quoteNumber);
+
+    return orion180BasePayload({
+      ...saved,
+      ...step1Payload,
+      ...step2Payload,
+      quoteNumber,
+      address: {
+        ...(saved.address || {}),
+        ...(step1Payload.address || {}),
+        ...(step2Payload.address || {})
+      }
+    });
+  }
+
+  async function extractOrion180Quote() {
+    return await extractOrion180BothPages();
+  }
+
 
   function isEriePLW() {
     return /agentexchange\.com$/i.test(location.hostname) && /\/PersonalLinesWeb\/?/i.test(location.pathname);
@@ -1553,6 +1862,7 @@ function extractProgressiveFAO() {
     if (isNFIPSavedApplicationsPage()) return extractNFIPSavedApplicationsPage();
     if (isNFIPInsuredPanel()) return await extractNFIPInsuredPanel();
     if (isBeyondFloodsSummary()) return extractBeyondFloodsSummary();
+    if (isOrion180QuotePage()) return await extractOrion180Quote();
 
     return { carrier: location.hostname, sourceUrl: location.href, address: {} };
   }
