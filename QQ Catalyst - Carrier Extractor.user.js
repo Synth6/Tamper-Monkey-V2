@@ -5,7 +5,7 @@
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
 // @version      1.7.0
-// @description  Extract from carriers and build QQC payload. Alt+Q: Extractor. (Erie Commercial Mendix fixed v2 + Website)
+// @description  Extract from carriers and build QQC payload. Alt+Q: Extractor.
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
 // @match        https://agentexchange.com/*
