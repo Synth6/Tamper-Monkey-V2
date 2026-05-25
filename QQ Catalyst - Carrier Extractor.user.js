@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
-// @version      1.7.0
+// @version      1.7.1
 // @description  Extract from carriers and build QQC payload. Alt+Q: Extractor.
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
@@ -1154,6 +1154,16 @@ function extractProgressiveFAO() {
     return m ? m[1] : '';
   }
 
+  function isOrion180PolicyPage() {
+    return /app\.orion180\.com$/i.test(location.hostname) &&
+      /^\/policies\/\d+\/?$/i.test(location.pathname);
+  }
+
+  function getOrion180PolicyNumber() {
+    const m = location.pathname.match(/^\/policies\/(\d+)\/?$/i);
+    return m ? m[1] : '';
+  }
+
   function orion180BuildPageUrl(pageName) {
     const quoteNumber = getOrion180QuoteNumber();
     const url = new URL(location.href);
@@ -1212,6 +1222,32 @@ function extractProgressiveFAO() {
     const text = orion180NormText(value);
     if (!text || /^select\b/i.test(text) || /^choose\b/i.test(text)) return '';
     return text;
+  }
+
+  function orion180DisplayValueByLabel(labelText) {
+    const needle = orion180NormText(labelText).toLowerCase().replace(/[:*]/g, '');
+    const label = Array.from(document.querySelectorAll('label.item-title'))
+      .find(el => {
+        if (!isVisible(el)) return false;
+        const text = orion180NormText(el.textContent).toLowerCase().replace(/[:*]/g, '');
+        return text && text.startsWith(needle);
+      });
+    if (!label) return '';
+
+    const row = label.closest('.seperator, .separator, .flex.flex-row') || label.parentElement;
+    if (!row) return '';
+
+    const preferred = Array.from(row.querySelectorAll('span.text-right.font-semibold'))
+      .find(el => isVisible(el) && orion180CleanValue(el.textContent));
+    if (preferred) return orion180CleanValue(preferred.textContent);
+
+    const labelNorm = orion180NormText(label.textContent).toLowerCase();
+    const fallback = Array.from(row.querySelectorAll('label, span'))
+      .filter(el => isVisible(el))
+      .map(el => orion180CleanValue(el.textContent))
+      .filter(text => text && orion180NormText(text).toLowerCase() !== labelNorm)
+      .pop();
+    return orion180CleanValue(fallback);
   }
 
   function orion180ControlValue(el) {
@@ -1301,13 +1337,33 @@ function extractProgressiveFAO() {
     return values.map(orion180CleanValue).find(Boolean) || '';
   }
 
+  function parseOrion180PolicyAddress(raw) {
+    const original = orion180CleanValue(raw);
+    const blank = { line1: original, line2: '', city: '', state: '', zip: '', county: '' };
+    if (!original) return { line1: '', line2: '', city: '', state: '', zip: '', county: '' };
+
+    const parts = original.split(',').map(part => part.trim()).filter(Boolean);
+    if (parts.length < 4) return blank;
+
+    const line1 = parts[0] || '';
+    const city = parts[1] || '';
+    const state = (parts[2] || '').toUpperCase();
+    const zip = ((parts[3] || '').match(/\d{5}/) || [''])[0];
+    const county = parts[4] || '';
+
+    if (!line1 || !city || !state || !zip) return blank;
+
+    return { line1, line2: '', city, state, zip, county };
+  }
+
   function orion180BasePayload(data = {}) {
     const primaryPhone = (data.primaryPhone || '').replace(/[^\d]/g, '').slice(0, 10);
     return sanitizePayloadObject({
       carrier: 'Orion180',
-      source: 'orion180',
+      source: data.source || 'orion180',
       sourceUrl: location.href,
-      quoteNumber: data.quoteNumber || getOrion180QuoteNumber(),
+      quoteNumber: data.quoteNumber || getOrion180QuoteNumber() || '',
+      policyNumber: data.policyNumber || '',
       firstName: data.firstName || '',
       middleName: '',
       lastName: data.lastName || '',
@@ -1315,7 +1371,7 @@ function extractProgressiveFAO() {
       businessName: '',
       primaryPhone,
       phoneType: data.phoneType || formatPhone(primaryPhone),
-      primaryEmail: '',
+      primaryEmail: (data.primaryEmail || '').toLowerCase(),
       dob: toMMDDYYYY(data.dob || ''),
       ein: '',
       contactType: 'Prospects',
@@ -1329,6 +1385,30 @@ function extractProgressiveFAO() {
         state: data.address?.state || '',
         zip: data.address?.zip || ''
       }
+    });
+  }
+
+  async function extractOrion180PolicyPage() {
+    const rawAddress = orion180DisplayValueByLabel('Covered Property Address');
+    const rawName = orion180DisplayValueByLabel('Name');
+    const rawPhone = orion180DisplayValueByLabel('Primary Phone');
+    const rawEmail = orion180DisplayValueByLabel('Email');
+
+    const nameParts = orion180NormText(rawName).split(/\s+/).filter(Boolean);
+    const firstName = toNameCase(nameParts[0] || '');
+    const lastName = toNameCase(nameParts.slice(1).join(' '));
+    const primaryPhone = (rawPhone || '').replace(/[^\d]/g, '').slice(0, 10);
+
+    return orion180BasePayload({
+      source: 'orion180-policy-page',
+      quoteNumber: '',
+      policyNumber: getOrion180PolicyNumber(),
+      firstName,
+      lastName,
+      primaryPhone,
+      phoneType: formatPhone(primaryPhone),
+      primaryEmail: (rawEmail || '').toLowerCase(),
+      address: parseOrion180PolicyAddress(rawAddress)
     });
   }
 
@@ -1862,6 +1942,7 @@ function extractProgressiveFAO() {
     if (isNFIPSavedApplicationsPage()) return extractNFIPSavedApplicationsPage();
     if (isNFIPInsuredPanel()) return await extractNFIPInsuredPanel();
     if (isBeyondFloodsSummary()) return extractBeyondFloodsSummary();
+    if (isOrion180PolicyPage()) return await extractOrion180PolicyPage();
     if (isOrion180QuotePage()) return await extractOrion180Quote();
 
     return { carrier: location.hostname, sourceUrl: location.href, address: {} };
