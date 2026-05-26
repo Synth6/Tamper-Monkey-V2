@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name        Smart Lookup (MCI)
 // @namespace    mci-tools
-// @version      4.3.3
+// @version      4.3.4
 // @description  ALT+Right-Click: pinned chooser for Address/Name/Policy. Address: Wake/Maps/Vexcel combos. Name: LinkedIn/Google/Facebook. Policy: Erie/NatGen/Progressive/NFIP/NCJUA
 // @match        *://*/*
 // @match        file://*/*
@@ -18,6 +18,7 @@
 // @match        https://www.foragentsonly.com/*
 // @match        https://nationalgeneral.torrentflood.com/*
 // @match        https://insure.ncjuanciua.org/*
+// @match        https://app.orion180.com/*
 // @match        https://natgen.beyondfloods.com/*
 // @match        https://www.natgen.beyondfloods.com/*
 // @grant        GM_openInTab
@@ -67,6 +68,10 @@
   const NCJUA_ORIGIN = "https://insure.ncjuanciua.org";
   const NCJUA_PATH   = "/innovation";
 
+  // Orion180
+  const ORION_ORIGIN = "https://app.orion180.com";
+  const ORION_PATH   = "/search";
+
   // Beyond Floods
   const BF_LAUNCH_ORIGIN = "https://natgenagency.com";
   const BF_LAUNCH_PATH   = "/Flood/FloodCenter.aspx";
@@ -85,6 +90,10 @@
 
   // NCJUA
   const K_NCJUA_POL="carrier.ncjua.pol", K_NCJUA_AWAIT="carrier.ncjua.await";
+
+  // Orion180
+  const K_ORION_POL="carrier.orion.pol";
+  const K_ORION_AWAIT="carrier.orion.await";
 
   // Vexcel
   const K_VEX_ADDR="vexcel.addr", K_VEX_AWAIT="vexcel.await";
@@ -250,6 +259,9 @@
     HYPHENATED: /\b([A-Z0-9]{1,4}-\d{5,12})\b/,
     DIGITS_8_10:/^\d{8,10}$/,
     DIGITS_11P: /^\d{11,}$/,
+    // Orion180 common prefixes: OIC..., OSIH..., RCAP...
+    ORION_POLICY: /\b((?:OIC|OSIH|RCAP)[A-Z0-9_]{3,})\b/i,
+
     // NCJUA common policy prefixes
     NCJUA_POLICY: /\b((?:DW|DP|HO|HW|WH|CP)[A-Z0-9-]{4,})\b/i,
 
@@ -315,6 +327,10 @@
   function extractPolicy(txt){
     const s = String(txt || "");
     if(!s.trim()) return null;
+
+    // Orion180 prefixed policies before NCJUA
+    const orion = s.match(RE.ORION_POLICY);
+    if (orion) return orion[1].toUpperCase();
 
     // NCJUA prefixed policies first
     const ncjua = s.match(RE.NCJUA_POLICY);
@@ -492,6 +508,33 @@
       "_blank"
     );
     toast(`NCJUA: ${p}`);
+  }
+
+  // ================= Orion180 =================
+  function openOrion180(pol){
+    const ts = armAutomations(Date.now());
+    const p = String(pol || "").trim().toUpperCase();
+    if(!p){ toast("No Orion180 policy detected."); return; }
+
+    try{
+      sessionStorage.setItem(K_ORION_POL, p);
+      sessionStorage.setItem(K_ORION_AWAIT, "1");
+    }catch(_){}
+
+    try{
+      if (typeof GM_setValue === "function") {
+        GM_setValue(K_ORION_POL, p);
+        GM_setValue(K_ORION_AWAIT, "1");
+      }
+    }catch(_){}
+
+    window.open(
+      ORION_ORIGIN + ORION_PATH +
+      "?tab=policies&diary=false&mci=1&ts=" + encodeURIComponent(String(ts)) +
+      "#pol=" + encodeURIComponent(p),
+      "_blank"
+    );
+    toast(`Orion180: ${p}`);
   }
 
   function openProgressive(pol){
@@ -690,6 +733,7 @@
             {value:"pol_progressive", label:"Policy: Progressive"},
             {value:"pol_nfip",        label:"Policy: NFIP"},
             {value:"pol_beyondfloods",label:"Policy: Beyond Floods"},
+            {value:"pol_orion180",    label:"Policy: Orion180"},
             {value:"pol_ncjua",       label:"Policy: NCJUA"}
           ],
           {pol},
@@ -730,6 +774,7 @@
     if(action==="pol_progressive") return openProgressive(payload.pol);
     if(action==="pol_nfip")        return openNFIP(payload.pol);
     if(action==="pol_beyondfloods") return openBeyondFloods(payload.pol);
+    if(action==="pol_orion180")    return openOrion180(payload.pol);
     if(action==="pol_ncjua")       return openNCJUA(payload.pol);
   }
 
@@ -1534,6 +1579,203 @@ const visible = el => {
           finish();
           return;
         }
+      })();
+    })();
+  }
+
+  // Orion180 - search policy and open customer policy page
+  if (location.hostname === "app.orion180.com") {
+    (function orion180Auto(){
+      const tok = tokenOKFromLocation();
+      if (tok.ok) armAutomations(tok.ts);
+      if (!isArmed()) return;
+
+      // Run only in top frame
+      try { if (window.top !== window.self) return; } catch(_) {}
+
+      const hp = getHashParams();
+      const sp = new URLSearchParams(location.search || "");
+      const polFromHash = hp.get("pol") || "";
+      const polFromQuery = sp.get("pol") || "";
+      let pol = polFromHash || polFromQuery;
+
+      if (!pol) {
+        try {
+          const awaiting = sessionStorage.getItem(K_ORION_AWAIT) === "1";
+          if (awaiting) pol = sessionStorage.getItem(K_ORION_POL) || "";
+        } catch(_) {}
+      }
+
+      if (!pol) {
+        try {
+          if (typeof GM_getValue === "function" && GM_getValue(K_ORION_AWAIT, "") === "1") {
+            pol = GM_getValue(K_ORION_POL, "") || "";
+          }
+        } catch(_) {}
+      }
+
+      pol = String(pol || "").trim().toUpperCase();
+      if (!pol) return;
+
+      const keepTs = hp.get("ts") || sp.get("ts") || String(Date.now());
+
+      const finish = () => {
+        try { history.replaceState(null, "", location.pathname + location.search); } catch(_) {}
+        try {
+          sessionStorage.removeItem(K_ORION_POL);
+          sessionStorage.removeItem(K_ORION_AWAIT);
+        } catch(_) {}
+        try {
+          if (typeof GM_deleteValue === "function") {
+            GM_deleteValue(K_ORION_POL);
+            GM_deleteValue(K_ORION_AWAIT);
+          }
+        } catch(_) {}
+        disarmAutomations();
+      };
+
+      function visible(el){
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        return !!(el.offsetParent || r.width || r.height);
+      }
+
+      function waitFor(predicate, timeout=15000, interval=150){
+        return new Promise(resolve => {
+          const t0 = performance.now();
+          const iv = setInterval(() => {
+            let found = null;
+            try { found = predicate(); } catch(_) {}
+            if (found) {
+              clearInterval(iv);
+              resolve(found);
+            } else if (performance.now() - t0 > timeout) {
+              clearInterval(iv);
+              resolve(null);
+            }
+          }, interval);
+        });
+      }
+
+      function waitForSel(selector, timeout=15000){
+        return waitFor(() => {
+          const el = document.querySelector(selector);
+          return el && visible(el) ? el : null;
+        }, timeout);
+      }
+
+      function setNativeValue(el, value){
+        try{
+          const proto = (el.tagName === "TEXTAREA") ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          const desc = Object.getOwnPropertyDescriptor(proto, "value");
+          if (desc && desc.set) desc.set.call(el, value);
+          else el.value = value;
+        }catch(_){ try{ el.value = value; }catch(__){} }
+      }
+
+      function normalizedPolicy(value){
+        return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      }
+
+      function findSearchButton(){
+        const exact = document.querySelector("button.btn.btn-quote-primary.mr-4");
+        if (exact && visible(exact) && /search/i.test(norm(exact.innerText || exact.textContent || ""))) return exact;
+
+        return Array.from(document.querySelectorAll("button, input[type='submit'], input[type='button'], [role='button']"))
+          .find(btn => visible(btn) && /search/i.test(norm(btn.innerText || btn.textContent || btn.value || btn.getAttribute("aria-label") || "")));
+      }
+
+      function findMatchingRow(){
+        const target = normalizedPolicy(pol);
+        if (!target) return null;
+
+        const rows = Array.from(document.querySelectorAll("table tbody tr, table tr"));
+        return rows.find(row => {
+          if (!visible(row)) return false;
+          const rowText = normalizedPolicy(row.innerText || row.textContent || "");
+          return rowText.indexOf(target) >= 0;
+        }) || null;
+      }
+
+      function findViewControl(row){
+        if (!row) return null;
+        const controls = Array.from(row.querySelectorAll("a, button, [role='button']"));
+        return controls.find(el => visible(el) && /^view$/i.test(norm(el.innerText || el.textContent || el.value || el.getAttribute("aria-label") || ""))) ||
+               controls.find(el => visible(el) && /view/i.test(norm(el.innerText || el.textContent || el.value || el.getAttribute("aria-label") || "")));
+      }
+
+      (async () => {
+        const isSearchPage = /\/search/i.test(location.pathname || "");
+        const isLoginPage =
+          /\/login/i.test(location.pathname || "") ||
+          !!document.querySelector("input[type='password'], input[name*='user' i], input[name*='login' i], button[type='submit']");
+
+        try {
+          sessionStorage.setItem(K_ORION_POL, pol);
+          sessionStorage.setItem(K_ORION_AWAIT, "1");
+        } catch(_) {}
+
+        try {
+          if (typeof GM_setValue === "function") {
+            GM_setValue(K_ORION_POL, pol);
+            GM_setValue(K_ORION_AWAIT, "1");
+          }
+        } catch(_) {}
+
+        if (!isSearchPage) {
+          if (isLoginPage) {
+            toast("Orion180: login detected - automation paused. Log in, then refresh.", 4500);
+            return;
+          }
+
+          location.replace(
+            ORION_ORIGIN + ORION_PATH +
+            "?tab=policies&diary=false&mci=1&ts=" + encodeURIComponent(keepTs) +
+            "#pol=" + encodeURIComponent(pol)
+          );
+          return;
+        }
+
+        const input = await waitForSel("#policyNumber", 20000);
+        if (!input) {
+          toast("Orion180: search box not found, stopping lookup.", 3000);
+          finish();
+          return;
+        }
+
+        input.focus();
+        setNativeValue(input, "");
+        input.dispatchEvent(new Event("input", { bubbles:true }));
+        setNativeValue(input, pol);
+        input.dispatchEvent(new Event("input", { bubbles:true }));
+        input.dispatchEvent(new Event("change", { bubbles:true }));
+        input.dispatchEvent(new Event("blur", { bubbles:true }));
+
+        const searchBtn = await waitFor(() => findSearchButton(), 10000);
+        if (!searchBtn) {
+          toast("Orion180: search button not found, stopping lookup.", 3000);
+          finish();
+          return;
+        }
+        searchBtn.click();
+
+        const row = await waitFor(() => findMatchingRow(), 25000, 200);
+        if (!row) {
+          toast("Orion180: policy not found, stopping lookup.", 3000);
+          finish();
+          return;
+        }
+
+        const view = await waitFor(() => findViewControl(row), 10000, 200);
+        if (!view) {
+          toast("Orion180: View link not found, stopping lookup.", 3000);
+          finish();
+          return;
+        }
+
+        view.click();
+        toast(`Orion180 Policy: ${pol}`, 2200);
+        finish();
       })();
     })();
   }
