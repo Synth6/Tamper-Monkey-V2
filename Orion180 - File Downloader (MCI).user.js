@@ -3,7 +3,7 @@
 // @namespace    mci-tools
 // @version      1.0.0
 // @description  Adds selectable batch downloads to Orion180 policy document tables.
-// @match        https://app.orion180.com/policies/*
+// @match        https://app.orion180.com/*
 // @run-at       document-idle
 // @grant        GM_addStyle
 // @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Orion180%20-%20File%20Downloader%20(MCI).user.js
@@ -23,7 +23,7 @@
   const BUTTON_ID = "mci-orion180-download-files";
   const OBSERVER_ATTR = "data-mci-orion180-observed";
 
-  if (!HOST_OK || !PATH_OK) return;
+  if (!HOST_OK) return;
 
   let activated = false;
   let observer = null;
@@ -47,6 +47,10 @@
     });
   }
 
+  function isPolicyPage() {
+    return /^\/policies(?:\/|$)/i.test(location.pathname);
+  }
+
   function handleCustomTrigger(ev) {
     const detail = ev && ev.detail ? ev.detail : {};
     if (ev && ev.type !== "mci:orion180-downloader" && detail.tool !== TOOL) return;
@@ -55,7 +59,10 @@
   }
 
   function activate() {
-    if (!HOST_OK || !PATH_OK) return;
+    if (!HOST_OK || !isPolicyPage()) {
+        toast("Open an Orion180 policy page first.");
+        return;
+    }
 
     const firstRun = !activated;
     activated = true;
@@ -81,18 +88,20 @@
   }
 
   function applyUi() {
-    const table = findDocumentTable();
-    ensureDownloadButton();
+      if (!isPolicyPage()) return;
 
-    if (!table) return;
+      const table = findDocumentTable();
+      ensureDownloadButton();
 
-    const added = ensureCheckboxes(table);
-    ensureTableEvents(table);
+      if (!table) return;
 
-    if (added > 0) {
-      toast("Added checkboxes");
+      const added = ensureCheckboxes(table);
+      ensureTableEvents(table);
+
+      if (added > 0) {
+          toast("Added checkboxes");
     }
-  }
+}
 
   function findDocumentTable() {
     const tables = Array.from(document.querySelectorAll("table[role='table'], table"));
