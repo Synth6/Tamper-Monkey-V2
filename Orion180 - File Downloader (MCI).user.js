@@ -6,6 +6,8 @@
 // @match        https://app.orion180.com/policies/*
 // @run-at       document-idle
 // @grant        GM_addStyle
+// @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Orion180%20-%20File%20Downloader%20(MCI).user.js
+// @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Orion180%20-%20File%20Downloader%20(MCI).user.js
 // ==/UserScript==
 
 (function () {
