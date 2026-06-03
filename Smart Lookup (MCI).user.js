@@ -4,12 +4,11 @@
 // Not authorized for redistribution or resale.
 // @name        Smart Lookup (MCI)
 // @namespace    mci-tools
-// @version      4.3.4
-// @description  ALT+Right-Click: pinned chooser for Address/Name/Policy. Address: Wake/Maps/Vexcel combos. Name: LinkedIn/Google/Facebook. Policy: Erie/NatGen/Progressive/NFIP/NCJUA
+// @version      4.3.5
+// @description  ALT+Right-Click: pinned chooser for Address/Policy lookup. Address: Wake/Maps/Vexcel combos. Policy: Erie/NatGen/Progressive/NFIP/Beyond Floods/Orion180/NCJUA
 // @match        *://*/*
 // @match        file://*/*
 // @match        https://services.wake.gov/realestate/*
-// @match        https://www.linkedin.com/*
 // @match        https://portal.agentexchange.com/*
 // @match        https://www.agentexchange.com/*
 // @match        https://agentexchange.com/*
@@ -57,26 +56,26 @@
   const PR_ORIGIN   = "https://www.foragentsonly.com";
   const PR_PATH     = "/";
 
-  // Vexcel
-  const VEX_ORIGIN  = "https://app.vexcelgroup.com";
-
   // NFIP (TorrentFlood)
   const NFIP_ORIGIN = "https://nationalgeneral.torrentflood.com";
   const NFIP_PATH   = "/Dashboard/Agency";
-
-  // NCJUA
-  const NCJUA_ORIGIN = "https://insure.ncjuanciua.org";
-  const NCJUA_PATH   = "/innovation";
-
-  // Orion180
-  const ORION_ORIGIN = "https://app.orion180.com";
-  const ORION_PATH   = "/search";
 
   // Beyond Floods
   const BF_LAUNCH_ORIGIN = "https://natgenagency.com";
   const BF_LAUNCH_PATH   = "/Flood/FloodCenter.aspx";
   const BF_ORIGIN        = "https://natgen.beyondfloods.com";
   const BF_DASH_PATH     = "/Public/AgentDashboard";
+
+  // Orion180
+  const ORION_ORIGIN = "https://app.orion180.com";
+  const ORION_PATH   = "/search";
+
+  // NCJUA
+  const NCJUA_ORIGIN = "https://insure.ncjuanciua.org";
+  const NCJUA_PATH   = "/innovation";
+
+  // Vexcel
+  const VEX_ORIGIN  = "https://app.vexcelgroup.com";
 
   /* ================= STORAGE KEYS ================= */
   // Erie
@@ -85,24 +84,14 @@
   // NatGen
   const K_NG_POL="carrier.ng.pol", K_NG_AWAIT="carrier.ng.await";
 
-  // NFIP
-  const K_NFIP_POL="carrier.nfip.pol", K_NFIP_AWAIT="carrier.nfip.await";
-
-  // NCJUA
-  const K_NCJUA_POL="carrier.ncjua.pol", K_NCJUA_AWAIT="carrier.ncjua.await";
-
-  // Orion180
-  const K_ORION_POL="carrier.orion.pol";
-  const K_ORION_AWAIT="carrier.orion.await";
-
-  // Vexcel
-  const K_VEX_ADDR="vexcel.addr", K_VEX_AWAIT="vexcel.await";
-
   // Progressive
   const K_PR_POL="carrier.pr.pol";
   const K_PR_RAN="carrier.pr.ran"; // per-tab
   const K_PR_PENDING_GM="carrier.pr.pending.gm"; // cross-tab safety
   const K_PR_PENDING_TS="carrier.pr.pending.ts";
+
+  // NFIP
+  const K_NFIP_POL="carrier.nfip.pol", K_NFIP_AWAIT="carrier.nfip.await";
 
   // Beyond Floods
   const K_BF_POL="carrier.bf.pol", K_BF_AWAIT="carrier.bf.await";
@@ -112,6 +101,15 @@
   const K_BF_TAB_ID="carrier.bf.tabid";
   const K_BF_LAUNCHED="carrier.bf.launched";
 
+  // Orion180
+  const K_ORION_POL="carrier.orion.pol";
+  const K_ORION_AWAIT="carrier.orion.await";
+
+  // NCJUA
+  const K_NCJUA_POL="carrier.ncjua.pol", K_NCJUA_AWAIT="carrier.ncjua.await";
+
+  // Vexcel
+  const K_VEX_ADDR="vexcel.addr", K_VEX_AWAIT="vexcel.await";
 
   // Arming gate (generic; NOT tied to hotkey anymore)
   const K_ARMED   = "mci.lookup.armed";
@@ -287,42 +285,6 @@
     return { stnum, stname };
   }
 
-  // Name cleaners
-  function extractLeadingName(raw){
-    let s = String(raw||"")
-      .replace(/\s+/g, " ")
-      .replace(/[,\u2013\u2014-]\s*(first\s+named\s+insured|named\s+insured|insured|policyholder|applicant|contact|primary)\b.*$/i, "")
-      .replace(/\s*\((first\s+named\s+insured|named\s+insured|insured|policyholder|applicant|primary)\)\s*$/i, "")
-      .trim();
-    s = s.split(/\s+[-–—]\s+|\s*\/\s*|\s*\|\s*|\s*·\s*/)[0].trim();
-    const m = s.match(/^\s*([A-Z][\p{L}'-]+(?:\s+[A-Z][\p{L}'-]+){1,3})\b/u);
-    if (m) return m[1];
-    const tokens = s.split(" ").filter(Boolean);
-    if (tokens.length >= 2 && /^[A-Za-z]/.test(tokens[0])) {
-      return tokens.slice(0, Math.min(tokens.length, 4)).join(" ");
-    }
-    return s;
-  }
-  function cleanNameForSearch(raw){
-    const suffixes=/^(jr|sr|ii|iii|iv|v|vi)\.?$/i;
-    const clean=String(raw||"").replace(/[,]/g," ").replace(/\s+/g," ").trim();
-    const parts=clean.split(" ").filter(Boolean);
-    const filtered=[];
-    for(const p of parts){
-      const naked=p.replace(/\./g,"");
-      if(naked.length===1) continue;
-      if(suffixes.test(naked)) continue;
-      filtered.push(p);
-    }
-    return (filtered.length>=2 ? filtered.join(" ") : clean);
-  }
-  function isLikelyName(s){
-    const clean=String(s||"").replace(/[,]/g," ").replace(/\s+/g," ").trim();
-    const parts=clean.split(" ").filter(Boolean);
-    if(parts.length<2 || parts.length>5) return false;
-    return parts.every(p=>/^[\p{L}'\-\.]+$/u.test(p));
-  }
-
   // Policy extraction
   function extractPolicy(txt){
     const s = String(txt || "");
@@ -411,29 +373,7 @@
     toast(`Opening Wake, Maps & Vexcel for: ${raw}`);
   }
 
-  function openNameLookups(nameRaw, mode){
-    const leading = extractLeadingName(nameRaw);
-    const cleaned = cleanNameForSearch(leading);
-
-    if(mode === "google"){
-      const q = cleaned;
-      GM_openInTab(`https://www.google.com/search?q=${encodeURIComponent(q)}`, {active:true, insert:true});
-      toast(`Google: ${cleaned}`);
-      return;
-    }
-    if(mode === "facebook"){
-      // Facebook search works when logged in; if not logged in it will just prompt.
-      const q = cleaned;
-      GM_openInTab(`https://www.facebook.com/search/people/?q=${encodeURIComponent(q)}`, {active:true, insert:true});
-      toast(`Facebook: ${cleaned}`);
-      return;
-    }
-
-    // default linkedin
-    GM_openInTab(`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(cleaned)}`, {active:true, insert:true});
-    toast(`LinkedIn: ${cleaned}`);
-  }
-
+  // ================= Erie =================
   function openErie(pol){
     const ts = armAutomations(Date.now());
     const p = String(pol||"").trim().toUpperCase();
@@ -450,6 +390,7 @@
     toast(`Erie: ${p}`);
   }
 
+  // ================= NatGen =================
   function openNatGen(pol){
     const ts = armAutomations(Date.now());
     const digits = String(pol||"").replace(/\D/g,""); // NatGen wants digits
@@ -467,6 +408,7 @@
     toast(`NatGen: ${digits}`);
   }
 
+  // ================= Progressive =================
   function setProgressivePending(pol, ts){
     const digits = String(pol||"").replace(/\D/g,"");
     if(!digits) return "";
@@ -475,6 +417,20 @@
     try { if (typeof GM_setValue === "function") GM_setValue(K_PR_POL, digits); } catch(_){}
     return digits;
   }
+
+  function openProgressive(pol){
+    const ts = armAutomations(Date.now());
+    const digits = setProgressivePending(pol, ts);
+    if(!digits){ toast("No policy digits detected."); return; }
+
+    window.open(
+      PR_ORIGIN + PR_PATH + "?mci=1&ts=" + encodeURIComponent(String(ts)) + "&pol=" + encodeURIComponent(digits),
+      "_blank"
+    );
+    toast(`Progressive: ${digits}`);
+  }
+
+  // ================= NFIP =================
   function openNFIP(pol){
     const ts = armAutomations(Date.now());
     const p = String(pol||"").trim();
@@ -535,18 +491,6 @@
       "_blank"
     );
     toast(`Orion180: ${p}`);
-  }
-
-  function openProgressive(pol){
-    const ts = armAutomations(Date.now());
-    const digits = setProgressivePending(pol, ts);
-    if(!digits){ toast("No policy digits detected."); return; }
-
-    window.open(
-      PR_ORIGIN + PR_PATH + "?mci=1&ts=" + encodeURIComponent(String(ts)) + "&pol=" + encodeURIComponent(digits),
-      "_blank"
-    );
-    toast(`Progressive: ${digits}`);
   }
 
   // ================= Beyond Floods =================
@@ -710,20 +654,6 @@
         return;
       }
 
-      const lead = extractLeadingName(t);
-      if(isLikelyName(lead)){
-        show(
-          [
-            {value:"name_linkedin", label:"LinkedIn People Search"},
-            {value:"name_google",   label:"Google Search"},
-            {value:"name_facebook", label:"Facebook People Search"}
-          ],
-          {name:t, lead},
-          lead
-        );
-        return;
-      }
-
       const pol = extractPolicy(t);
       if(pol){
         show(
@@ -742,16 +672,7 @@
         return;
       }
 
-      // fallback: treat as name
-      show(
-        [
-          {value:"name_linkedin", label:"LinkedIn People Search"},
-          {value:"name_google",   label:"Google Search"},
-          {value:"name_facebook", label:"Facebook People Search"}
-        ],
-        {name:t, lead:lead},
-        lead || t
-      );
+      toast("No address or policy detected.");
     }
 
     return { openPinned, hide };
@@ -764,10 +685,6 @@
     if(action==="addr_wake")          return openAddressLookups(payload.addr, "wake");
     if(action==="addr_maps")          return openAddressLookups(payload.addr, "maps");
     if(action==="addr_vexcel")        return openAddressLookups(payload.addr, "vexcel");
-
-    if(action==="name_linkedin") return openNameLookups(payload.name, "linkedin");
-    if(action==="name_google")   return openNameLookups(payload.name, "google");
-    if(action==="name_facebook") return openNameLookups(payload.name, "facebook");
 
     if(action==="pol_erie")        return openErie(payload.pol);
     if(action==="pol_natgen")      return openNatGen(payload.pol);
@@ -844,7 +761,6 @@ document.addEventListener("contextmenu", (e) => {
     let dot="⚫", label="";
 
     if(isLikelyAddress(txt)){ dot="🟩"; label=`Address: ${txt}`; }
-    else if(isLikelyName(extractLeadingName(txt))){ dot="🔵"; label=`Name: ${txt}`; }
     else {
       const pol = extractPolicy(txt);
       if(pol){
