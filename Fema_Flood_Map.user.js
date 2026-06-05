@@ -7,6 +7,8 @@
 // @run-at       document-idle
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @updateURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Fema_Flood_Map.user.js
+// @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Fema_Flood_Map.user.js
 // ==/UserScript==
 
 (function () {
