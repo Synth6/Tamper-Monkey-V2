@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name        Smart Lookup (MCI)
 // @namespace    mci-tools
-// @version      4.3.5
+// @version      4.3.6
 // @description  ALT+Right-Click: pinned chooser for Address/Policy lookup. Address: Wake/Maps/Vexcel combos. Policy: Erie/NatGen/Progressive/NFIP/Beyond Floods/Orion180/NCJUA
 // @match        *://*/*
 // @match        file://*/*
@@ -38,7 +38,6 @@
   const CFG = {
     mapsRegionHint: "Wake County, NC",
     stripStreetTypes: ["rd","road","dr","drive","st","street","ave","avenue","blvd","boulevard","ct","court","trl","trail","ln","lane","way","pkwy","parkway","cir","circle","ter","terrace","pl","place","hwy","highway"],
-    indicatorTimeout: 2200,
     armedTTLms: 10 * 60 * 1000,  // 10 minutes
     faoWaitMs: 55 * 1000,        // give FAO up to ~55s after load to reveal search UI
     faoMaxAutoRunsPerTab: 1
@@ -226,14 +225,6 @@
       t.className="mci-toast"; t.textContent=msg; document.body.appendChild(t);
       setTimeout(()=>t.remove(),ms);
     }catch(_){}
-  }
-
-  /* ================= TAB TITLE INDICATOR ================= */
-  let baseTitle=document.title||"";
-  function setTab(dot,label){
-    clearTimeout(setTab.timer);
-    document.title = `${dot} ${label}`;
-    setTab.timer = setTimeout(()=>{ document.title = baseTitle; }, CFG.indicatorTimeout);
   }
 
   /* ================= HOVER / SELECTION ================= */
@@ -753,24 +744,6 @@ document.addEventListener("contextmenu", (e) => {
 
   HoverChooser.openPinned(txt, e.clientX, e.clientY);
 }, true);
-
-  /* ================= TAB INDICATOR ================= */
-  function updateTabIndicator(){
-    const txt=getSelectedOrHoverText();
-    if(!txt){ document.title = baseTitle; return; }
-    let dot="⚫", label="";
-
-    if(isLikelyAddress(txt)){ dot="🟩"; label=`Address: ${txt}`; }
-    else {
-      const pol = extractPolicy(txt);
-      if(pol){
-        dot="🟠"; label=`Policy: ${pol}`;
-      }
-    }
-    setTab(dot,label);
-  }
-  document.addEventListener("mousemove", updateTabIndicator, {capture:true, passive:true});
-  document.addEventListener("mouseover", updateTabIndicator, {capture:true, passive:true});
 
   /* ================= ON-SITE AUTOMATIONS (ONLY IF ARMED/TOKEN) ================= */
 
