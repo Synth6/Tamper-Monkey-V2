@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      5.9.9
+// @version      6.0.0
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -140,10 +140,21 @@
     const st = document.createElement("style");
     st.id = GLOBAL_STYLE_ID;
     st.textContent = `
-      .mci-fileNameFixed{
-        white-space:pre-line !important;
+      .ContactItem.FileName.mci-fileNameFixed{
+        display:block !important;
+        max-width:240px !important;
+        white-space:normal !important;
         overflow:visible !important;
-        text-overflow:unset !important;
+        text-overflow:clip !important;
+        word-break:break-word !important;
+        overflow-wrap:anywhere !important;
+        line-height:1.25 !important;
+      }
+
+      .ContactItem.FileName.mci-fileNameFixed::after{
+        content:"";
+        display:block;
+        clear:both;
       }
     `;
     document.head.appendChild(st);
