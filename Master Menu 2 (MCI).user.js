@@ -550,7 +550,31 @@
         border: "none",
         borderRadius: "6px",
         cursor: "pointer",
-        fontWeight: "600"
+        fontWeight: "600",
+        transition:
+          "background 0.18s ease, transform 0.12s ease, box-shadow 0.18s ease"
+      });
+
+      btn.addEventListener("mouseenter", function () {
+        btn.style.background = "#388bfd";
+        btn.style.transform = "translateY(-2px)";
+        btn.style.boxShadow = "0 5px 12px rgba(0, 0, 0, 0.28)";
+      });
+
+      btn.addEventListener("mouseleave", function () {
+        btn.style.background = "#1f6feb";
+        btn.style.transform = "translateY(0)";
+        btn.style.boxShadow = "none";
+      });
+
+      btn.addEventListener("mousedown", function () {
+        btn.style.transform = "translateY(0)";
+        btn.style.boxShadow = "0 2px 5px rgba(0, 0, 0, 0.25)";
+      });
+
+      btn.addEventListener("mouseup", function () {
+        btn.style.transform = "translateY(-2px)";
+        btn.style.boxShadow = "0 5px 12px rgba(0, 0, 0, 0.28)";
       });
     }
 
