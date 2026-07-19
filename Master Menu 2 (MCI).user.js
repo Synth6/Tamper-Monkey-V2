@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      6.0.0
+// @version      6.0.1
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -230,37 +230,378 @@
     return null;
   }
 
+  function qqBuildReadableFileName(fileName) {
+    const name = String(fileName || "").trim();
+    if (!name) return { error: "The current file name is empty." };
+
+    const policyMatch = name.match(/pol(?<policy>\d+)/i);
+    const dateMatch = name.match(/(?:tdt|td)(?<date>\d{8})/i);
+    let typeMatch = name.match(/(?:Entr|trn)(?<type>.*?)(?:tdt|td)\d{8}/i);
+
+    if (!typeMatch) {
+      typeMatch = name.match(/itm(?<type>.*?)(?:tdt|td)\d{8}/i);
+    }
+
+    if (!policyMatch || !policyMatch.groups || !policyMatch.groups.policy) {
+      return { error: "Could not find a policy number after 'pol'." };
+    }
+
+    if (!dateMatch || !dateMatch.groups || !dateMatch.groups.date) {
+      return { error: "Could not find an 8-digit date after 'tdt' or 'td'." };
+    }
+
+    if (!typeMatch || !typeMatch.groups || !typeMatch.groups.type) {
+      return { error: "Could not find the document type." };
+    }
+
+    const policy = policyMatch.groups.policy;
+    const rawDate = dateMatch.groups.date;
+
+    const rawType = typeMatch.groups.type
+      .trim()
+      .replace(/^[_\-\s]+|[_\-\s]+$/g, "")
+      .toUpperCase();
+
+    const typeMap = {
+      ENDORSEMENT: "Endorsement",
+      RENEWAL: "Renewal",
+      NEWBUSINESS: "New Business",
+      NEW_BUSINESS: "New Business",
+      CANCEL_PENDING: "Pending Notice",
+      CANCELPENDING: "Pending Notice",
+      PENDING_NOTICE: "Pending Notice",
+      CANCELLATION: "Cancellation",
+      CANCELLED: "Cancellation",
+      CANCELED: "Cancellation",
+      REINSTATEMENT: "Reinstatement",
+      NONRENEWAL: "Non-Renewal",
+      NON_RENEWAL: "Non-Renewal",
+      DECLARATION: "Declaration",
+      DECLARATIONS: "Declarations",
+      DECPAGE: "Declarations",
+      POLICY: "Policy",
+      NOTICE: "Notice"
+    };
+
+    let documentType = typeMap[rawType];
+
+    if (!documentType) {
+      documentType = rawType
+        .replace(/[_-]+/g, " ")
+        .toLowerCase()
+        .replace(/\b\w/g, function (ch) {
+          return ch.toUpperCase();
+        })
+        .trim();
+    }
+
+    const year = Number(rawDate.slice(0, 4));
+    const month = Number(rawDate.slice(4, 6));
+    const day = Number(rawDate.slice(6, 8));
+
+    const parsedDate = new Date(
+      Date.UTC(year, month - 1, day)
+    );
+
+    if (
+      parsedDate.getUTCFullYear() !== year ||
+      parsedDate.getUTCMonth() !== month - 1 ||
+      parsedDate.getUTCDate() !== day
+    ) {
+      return { error: "The date in the file name is not valid." };
+    }
+
+    const mm = String(month).padStart(2, "0");
+    const dd = String(day).padStart(2, "0");
+
+    const safeType = documentType
+      .replace(/[<>:\"/\|?*]/g, "")
+      .trim();
+
+    return {
+      name:
+        policy +
+        " - " +
+        safeType +
+        " - " +
+        mm +
+        "-" +
+        dd +
+        "-" +
+        year +
+        ".pdf"
+    };
+  }
+
+  function qqFindPopupButtonByText(popup, wantedText) {
+    const wanted = String(wantedText || "")
+      .trim()
+      .toLowerCase();
+
+    return Array.from(
+      popup.querySelectorAll(
+        "button, input[type='button'], input[type='submit'], a"
+      )
+    ).find(function (el) {
+      const text = String(
+        el.textContent || el.value || ""
+      )
+        .trim()
+        .toLowerCase();
+
+      return text === wanted;
+    }) || null;
+  }
+
+  function qqFindPopupTitleInput(popup) {
+    return (
+      (popup &&
+        popup.querySelector(
+          '#titleBox input[name="docTitleTextEdit"]'
+        )) ||
+      document.querySelector(
+        '#preview.file-edit-popup #titleBox input[name="docTitleTextEdit"]'
+      ) ||
+      document.querySelector(
+        '#titleBox input[name="docTitleTextEdit"]'
+      )
+    );
+  }
+
+  function qqSetInputValue(input, value) {
+    const proto =
+      input instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype;
+
+    const descriptor = Object.getOwnPropertyDescriptor(
+      proto,
+      "value"
+    );
+
+    if (descriptor && typeof descriptor.set === "function") {
+      descriptor.set.call(input, value);
+    } else {
+      input.value = value;
+    }
+
+    ["input", "change", "keyup"].forEach(function (eventName) {
+      input.dispatchEvent(
+        new Event(eventName, {
+          bubbles: true
+        })
+      );
+    });
+  }
+
+  function qqFixPopupFileName(popup, fixButton, attempt) {
+    attempt = attempt || 0;
+
+    // QQ may rebuild or replace the popup after Edit is clicked,
+    // so always get the current popup again.
+    const activePopup =
+      document.querySelector("#preview.file-edit-popup") ||
+      popup;
+
+    const titleInput =
+      qqFindPopupTitleInput(activePopup);
+
+    if (!titleInput) {
+      if (attempt < 15) {
+        setTimeout(function () {
+          qqFixPopupFileName(
+            activePopup,
+            fixButton,
+            attempt + 1
+          );
+        }, 200);
+
+        return;
+      }
+
+      toast("Could not find QQ's Title field.");
+      return;
+    }
+
+    // Click QQ's Edit button if the field is disabled or read-only.
+    if (titleInput.disabled || titleInput.readOnly) {
+      const editButton =
+        qqFindPopupButtonByText(
+          activePopup,
+          "Edit"
+        );
+
+      if (editButton && attempt === 0) {
+        editButton.click();
+      }
+
+      if (attempt < 15) {
+        setTimeout(function () {
+          qqFixPopupFileName(
+            document.querySelector(
+              "#preview.file-edit-popup"
+            ) || activePopup,
+            fixButton,
+            attempt + 1
+          );
+        }, 200);
+
+        return;
+      }
+
+      toast("QQ's Title field is still locked.");
+      return;
+    }
+
+    const result =
+      qqBuildReadableFileName(
+        titleInput.value
+      );
+
+    if (result.error) {
+      toast(result.error);
+      return;
+    }
+
+    qqSetInputValue(
+      titleInput,
+      result.name
+    );
+
+    titleInput.focus();
+    titleInput.select();
+
+    if (fixButton) {
+      const originalText =
+        fixButton.textContent;
+
+      fixButton.textContent = "Fixed ✓";
+
+      setTimeout(function () {
+        fixButton.textContent =
+          originalText;
+      }, 1400);
+    }
+
+    toast(
+      "Name fixed. Click Save to apply it."
+    );
+  }
+
   function addOpenPdfButtonToPopup() {
-    const popup = document.querySelector("#preview.file-edit-popup");
-    if (!popup || getComputedStyle(popup).display === "none") return;
+    const popup = document.querySelector(
+      "#preview.file-edit-popup"
+    );
+
+    if (
+      !popup ||
+      getComputedStyle(popup).display === "none"
+    ) {
+      return;
+    }
 
     const img = popup.querySelector("img");
-    if (!img || !/DownloadQuickFile/i.test(img.src || "")) return;
-    if (popup.querySelector(".mci-open-popup-btn")) return;
+
+    if (
+      !img ||
+      !/DownloadQuickFile/i.test(img.src || "")
+    ) {
+      return;
+    }
+
+    if (
+      popup.querySelector(".mci-popup-file-actions")
+    ) {
+      return;
+    }
 
     let id = "";
-    try { id = new URL(img.src, location.origin).searchParams.get("id") || ""; } catch (e) {}
-    if (!id) return;
 
-    const btn = document.createElement("button");
-    btn.textContent = "Open PDF in New Tab";
-    btn.className = "mci-open-popup-btn";
-    Object.assign(btn.style, {
+    try {
+      id =
+        new URL(
+          img.src,
+          location.origin
+        ).searchParams.get("id") || "";
+    } catch (e) {}
+
+    if (!id) {
+      return;
+    }
+
+    const actions = document.createElement("div");
+
+    actions.className = "mci-popup-file-actions";
+
+    Object.assign(actions.style, {
       marginTop: "10px",
-      display: "block",
-      background: "#1f6feb",
-      color: "#fff",
-      padding: "8px 12px",
-      border: "none",
-      borderRadius: "6px",
-      cursor: "pointer"
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      flexWrap: "wrap"
     });
 
-    btn.addEventListener("click", function () {
-      window.open(location.origin + "/FileUpload/DownloadFile/" + id + "?preview=true", "_blank");
-    });
+    function stylePopupButton(btn) {
+      Object.assign(btn.style, {
+        display: "inline-block",
+        background: "#1f6feb",
+        color: "#fff",
+        padding: "8px 12px",
+        border: "none",
+        borderRadius: "6px",
+        cursor: "pointer",
+        fontWeight: "600"
+      });
+    }
 
-    popup.appendChild(btn);
+    const openButton =
+      document.createElement("button");
+
+    openButton.type = "button";
+    openButton.textContent =
+      "Open PDF in New Tab";
+    openButton.className =
+      "mci-open-popup-btn";
+
+    stylePopupButton(openButton);
+
+    openButton.addEventListener(
+      "click",
+      function () {
+        window.open(
+          location.origin +
+            "/FileUpload/DownloadFile/" +
+            id +
+            "?preview=true",
+          "_blank"
+        );
+      }
+    );
+
+    const fixButton =
+      document.createElement("button");
+
+    fixButton.type = "button";
+    fixButton.textContent = "Fix Name";
+    fixButton.className =
+      "mci-fix-popup-name-btn";
+
+    stylePopupButton(fixButton);
+
+    fixButton.addEventListener(
+      "click",
+      function () {
+        qqFixPopupFileName(
+          popup,
+          fixButton,
+          0
+        );
+      }
+    );
+
+    actions.appendChild(openButton);
+    actions.appendChild(fixButton);
+    popup.appendChild(actions);
   }
 
   function startPdfPopupObserver() {
