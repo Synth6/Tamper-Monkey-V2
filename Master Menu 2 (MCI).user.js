@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      6.0.1
+// @version      6.0.3
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -22,6 +22,7 @@
 // @match        https://*.ncjua-nciua.org/*
 // @match        https://*.ncjuanciua.org/*
 // @match        https://app.orion180.com/*
+// @match        https://msc.fema.gov/portal/search*
 // @run-at       document-idle
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -140,21 +141,10 @@
     const st = document.createElement("style");
     st.id = GLOBAL_STYLE_ID;
     st.textContent = `
-      .ContactItem.FileName.mci-fileNameFixed{
-        display:block !important;
-        max-width:240px !important;
-        white-space:normal !important;
+      .mci-fileNameFixed{
+        white-space:pre-line !important;
         overflow:visible !important;
-        text-overflow:clip !important;
-        word-break:break-word !important;
-        overflow-wrap:anywhere !important;
-        line-height:1.25 !important;
-      }
-
-      .ContactItem.FileName.mci-fileNameFixed::after{
-        content:"";
-        display:block;
-        clear:both;
+        text-overflow:unset !important;
       }
     `;
     document.head.appendChild(st);
@@ -165,6 +155,88 @@
    *************************/
   let fileNamesFixed = false;
   let pdfPopupObserver = null;
+
+  function getQQCustomerId() {
+    const foundIds = [];
+
+    function addId(value) {
+      const id = String(value || "").trim();
+
+      if (!/^\d+$/.test(id)) {
+        return;
+      }
+
+      if (Number(id) <= 0) {
+        return;
+      }
+
+      if (!foundIds.includes(id)) {
+        foundIds.push(id);
+      }
+    }
+
+    // Best source: QQ's dedicated hidden customer ID.
+    const hiddenCustomerId = document.querySelector(
+      'input[name="hidCustomerId"]'
+    );
+
+    if (hiddenCustomerId) {
+      addId(hiddenCustomerId.value);
+    }
+
+    // QQ's current policy object also carries the real customer ID.
+    try {
+      if (PAGE_WINDOW.QQNextGen?.Policy?.CustomerID) {
+        addId(PAGE_WINDOW.QQNextGen.Policy.CustomerID);
+      }
+    } catch (e) {}
+
+    // Customer header link. QQ uses both Customer and CommercialCustomer URLs.
+    const customerLink = document.querySelector(
+      'a[href*="/Contacts/Customer/Details/"], ' +
+      'a[href*="/Contacts/CommercialCustomer/Details/"]'
+    );
+
+    if (customerLink) {
+      const href = customerLink.getAttribute("href") || "";
+      const match = href.match(
+        /\/Contacts\/(?:CommercialCustomer|Customer)\/Details\/(\d+)/i
+      );
+
+      if (match) {
+        addId(match[1]);
+      }
+    }
+
+    // Generic CustomerID fields are lower-confidence because some QQ
+    // sections contain placeholder CustomerID values such as 0.
+    const customerIdFields = document.querySelectorAll(
+      'input[name="CustomerID"]'
+    );
+
+    customerIdFields.forEach(function (field) {
+      addId(field.value);
+    });
+
+    if (!foundIds.length) {
+      return {
+        id: null,
+        error: "QQ Customer ID not found on this page."
+      };
+    }
+
+    if (foundIds.length > 1) {
+      return {
+        id: null,
+        error: "Customer ID mismatch detected: " + foundIds.join(", ")
+      };
+    }
+
+    return {
+      id: foundIds[0],
+      error: null
+    };
+  }
 
   function qqGetCheckedBoxes() {
     const selectors = [
@@ -230,402 +302,37 @@
     return null;
   }
 
-  function qqBuildReadableFileName(fileName) {
-    const name = String(fileName || "").trim();
-    if (!name) return { error: "The current file name is empty." };
-
-    const policyMatch = name.match(/pol(?<policy>\d+)/i);
-    const dateMatch = name.match(/(?:tdt|td)(?<date>\d{8})/i);
-    let typeMatch = name.match(/(?:Entr|trn)(?<type>.*?)(?:tdt|td)\d{8}/i);
-
-    if (!typeMatch) {
-      typeMatch = name.match(/itm(?<type>.*?)(?:tdt|td)\d{8}/i);
-    }
-
-    if (!policyMatch || !policyMatch.groups || !policyMatch.groups.policy) {
-      return { error: "Could not find a policy number after 'pol'." };
-    }
-
-    if (!dateMatch || !dateMatch.groups || !dateMatch.groups.date) {
-      return { error: "Could not find an 8-digit date after 'tdt' or 'td'." };
-    }
-
-    if (!typeMatch || !typeMatch.groups || !typeMatch.groups.type) {
-      return { error: "Could not find the document type." };
-    }
-
-    const policy = policyMatch.groups.policy;
-    const rawDate = dateMatch.groups.date;
-
-    const rawType = typeMatch.groups.type
-      .trim()
-      .replace(/^[_\-\s]+|[_\-\s]+$/g, "")
-      .toUpperCase();
-
-    const typeMap = {
-      ENDORSEMENT: "Endorsement",
-      RENEWAL: "Renewal",
-      NEWBUSINESS: "New Business",
-      NEW_BUSINESS: "New Business",
-      CANCEL_PENDING: "Pending Notice",
-      CANCELPENDING: "Pending Notice",
-      PENDING_NOTICE: "Pending Notice",
-      CANCELLATION: "Cancellation",
-      CANCELLED: "Cancellation",
-      CANCELED: "Cancellation",
-      REINSTATEMENT: "Reinstatement",
-      NONRENEWAL: "Non-Renewal",
-      NON_RENEWAL: "Non-Renewal",
-      DECLARATION: "Declaration",
-      DECLARATIONS: "Declarations",
-      DECPAGE: "Declarations",
-      POLICY: "Policy",
-      NOTICE: "Notice"
-    };
-
-    let documentType = typeMap[rawType];
-
-    if (!documentType) {
-      documentType = rawType
-        .replace(/[_-]+/g, " ")
-        .toLowerCase()
-        .replace(/\b\w/g, function (ch) {
-          return ch.toUpperCase();
-        })
-        .trim();
-    }
-
-    const year = Number(rawDate.slice(0, 4));
-    const month = Number(rawDate.slice(4, 6));
-    const day = Number(rawDate.slice(6, 8));
-
-    const parsedDate = new Date(
-      Date.UTC(year, month - 1, day)
-    );
-
-    if (
-      parsedDate.getUTCFullYear() !== year ||
-      parsedDate.getUTCMonth() !== month - 1 ||
-      parsedDate.getUTCDate() !== day
-    ) {
-      return { error: "The date in the file name is not valid." };
-    }
-
-    const mm = String(month).padStart(2, "0");
-    const dd = String(day).padStart(2, "0");
-
-    const safeType = documentType
-      .replace(/[<>:\"/\|?*]/g, "")
-      .trim();
-
-    return {
-      name:
-        policy +
-        " - " +
-        safeType +
-        " - " +
-        mm +
-        "-" +
-        dd +
-        "-" +
-        year +
-        ".pdf"
-    };
-  }
-
-  function qqFindPopupButtonByText(popup, wantedText) {
-    const wanted = String(wantedText || "")
-      .trim()
-      .toLowerCase();
-
-    return Array.from(
-      popup.querySelectorAll(
-        "button, input[type='button'], input[type='submit'], a"
-      )
-    ).find(function (el) {
-      const text = String(
-        el.textContent || el.value || ""
-      )
-        .trim()
-        .toLowerCase();
-
-      return text === wanted;
-    }) || null;
-  }
-
-  function qqFindPopupTitleInput(popup) {
-    return (
-      (popup &&
-        popup.querySelector(
-          '#titleBox input[name="docTitleTextEdit"]'
-        )) ||
-      document.querySelector(
-        '#preview.file-edit-popup #titleBox input[name="docTitleTextEdit"]'
-      ) ||
-      document.querySelector(
-        '#titleBox input[name="docTitleTextEdit"]'
-      )
-    );
-  }
-
-  function qqSetInputValue(input, value) {
-    const proto =
-      input instanceof HTMLTextAreaElement
-        ? HTMLTextAreaElement.prototype
-        : HTMLInputElement.prototype;
-
-    const descriptor = Object.getOwnPropertyDescriptor(
-      proto,
-      "value"
-    );
-
-    if (descriptor && typeof descriptor.set === "function") {
-      descriptor.set.call(input, value);
-    } else {
-      input.value = value;
-    }
-
-    ["input", "change", "keyup"].forEach(function (eventName) {
-      input.dispatchEvent(
-        new Event(eventName, {
-          bubbles: true
-        })
-      );
-    });
-  }
-
-  function qqFixPopupFileName(popup, fixButton, attempt) {
-    attempt = attempt || 0;
-
-    // QQ may rebuild or replace the popup after Edit is clicked,
-    // so always get the current popup again.
-    const activePopup =
-      document.querySelector("#preview.file-edit-popup") ||
-      popup;
-
-    const titleInput =
-      qqFindPopupTitleInput(activePopup);
-
-    if (!titleInput) {
-      if (attempt < 15) {
-        setTimeout(function () {
-          qqFixPopupFileName(
-            activePopup,
-            fixButton,
-            attempt + 1
-          );
-        }, 200);
-
-        return;
-      }
-
-      toast("Could not find QQ's Title field.");
-      return;
-    }
-
-    // Click QQ's Edit button if the field is disabled or read-only.
-    if (titleInput.disabled || titleInput.readOnly) {
-      const editButton =
-        qqFindPopupButtonByText(
-          activePopup,
-          "Edit"
-        );
-
-      if (editButton && attempt === 0) {
-        editButton.click();
-      }
-
-      if (attempt < 15) {
-        setTimeout(function () {
-          qqFixPopupFileName(
-            document.querySelector(
-              "#preview.file-edit-popup"
-            ) || activePopup,
-            fixButton,
-            attempt + 1
-          );
-        }, 200);
-
-        return;
-      }
-
-      toast("QQ's Title field is still locked.");
-      return;
-    }
-
-    const result =
-      qqBuildReadableFileName(
-        titleInput.value
-      );
-
-    if (result.error) {
-      toast(result.error);
-      return;
-    }
-
-    qqSetInputValue(
-      titleInput,
-      result.name
-    );
-
-    titleInput.focus();
-    titleInput.select();
-
-    if (fixButton) {
-      const originalText =
-        fixButton.textContent;
-
-      fixButton.textContent = "Fixed ✓";
-
-      setTimeout(function () {
-        fixButton.textContent =
-          originalText;
-      }, 1400);
-    }
-
-    toast(
-      "Name fixed. Click Save to apply it."
-    );
-  }
-
   function addOpenPdfButtonToPopup() {
-    const popup = document.querySelector(
-      "#preview.file-edit-popup"
-    );
-
-    if (
-      !popup ||
-      getComputedStyle(popup).display === "none"
-    ) {
-      return;
-    }
+    const popup = document.querySelector("#preview.file-edit-popup");
+    if (!popup || getComputedStyle(popup).display === "none") return;
 
     const img = popup.querySelector("img");
-
-    if (
-      !img ||
-      !/DownloadQuickFile/i.test(img.src || "")
-    ) {
-      return;
-    }
-
-    if (
-      popup.querySelector(".mci-popup-file-actions")
-    ) {
-      return;
-    }
+    if (!img || !/DownloadQuickFile/i.test(img.src || "")) return;
+    if (popup.querySelector(".mci-open-popup-btn")) return;
 
     let id = "";
+    try { id = new URL(img.src, location.origin).searchParams.get("id") || ""; } catch (e) {}
+    if (!id) return;
 
-    try {
-      id =
-        new URL(
-          img.src,
-          location.origin
-        ).searchParams.get("id") || "";
-    } catch (e) {}
-
-    if (!id) {
-      return;
-    }
-
-    const actions = document.createElement("div");
-
-    actions.className = "mci-popup-file-actions";
-
-    Object.assign(actions.style, {
+    const btn = document.createElement("button");
+    btn.textContent = "Open PDF in New Tab";
+    btn.className = "mci-open-popup-btn";
+    Object.assign(btn.style, {
       marginTop: "10px",
-      display: "flex",
-      alignItems: "center",
-      gap: "8px",
-      flexWrap: "wrap"
+      display: "block",
+      background: "#1f6feb",
+      color: "#fff",
+      padding: "8px 12px",
+      border: "none",
+      borderRadius: "6px",
+      cursor: "pointer"
     });
 
-    function stylePopupButton(btn) {
-      Object.assign(btn.style, {
-        display: "inline-block",
-        background: "#1f6feb",
-        color: "#fff",
-        padding: "8px 12px",
-        border: "none",
-        borderRadius: "6px",
-        cursor: "pointer",
-        fontWeight: "600",
-        transition:
-          "background 0.18s ease, transform 0.12s ease, box-shadow 0.18s ease"
-      });
+    btn.addEventListener("click", function () {
+      window.open(location.origin + "/FileUpload/DownloadFile/" + id + "?preview=true", "_blank");
+    });
 
-      btn.addEventListener("mouseenter", function () {
-        btn.style.background = "#388bfd";
-        btn.style.transform = "translateY(-2px)";
-        btn.style.boxShadow = "0 5px 12px rgba(0, 0, 0, 0.28)";
-      });
-
-      btn.addEventListener("mouseleave", function () {
-        btn.style.background = "#1f6feb";
-        btn.style.transform = "translateY(0)";
-        btn.style.boxShadow = "none";
-      });
-
-      btn.addEventListener("mousedown", function () {
-        btn.style.transform = "translateY(0)";
-        btn.style.boxShadow = "0 2px 5px rgba(0, 0, 0, 0.25)";
-      });
-
-      btn.addEventListener("mouseup", function () {
-        btn.style.transform = "translateY(-2px)";
-        btn.style.boxShadow = "0 5px 12px rgba(0, 0, 0, 0.28)";
-      });
-    }
-
-    const openButton =
-      document.createElement("button");
-
-    openButton.type = "button";
-    openButton.textContent =
-      "Open PDF in New Tab";
-    openButton.className =
-      "mci-open-popup-btn";
-
-    stylePopupButton(openButton);
-
-    openButton.addEventListener(
-      "click",
-      function () {
-        window.open(
-          location.origin +
-            "/FileUpload/DownloadFile/" +
-            id +
-            "?preview=true",
-          "_blank"
-        );
-      }
-    );
-
-    const fixButton =
-      document.createElement("button");
-
-    fixButton.type = "button";
-    fixButton.textContent = "Fix Name";
-    fixButton.className =
-      "mci-fix-popup-name-btn";
-
-    stylePopupButton(fixButton);
-
-    fixButton.addEventListener(
-      "click",
-      function () {
-        qqFixPopupFileName(
-          popup,
-          fixButton,
-          0
-        );
-      }
-    );
-
-    actions.appendChild(openButton);
-    actions.appendChild(fixButton);
-    popup.appendChild(actions);
+    popup.appendChild(btn);
   }
 
   function startPdfPopupObserver() {
@@ -928,9 +635,10 @@
     IS_QQ ? {
       label: "QQ Helpers",
       items: [
-      { type: "button", id: "mci_pdf_open", text: "📄 Open PDFs (Smart)", className: "mci-btn qq-pdf" },
-      { type: "button", id: "mci_qq_download_selected", text: "📥 Download Files", className: "mci-btn qq-download" },
-      { type: "button", id: "mci_fix_names", text: "🧾Show Full File Names", className: "mci-btn qq-names" },
+        { type: "button", id: "mci_pdf_open", text: "📄 Open PDFs (Smart)", className: "mci-btn qq-pdf" },
+        { type: "button", id: "mci_qq_download_selected", text: "📥 Download Files", className: "mci-btn qq-download" },
+        { type: "button", id: "mci_fix_names", text: "🧾 Show Full File Names", className: "mci-btn qq-names" },
+        { type: "button", id: "mci_copy_qq_customer_id", text: "🆔 Copy Customer ID", className: "mci-btn brand" },
         { type: "rowControls" }
       ]
     } : null,
@@ -1032,7 +740,8 @@
               left:  { id: "mci_fd_flood_beyond", text: "Beyond Floods", title: "Trigger Beyond Floods downloader" },
               right: { id: "mci_fd_flood_nfip",   text: "NFIP Flood",   title: "Trigger NFIP Flood downloader" }
             },
-            { type: "button", id: "mci_fd_ncjua", text: "NCJUA", className: "mci-btn green" }
+            { type: "button", id: "mci_fd_ncjua", text: "NCJUA", className: "mci-btn green" },
+            { type: "button", id: "mci_fd_orion180", text: "Orion 180", className: "mci-btn orion180" }
           ]
         }
       ]
@@ -1083,6 +792,7 @@
           left:  { id: "mci_county_run", text: "📍 County Finder", title: "Run County Finder using selection / hover / page detection" },
           right: { id: "mci_county_manual", text: "✏️",title: "Open manual address entry" }
         },
+        { type: "button", id: "mci_fema_map", text: "🌊 FEMA Map", className: "mci-btn fema-map" },
         { type: "button", id: "mci_cashCenter", text: "💵 Cash Payment", className: "mci-btn brand" },
         { type: "button", id: "mci_fax",        text: "📠 Fax", className: "mci-btn brand" },
         { type: "button", id: "mci_draw_tool",  text: "🎨 Draw Tool", className: "mci-btn draw-gradient" }
@@ -1305,6 +1015,7 @@
         '.mci-btn:active{transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.4)!important}' +
         '.mci-btn.primary{background:#1f6feb}.mci-btn.primary:hover{background:#2b79f0}' +
         '.mci-btn.green{background:#3ba55d}.mci-btn.green:hover{background:#44b569}' +
+        '.mci-btn.orion180{background:#D50032}.mci-btn.orion180:hover{background:#e51b49}' +
         '.mci-btn.blue{background:#007EF5}.mci-btn.blue:hover{background:#2b6ef5}' +
         '.mci-btn.purple{background:#7b68ee}.mci-btn.purple:hover{background:#6c5ce7}' +
         '.mci-btn.brand{background:#1e40af}.mci-btn.brand:hover{background:#1e3a8a}' +
@@ -1428,6 +1139,8 @@
         '.mci-btn.vin-nhtsa{background:#0f766e}.mci-btn.vin-nhtsa:hover{background:#0d857c}' +
         '.mci-btn.vin-google{background:#b45309}.mci-btn.vin-google:hover{background:#c2410c}' +
         '.mci-btn.vin-copy{background:#5b21b6}.mci-btn.vin-copy:hover{background:#6d28d9}' +
+        '.mci-btn.fema-map{background:linear-gradient(135deg,#0284c7 0%,#06b6d4 55%,#14b8a6 100%);color:#ffffff;border:1px solid rgba(255,255,255,.18)}' +
+        '.mci-btn.fema-map:hover{filter:brightness(1.08);transform:translateY(-1px)}' +
 
         '.qq-row-controls{display:flex;gap:8px;align-items:center}' +
         '#mci_row_color{width:26px;height:29px;border:none;padding:0;background:none;cursor:pointer;}' +
@@ -1727,6 +1440,23 @@
         else toast("File names returned to normal.");
       });
 
+      onClick("mci_copy_qq_customer_id", function () {
+        const result = getQQCustomerId();
+
+        if (!result.id) {
+          toast(result.error || "QQ Customer ID not found.");
+          return;
+        }
+
+        try {
+          GM_setClipboard(result.id);
+          toast("QQ Customer ID " + result.id + " copied.");
+        } catch (e) {
+          console.warn("[MCI Toolbox] Could not copy QQ Customer ID:", e);
+          toast("Could not copy QQ Customer ID.");
+        }
+      });
+
       onClick("mci_row_highlight", function () {
         const count = attachRowHighlighter();
         toast(count ? ("Row highlighter active on " + count + " row(s).") : "No rows found to highlight on this page.");
@@ -1852,6 +1582,26 @@
       } catch (e) {
         toast("Could not copy VIN.");
       }
+    });
+
+    onClick("mci_fema_map", function () {
+      const femaUrl = "https://msc.fema.gov/portal/search";
+
+      if (location.href.startsWith(femaUrl)) {
+        window.dispatchEvent(new CustomEvent("mci:fema-map-open", {
+          detail: { source: "mci-menu" }
+        }));
+
+        toast("FEMA Map tool opened.");
+        return;
+      }
+
+      window.open(
+        femaUrl + "#mci-open-fema-tool=1",
+        "_blank"
+      );
+
+      toast("Opening FEMA Map page...");
     });
 
     // Cross-site tools (your separate script listens)
@@ -2025,6 +1775,16 @@
 
       triggerFileDownloader("ncjua");
       toast("NCJUA downloader triggered.");
+    });
+
+    onClick("mci_fd_orion180", function () {
+      // close sub panel + menu
+      $s("#mci_fd_panel").classList.remove("open");
+      $s("#mci_fd_toggle").textContent = "📥 File Downloader ▸";
+      setMenuOpen(false);
+
+      triggerFileDownloader("orion180");
+      toast("Orion 180 downloader triggered.");
     });
 
     // Menu links
