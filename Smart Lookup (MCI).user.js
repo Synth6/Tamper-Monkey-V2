@@ -73,6 +73,10 @@
   const NCJUA_ORIGIN = "https://insure.ncjuanciua.org";
   const NCJUA_PATH   = "/innovation";
 
+  // Jackson Sumner
+  const JSA_ORIGIN = "https://www.jsausa.com";
+  const JSA_AGENCY = "950250";
+
   // Vexcel
   const VEX_ORIGIN  = "https://app.vexcelgroup.com";
 
@@ -106,6 +110,10 @@
 
   // NCJUA
   const K_NCJUA_POL="carrier.ncjua.pol", K_NCJUA_AWAIT="carrier.ncjua.await";
+
+  // Jackson Sumner
+  const K_JSA_POL="carrier.jsa.pol", K_JSA_AWAIT="carrier.jsa.await";
+  const K_JSA_POL_GM="carrier.jsa.pol.gm", K_JSA_AWAIT_GM="carrier.jsa.await.gm";
 
   // Vexcel
   const K_VEX_ADDR="vexcel.addr", K_VEX_AWAIT="vexcel.await";
@@ -518,6 +526,35 @@
     toast(`Beyond Floods: ${p}`);
   }
 
+  // ================= Jackson Sumner =================
+  function normalizeJacksonSumnerPolicy(pol){
+    return String(pol || "").replace(/\s+/g, "").trim();
+  }
+
+  function jacksonSumnerPolicyUrl(pol){
+    return JSA_ORIGIN + "/download/index.php?path=/" + encodeURIComponent(JSA_AGENCY) + "/" + encodeURIComponent(pol);
+  }
+
+  function openJacksonSumner(pol){
+    const p = normalizeJacksonSumnerPolicy(pol);
+    if(!p){ toast("No Jackson Sumner policy detected."); return; }
+
+    armAutomations(Date.now());
+    try{
+      sessionStorage.setItem(K_JSA_POL, p);
+      sessionStorage.setItem(K_JSA_AWAIT, "1");
+    }catch(_){}
+    try{
+      if (typeof GM_setValue === "function"){
+        GM_setValue(K_JSA_POL_GM, p);
+        GM_setValue(K_JSA_AWAIT_GM, "1");
+      }
+    }catch(_){}
+
+    window.open(jacksonSumnerPolicyUrl(p), "_blank");
+    toast(`Jackson Sumner: ${p}`);
+  }
+
   /* ================= ALT+RIGHT-CLICK CHOOSER (PINNED) ================= */
   GM_addStyle(`
     #mci-hover-chooser{
@@ -552,6 +589,19 @@
   const HoverChooser = (function(){
     let el=null, sel=null, sub=null;
     let x=40, y=40;
+
+    function policyOptions(){
+      return [
+        {value:"pol_erie",          label:"Policy: Erie"},
+        {value:"pol_natgen",        label:"Policy: NatGen"},
+        {value:"pol_progressive",   label:"Policy: Progressive"},
+        {value:"pol_nfip",          label:"Policy: NFIP"},
+        {value:"pol_beyondfloods",  label:"Policy: Beyond Floods"},
+        {value:"pol_orion180",      label:"Policy: Orion180"},
+        {value:"pol_jacksonsumner", label:"Policy: Jackson Sumner"},
+        {value:"pol_ncjua",         label:"Policy: NCJUA"}
+      ];
+    }
 
     function ensure(){
       if(el) return;
@@ -624,9 +674,18 @@
       setTimeout(() => sel.focus(), 0);
     }
 
-    function openPinned(text, clientX, clientY){
+    function openPolicyPinned(pol, clientX, clientY){
+      const p=String(pol||"").trim();
+      if(!p){ toast("No policy detected."); return; }
+      x = (typeof clientX === "number") ? clientX : 40;
+      y = (typeof clientY === "number") ? clientY : 40;
+      show(policyOptions(), {pol:p}, p);
+    }
+
+    function openPinned(text, clientX, clientY, opts){
       const t=String(text||"").trim();
       if(!t){ toast("No text detected."); return; }
+      const allowPolicy = !opts || opts.allowPolicy !== false;
 
       x = (typeof clientX === "number") ? clientX : 40;
       y = (typeof clientY === "number") ? clientY : 40;
@@ -646,17 +705,9 @@
       }
 
       const pol = extractPolicy(t);
-      if(pol){
+      if(allowPolicy && pol){
         show(
-          [
-            {value:"pol_erie",        label:"Policy: Erie"},
-            {value:"pol_natgen",      label:"Policy: NatGen"},
-            {value:"pol_progressive", label:"Policy: Progressive"},
-            {value:"pol_nfip",        label:"Policy: NFIP"},
-            {value:"pol_beyondfloods",label:"Policy: Beyond Floods"},
-            {value:"pol_orion180",    label:"Policy: Orion180"},
-            {value:"pol_ncjua",       label:"Policy: NCJUA"}
-          ],
+          policyOptions(),
           {pol},
           pol
         );
@@ -666,7 +717,7 @@
       toast("No address or policy detected.");
     }
 
-    return { openPinned, hide };
+    return { openPinned, openPolicyPinned, hide };
   })();
 
   function runChooserAction(action, payload){
@@ -683,8 +734,30 @@
     if(action==="pol_nfip")        return openNFIP(payload.pol);
     if(action==="pol_beyondfloods") return openBeyondFloods(payload.pol);
     if(action==="pol_orion180")    return openOrion180(payload.pol);
+    if(action==="pol_jacksonsumner") return openJacksonSumner(payload.pol);
     if(action==="pol_ncjua")       return openNCJUA(payload.pol);
   }
+
+function isQQCatalystPage(){
+  return /(?:^|\.)qqcatalyst\.com$/i.test(location.hostname || "");
+}
+
+function findQQPolicyNumberElement(target){
+  try{
+    let el = target && target.nodeType === 1 ? target : target && target.parentElement;
+    if(!el || !el.closest) return null;
+    const direct = el.closest('[data-autom="policyno"].policynumber');
+    if(direct && direct.closest('.right-policy-summary-content')) return direct;
+    const container = el.closest('.right-policy-summary-content');
+    if(!container) return null;
+    return container.querySelector('[data-autom="policyno"].policynumber');
+  }catch(_){}
+  return null;
+}
+
+function getQQPolicyNumberFromElement(el){
+  return String((el && el.getAttribute("title")) || (el && el.textContent) || "").replace(/\s+/g, " ").trim();
+}
 
 // ALT + RIGHT-CLICK opens chooser pinned at cursor
 document.addEventListener("contextmenu", (e) => {
@@ -693,7 +766,9 @@ document.addEventListener("contextmenu", (e) => {
   const tag = (e.target && e.target.tagName || "").toLowerCase();
   if (tag === "input" || tag === "textarea" || (e.target && e.target.isContentEditable)) return;
 
-  function getTextUnderCursor(evt) {
+  const qqPolicyEl = isQQCatalystPage() ? findQQPolicyNumberElement(e.target) : null;
+
+  function getTextUnderCursor(evt, allowPolicy) {
     try {
       let node = document.elementFromPoint(evt.clientX, evt.clientY);
       if (!node) return "";
@@ -705,7 +780,8 @@ document.addEventListener("contextmenu", (e) => {
       let cur = node;
       while (cur && cur !== document.body) {
         const t = ((cur.innerText || cur.textContent) || "").trim();
-        if (t && extractPolicy(t)) return t;
+        if (t && allowPolicy && extractPolicy(t)) return t;
+        if (t && !allowPolicy && t.length <= 120) return t;
         cur = cur.parentElement;
       }
 
@@ -737,15 +813,136 @@ document.addEventListener("contextmenu", (e) => {
     if (sel && sel.removeAllRanges) sel.removeAllRanges();
   } catch (_) {}
 
-  const underCursor = getTextUnderCursor(e);
+  if (qqPolicyEl) {
+    const pol = getQQPolicyNumberFromElement(qqPolicyEl);
+    if (pol) {
+      HoverChooser.openPolicyPinned(pol, e.clientX, e.clientY);
+      return;
+    }
+  }
+
+  const allowPolicy = !isQQCatalystPage();
+  const underCursor = getTextUnderCursor(e, allowPolicy);
   const selected = (window.getSelection && window.getSelection().toString().trim()) || "";
   const hovered = getSelectedOrHoverText();
   const txt = underCursor || selected || hovered;
 
-  HoverChooser.openPinned(txt, e.clientX, e.clientY);
+  HoverChooser.openPinned(txt, e.clientX, e.clientY, {allowPolicy});
 }, true);
 
   /* ================= ON-SITE AUTOMATIONS (ONLY IF ARMED/TOKEN) ================= */
+
+  // Jackson Sumner: preserve direct policy lookup through login redirects.
+  if (location.hostname === "www.jsausa.com") {
+    (function jacksonSumnerAuto(){
+      try { if (window.top !== window.self) return; } catch(_) { return; }
+
+      const fromUrl = getJacksonSumnerPolicyFromUrl();
+      let pol = fromUrl || getPendingJacksonSumnerPolicy();
+      pol = normalizeJacksonSumnerPolicy(pol);
+      if (!pol) return;
+
+      if (isJacksonSumnerLoginPage()) {
+        persistJacksonSumnerPending(pol);
+        toast("Jackson Sumner: login detected - automation paused. Log in, then continue.", 5000);
+        return;
+      }
+
+      const wanted = jacksonSumnerPolicyUrl(pol);
+      if (!isJacksonSumnerPolicyUrlFor(pol)) {
+        persistJacksonSumnerPending(pol);
+        location.replace(wanted);
+        return;
+      }
+
+      toast(`Jackson Sumner Policy: ${pol}`, 2200);
+      clearJacksonSumnerPending();
+      disarmAutomations();
+    })();
+  }
+
+  function persistJacksonSumnerPending(pol){
+    const p = normalizeJacksonSumnerPolicy(pol);
+    if (!p) return;
+    try{
+      sessionStorage.setItem(K_JSA_POL, p);
+      sessionStorage.setItem(K_JSA_AWAIT, "1");
+    }catch(_){}
+    try{
+      if (typeof GM_setValue === "function"){
+        GM_setValue(K_JSA_POL_GM, p);
+        GM_setValue(K_JSA_AWAIT_GM, "1");
+      }
+    }catch(_){}
+  }
+
+  function clearJacksonSumnerPending(){
+    try{
+      sessionStorage.removeItem(K_JSA_POL);
+      sessionStorage.removeItem(K_JSA_AWAIT);
+    }catch(_){}
+    try{
+      if (typeof GM_deleteValue === "function"){
+        GM_deleteValue(K_JSA_POL_GM);
+        GM_deleteValue(K_JSA_AWAIT_GM);
+      }
+    }catch(_){}
+  }
+
+  function getJacksonSumnerPolicyFromUrl(){
+    try{
+      if (!/^\/download\/index\.php$/i.test(location.pathname || "")) return "";
+      const path = new URLSearchParams(location.search || "").get("path") || "";
+      const prefix = "/" + JSA_AGENCY + "/";
+      if (!path.toLowerCase().startsWith(prefix.toLowerCase())) return "";
+      return normalizeJacksonSumnerPolicy(path.slice(prefix.length));
+    }catch(_){}
+    return "";
+  }
+
+  function getPendingJacksonSumnerPolicy(){
+    try{
+      if (sessionStorage.getItem(K_JSA_AWAIT) === "1") {
+        const pol = normalizeJacksonSumnerPolicy(sessionStorage.getItem(K_JSA_POL));
+        if (pol) return pol;
+      }
+    }catch(_){}
+    try{
+      if (typeof GM_getValue === "function" && GM_getValue(K_JSA_AWAIT_GM, "") === "1") {
+        const pol = normalizeJacksonSumnerPolicy(GM_getValue(K_JSA_POL_GM, ""));
+        if (pol) return pol;
+      }
+    }catch(_){}
+    return "";
+  }
+
+  function isJacksonSumnerPolicyUrlFor(pol){
+    const wanted = normalizeJacksonSumnerPolicy(pol).toLowerCase();
+    const current = getJacksonSumnerPolicyFromUrl().toLowerCase();
+    return !!wanted && current === wanted;
+  }
+
+  function isJacksonSumnerLoginPage(){
+    const path = String(location.pathname || "").toLowerCase();
+    if (/\/(?:login|logon|signin|sign-in|auth|authenticate)(?:\/|\.|$)/i.test(path)) return true;
+
+    function visible(el){
+      if (!el) return false;
+      const style = getComputedStyle(el);
+      if (style.visibility === "hidden" || style.display === "none") return false;
+      const r = el.getBoundingClientRect();
+      return !!(el.offsetParent || r.width || r.height);
+    }
+
+    const password = Array.from(document.querySelectorAll('input[type="password"]')).find(visible);
+    if (password) return true;
+
+    return !!Array.from(document.querySelectorAll('button,input[type="submit"],input[type="button"],a')).find(el => {
+      if (!visible(el)) return false;
+      const txt = String(el.innerText || el.value || el.textContent || "").replace(/\s+/g, " ").trim();
+      return /\b(log\s*in|sign\s*in)\b/i.test(txt);
+    });
+  }
 
   // Wake: auto-follow to Account
   (function wakeAutoFollow(){

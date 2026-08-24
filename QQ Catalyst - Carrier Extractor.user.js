@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
-// @version      1.7.1
+// @version      1.7.2
 // @description  Extract from carriers and build QQC payload. Alt+Q: Extractor.
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
@@ -17,6 +17,9 @@
 // @match        https://quoting.foragentsonly.com/*
 // @match        https://insure.ncjuanciua.org/*
 // @match        https://app.orion180.com/*
+// @match        https://webportal.ncrb.org/*
+// @match        https://www.ncrb.org/managear/*
+// @match        https://www.ncrb.org/ManageAR/*
 // @all-frames   true
 // @run-at       document-idle
 // @grant        GM_setValue
@@ -52,28 +55,24 @@
     if (host.includes('quoting.foragentsonly.com') || host.includes('foragentsonly.com')) return 'progressive';
     if (host.includes('ncjuanciua.org') || host.includes('ncjua-nciua.org') || host.includes('insure.ncjuanciua.org')) return 'ncjua';
     if (host.includes('app.orion180.com')) return 'orion180';
+    if (host.includes('webportal.ncrb.org')) return 'ratebureau';
+    if (host.includes('ncrb.org') && /\/managear\//i.test(location.pathname)) return 'ratebureau';
     return null;
   }
 
   const THIS_EXPORTER_KEY = detectCarrierKeyFromHost(location.hostname);
 
-  function ensureExporterPanelOpen() {
-    try { mountExtractorPanel(); } catch (e) { console.warn('[QQC Extractor] mountExtractorPanel failed', e); }
+  function ensureExporterPanelOpen(options = {}) {
+    try { mountExtractorPanel(options); } catch (e) { console.warn('[QQC Extractor] mountExtractorPanel failed', e); }
   }
 
   async function exporterGetCustomerData() {
-    ensureExporterPanelOpen();
+    ensureExporterPanelOpen({ autoDetectOnOpen: false });
     // trigger the same auto-detect flow your panel uses
     try {
-      const p = sanitizePayloadObject((await autoDetect()) || {});
-      lastExtracted = p;
-      try { await GM_setValue(STORAGE_KEY, p); } catch {}
-      try { extractorSetUI(p); } catch {}
-      extractorStatus(`Detected from ${p.carrier || 'page'}.`);
-      return p;
+      return await runExtractorDetection();
     } catch (e) {
       console.error('[QQC Extractor] getCustomerData error', e);
-      extractorStatus('Auto-detect failed.');
       return null;
     }
   }
@@ -139,6 +138,8 @@
   let extractorHost = null;
   let pasteHost = null;
   let lastExtracted = null; // preserves full detected payload (incl. additionalContacts)
+  let extractorDetectionPromise = null;
+  let extractorBusyTimer = null;
 
   function closeExtractorPanel() {
     if (extractorHost) {
@@ -241,6 +242,56 @@
       return (el && isVisible(el)) ? el : null;
     }, { timeout, interval });
   }
+  function waitForDomCondition(checkFn, options = {}) {
+    const timeout = options.timeout || 10000;
+    const timeoutMessage = options.timeoutMessage || 'Timed out waiting for DOM condition.';
+    const root = options.root || document.body || document.documentElement || document;
+    if (typeof MutationObserver === 'undefined') {
+      return waitFor(() => checkFn(), { timeout, interval: options.interval || 150 }).then(value => {
+        if (value) return value;
+        throw new Error(timeoutMessage);
+      });
+    }
+    return new Promise((resolve, reject) => {
+      let observer = null;
+      let timer = null;
+      let done = false;
+      const cleanup = () => {
+        if (observer) observer.disconnect();
+        if (timer) clearTimeout(timer);
+        observer = null;
+        timer = null;
+      };
+      const finish = (err, value) => {
+        if (done) return;
+        done = true;
+        cleanup();
+        err ? reject(err) : resolve(value);
+      };
+      const runCheck = () => {
+        let value = null;
+        try {
+          value = checkFn();
+        } catch (e) {
+          finish(e);
+          return;
+        }
+        if (value) finish(null, value);
+      };
+
+      runCheck();
+      if (done) return;
+
+      observer = new MutationObserver(() => runCheck());
+      observer.observe(root, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style']
+      });
+      timer = setTimeout(() => finish(new Error(timeoutMessage)), timeout);
+    });
+  }
   async function waitForText(el, predicate, opts = {}) {
     return waitFor(() => {
       const txt = T(el);
@@ -306,8 +357,117 @@
   }
 
   function hasPossibleDuplicateWarning(root = document) {
-    return Array.from(root.querySelectorAll('.title, .modal-title, .dialog-title, .warning, .section-title'))
-      .some(el => /possible duplicate/i.test((el.textContent || '').trim()));
+    return Array.from(root.querySelectorAll('.title, .modal-title, .dialog-title, .warning, .section-title, h1, h2, h3, h4'))
+      .some(el => isVisible(el) && /possible duplicate/i.test((el.textContent || '').trim()));
+  }
+
+  function findPossibleDuplicateRoot(root = document) {
+    const title = Array.from(root.querySelectorAll('.title, .modal-title, .dialog-title, .warning, .section-title, h1, h2, h3, h4, div, span'))
+      .find(el => isVisible(el) && /possible duplicate/i.test((el.textContent || '').trim()));
+    if (!title) return null;
+    return title.closest('.modal, .modal-dialog, .ui-dialog, [role="dialog"], .k-window, .bootbox, .popup, .popover') ||
+      title.closest('form') ||
+      title.parentElement ||
+      document;
+  }
+
+  function elementTextWithMetadata(el) {
+    if (!el) return '';
+    const values = [
+      el.getAttribute('title'),
+      el.getAttribute('data-original-title'),
+      el.getAttribute('aria-label'),
+      el.getAttribute('value'),
+      el.value,
+      el.textContent
+    ];
+    Array.from(el.querySelectorAll('*')).forEach(child => {
+      values.push(
+        child.getAttribute('title'),
+        child.getAttribute('data-original-title'),
+        child.getAttribute('aria-label'),
+        child.getAttribute('value'),
+        child.value
+      );
+    });
+    return values.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function getDuplicateStatusColumnIndex(table) {
+    const headers = Array.from(table?.querySelectorAll('th') || []);
+    const idx = headers.findIndex(th => /status/i.test(elementTextWithMetadata(th)));
+    return idx >= 0 ? idx : -1;
+  }
+
+  function getDuplicateCandidateStatus(row) {
+    const cells = Array.from(row.querySelectorAll('td'));
+    if (!cells.length) return '';
+    const statusIdx = getDuplicateStatusColumnIndex(row.closest('table'));
+    let cell = statusIdx >= 0 ? cells[statusIdx] : null;
+    if (!cell) {
+      cell = cells.find(td => /status/i.test([
+        td.getAttribute('aria-describedby'),
+        td.getAttribute('data-title'),
+        td.getAttribute('data-field'),
+        td.className
+      ].filter(Boolean).join(' ')));
+    }
+    if (!cell) {
+      cell = cells.find(td => /^(deleted|active|inactive|prospect|customer)\b/i.test(elementTextWithMetadata(td)));
+    }
+    return elementTextWithMetadata(cell).trim().toLowerCase();
+  }
+
+  function getPossibleDuplicateCandidates(root = document) {
+    const popup = findPossibleDuplicateRoot(root);
+    if (!popup) return [];
+    let rows = Array.from(popup.querySelectorAll('tr'));
+    if (!rows.length && popup !== document) rows = Array.from(document.querySelectorAll('tr'));
+    return rows
+      .filter(row => isVisible(row))
+      .filter(row => row.querySelectorAll('td').length > 0)
+      .map(row => ({ row, status: getDuplicateCandidateStatus(row) }));
+  }
+
+  function findCreateNewDuplicateButton(root = document) {
+    const popup = findPossibleDuplicateRoot(root) || root;
+    let button = Array.from(popup.querySelectorAll('button, input[type="button"], input[type="submit"], a'))
+      .find(el => isVisible(el) && /create\s+new/i.test(elementTextWithMetadata(el)));
+    if (!button && popup !== document) {
+      button = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a'))
+        .find(el => isVisible(el) && /create\s+new/i.test(elementTextWithMetadata(el)));
+    }
+    return button;
+  }
+
+  async function handlePossibleDuplicateWarning(payload) {
+    if (!hasPossibleDuplicateWarning()) return 'none';
+
+    const candidates = getPossibleDuplicateCandidates();
+    const statuses = candidates.map(c => c.status);
+    const deletedOnly = candidates.length > 0 && statuses.every(status => /^deleted\b/.test(status));
+
+    console.log('[QQC Extractor] Duplicate candidates:', candidates.length);
+    console.log('[QQC Extractor] Duplicate statuses:', statuses);
+    console.log('[QQC Extractor] Deleted-only duplicates:', deletedOnly);
+
+    if (deletedOnly) {
+      const createNew = findCreateNewDuplicateButton();
+      if (createNew) {
+        pasteStatus('Only deleted duplicates found. Creating new contact...');
+        hudInfo('Only deleted duplicates found. Creating new contact...');
+        console.log('[QQC Extractor] Clicking Create New after deleted-only duplicates.');
+        try { await GM_setValue(PENDING_KEY, { payload, ts: Date.now(), stage: 'details' }); } catch { }
+        createNew.click();
+        await waitFor(() => !hasPossibleDuplicateWarning() ? true : null, { timeout: 15000, interval: 200 });
+        return 'continue';
+      }
+    }
+
+    pasteStatus('Possible active duplicate found. Review manually.');
+    hudError('Possible active duplicate found.');
+    try { await GM_setValue(PENDING_KEY, {}); } catch { }
+    return 'stop';
   }
 
   async function waitForPossibleDuplicateWarning(timeout = 2500, interval = 200) {
@@ -413,6 +573,111 @@
     s.textContent = msg;
     setTimeout(() => s.textContent = '', 5000);
   }
+  function setExtractorBusy(message) {
+    if (!extractorPanel) return;
+    if (extractorBusyTimer) {
+      clearTimeout(extractorBusyTimer);
+      extractorBusyTimer = null;
+    }
+    const row = extractorPanel.querySelector('#qqc-busy-row');
+    const spinner = extractorPanel.querySelector('#qqc-busy-spinner');
+    const text = extractorPanel.querySelector('#qqc-busy-text');
+    if (row) {
+      row.style.display = 'flex';
+      row.style.background = '#eef5ff';
+      row.style.color = '#111827';
+    }
+    if (spinner) {
+      spinner.style.display = 'inline-block';
+      spinner.style.animation = '';
+      spinner.style.border = '';
+      spinner.style.width = '';
+      spinner.style.height = '';
+      spinner.textContent = '';
+    }
+    if (text) text.textContent = message || 'Getting customer data...';
+    extractorPanel.querySelectorAll('#qqc-detect, #qqc-save').forEach(btn => {
+      btn.disabled = true;
+      btn.style.opacity = '0.65';
+      btn.style.cursor = 'wait';
+    });
+  }
+  function clearExtractorBusy(message, isError = false) {
+    if (!extractorPanel) return;
+    if (extractorBusyTimer) {
+      clearTimeout(extractorBusyTimer);
+      extractorBusyTimer = null;
+    }
+    const row = extractorPanel.querySelector('#qqc-busy-row');
+    const spinner = extractorPanel.querySelector('#qqc-busy-spinner');
+    const text = extractorPanel.querySelector('#qqc-busy-text');
+    extractorPanel.querySelectorAll('#qqc-detect, #qqc-save').forEach(btn => {
+      btn.disabled = false;
+      btn.style.opacity = '';
+      btn.style.cursor = 'pointer';
+    });
+    if (!row) return;
+    if (message) {
+      row.style.display = 'flex';
+      row.style.background = isError ? '#fee2e2' : '#ecfdf5';
+      row.style.color = isError ? '#7f1d1d' : '#064e3b';
+      if (spinner) {
+        spinner.style.display = 'inline-block';
+        spinner.style.animation = 'none';
+        spinner.style.border = '0';
+        spinner.style.width = '14px';
+        spinner.style.height = '14px';
+        spinner.textContent = isError ? '\u2715' : '\u2713';
+      }
+      if (text) text.textContent = message;
+      extractorBusyTimer = setTimeout(() => {
+        if (row && row.isConnected) row.style.display = 'none';
+        if (spinner && spinner.isConnected) {
+          spinner.style.animation = '';
+          spinner.style.border = '';
+          spinner.style.width = '';
+          spinner.style.height = '';
+          spinner.textContent = '';
+        }
+        extractorBusyTimer = null;
+      }, 2000);
+    } else {
+      row.style.display = 'none';
+    }
+  }
+  async function runExtractorDetection() {
+    if (extractorDetectionPromise) return await extractorDetectionPromise;
+    setExtractorBusy('Getting customer data...');
+    extractorDetectionPromise = (async () => {
+      try {
+        const p = sanitizePayloadObject((await autoDetect()) || {});
+        lastExtracted = p;
+        try { await GM_setValue(STORAGE_KEY, p); } catch { }
+        try { extractorSetUI(p); } catch { }
+        try {
+          const ct = extractorPanel?.querySelector('#qqc-ct-ex');
+          const cu = extractorPanel?.querySelector('#qqc-cust-ex');
+          if (ct && p.source === 'rate-bureau-ncrb-managear') ct.value = p.contactType || 'Prospects';
+          if (cu && p.source === 'rate-bureau-ncrb-managear') cu.value = p.customerType || 'Commercial';
+          else if (cu) cu.value = p.customerType || (p.businessName ? 'Commercial' : 'Personal');
+        } catch { }
+        extractorStatus(p.extractorStatus || `Detected from ${p.carrier || 'page'}.`);
+        const readyMessage = p.extractorStatus === 'Applicant detected, but owner information could not be loaded.'
+          ? 'Applicant loaded - owner information unavailable'
+          : 'Customer data ready';
+        clearExtractorBusy(readyMessage, false);
+        return p;
+      } catch (e) {
+        console.error('[QQC Extractor] auto-detect error', e);
+        extractorStatus('Auto-detect failed.');
+        clearExtractorBusy('Could not get customer data', true);
+        throw e;
+      } finally {
+        extractorDetectionPromise = null;
+      }
+    })();
+    return await extractorDetectionPromise;
+  }
   function buildExtractorPanel() {
     if (extractorPanel && extractorHost?.isConnected) return extractorPanel;
     closeExtractorPanel();
@@ -427,6 +692,8 @@
         :host{ all:initial; }
         *{ box-sizing:border-box; font-family:system-ui,Segoe UI,Arial,sans-serif; }
         button,select,input,textarea{ font:inherit; }
+        @keyframes qqc-spin{to{transform:rotate(360deg)}}
+        #qqc-busy-spinner{width:14px;height:14px;border:2px solid #bfdbfe;border-top-color:#2563eb;border-radius:50%;animation:qqc-spin .8s linear infinite;flex:0 0 auto;}
       </style>
       <div id="qqc-extractor-panel" style="width:405px;background:#729cf7;color:#000;border:1px solid #374151;border-radius:8px;font:12px system-ui;box-shadow:0 8px 24px rgba(0,0,0,.35)">
       <div id="qqc-header-ex" style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#758cad;border-bottom:1px solid #374151;border-radius:8px 8px 0 0;gap:8px;">
@@ -447,6 +714,10 @@
         </div>
       </div>
       <div style="padding:10px;max-height:65vh;overflow:auto;">
+        <div id="qqc-busy-row" style="display:none;align-items:center;gap:7px;margin-bottom:8px;padding:6px 8px;border:1px solid rgba(37,99,235,.25);border-radius:6px;background:#eef5ff;color:#111827;font-size:12px;">
+          <span id="qqc-busy-spinner"></span>
+          <span id="qqc-busy-text">Getting customer data...</span>
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <label>First<input id="qqc-first" style="width:100%"></label>
           <label>Middle<input id="qqc-middle" style="width:100%"></label>
@@ -1928,8 +2199,280 @@ function extractProgressiveFAO() {
     };
   }
 
+  // ============================================================
+  // RATE BUREAU (NCRB / ManageAR)
+  // Jackson Sumner workflow
+  // ============================================================
+  function isRateBureauPortalPage() {
+    return /webportal\.ncrb\.org$/i.test(location.hostname);
+  }
+
+  function isRateBureauManageARPage() {
+    return /www\.ncrb\.org$/i.test(location.hostname) &&
+      /^\/managear\//i.test(location.pathname || '');
+  }
+
+  function isRateBureauWorklistPage() {
+    if (!isRateBureauManageARPage()) return false;
+    return (new URLSearchParams(location.search).get('pcd') || '').toLowerCase() === 'worklist';
+  }
+
+  function isRateBureauApplicantPage() {
+    if (!isRateBureauManageARPage()) return false;
+    return ((new URLSearchParams(location.search).get('pcd') || '').toLowerCase() === 'applicant') ||
+      !!document.getElementById('Content_NameText');
+  }
+
+  function findRateBureauManageARLink() {
+    const launch = document.querySelector('a[href*="PortalLaunchApp.aspx?appId=33"]');
+    if (launch) return launch;
+    return SA('a').find(a => /managear/i.test(T(a)));
+  }
+
+  function openRateBureauManageAR() {
+    const link = findRateBureauManageARLink();
+    if (!link) return false;
+    link.click();
+    return true;
+  }
+
+  function findRateBureauWorklistLink() {
+    return document.querySelector('a[href*="Default.aspx?pcd=worklist"]');
+  }
+
+  function openRateBureauWorklist() {
+    const link = findRateBureauWorklistLink();
+    if (!link) return false;
+    link.click();
+    return true;
+  }
+
+  function getRateBureauInputValue(id) {
+    const el = document.getElementById(id);
+    if (!el) return '';
+    if (el.tagName === 'SELECT') return (el.options[el.selectedIndex]?.text || el.value || '').trim();
+    return V(el);
+  }
+
+  function extractRateBureauManageArId() {
+    const text = (document.body?.innerText || document.body?.textContent || '').replace(/\s+/g, ' ');
+    const match = text.match(/ManageAR\s*ID\s*:\s*([A-Za-z0-9-]+)/i);
+    return match ? match[1].trim() : '';
+  }
+
+  function parseRateBureauOwnerName(fullName) {
+    const original = (fullName || '').trim();
+    const parts = original.split(/\s+/).filter(Boolean);
+    if (!parts.length) return { firstName: '', middleName: '', lastName: '', ownerFullName: original };
+    return {
+      firstName: toNameCase(parts[0]),
+      middleName: '',
+      lastName: toNameCase(parts.slice(1).join(' ')),
+      ownerFullName: original
+    };
+  }
+
+  function parseRateBureauOwnershipPercent(value) {
+    const match = String(value || '').replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+    return match ? parseFloat(match[0]) : NaN;
+  }
+
+  function getRateBureauOfficerCellText(row, columnNumber) {
+    const cell = row.querySelector(`[aria-describedby="OfficersGrid_columnheader_${columnNumber}"]`);
+    return cell ? T(cell).replace(/\s+/g, ' ') : '';
+  }
+
+  function parseRateBureauOwnersDocument(doc) {
+    const grid = doc && doc.querySelector ? doc.querySelector('#OfficersGrid') : null;
+    if (!grid) return [];
+
+    return Array.from(grid.querySelectorAll('tr')).map(row => ({
+      fullName: getRateBureauOfficerCellText(row, 1),
+      title: getRateBureauOfficerCellText(row, 2),
+      coverage: getRateBureauOfficerCellText(row, 5),
+      salary: getRateBureauOfficerCellText(row, 6),
+      ownershipPercent: getRateBureauOfficerCellText(row, 7),
+      dob: toMMDDYYYY(getRateBureauOfficerCellText(row, 8)),
+      duties: getRateBureauOfficerCellText(row, 9),
+      classCode: getRateBureauOfficerCellText(row, 10)
+    })).filter(owner => owner.fullName);
+  }
+
+  function selectRateBureauPrimaryOwner(owners) {
+    if (!owners || !owners.length) return null;
+    let selected = owners[0];
+    let selectedPct = parseRateBureauOwnershipPercent(selected.ownershipPercent);
+    owners.slice(1).forEach(owner => {
+      const pct = parseRateBureauOwnershipPercent(owner.ownershipPercent);
+      if (!Number.isNaN(pct) && (Number.isNaN(selectedPct) || pct > selectedPct)) {
+        selected = owner;
+        selectedPct = pct;
+      }
+    });
+    return selected;
+  }
+
+  async function fetchRateBureauOwnersHtml(appid) {
+    if (!appid) return '';
+    const url = new URL(`Default.aspx?pcd=officers&appid=${encodeURIComponent(appid)}`, location.href).href;
+    const response = await fetch(url, { method: 'GET', credentials: 'same-origin' });
+    if (!response.ok) throw new Error(`Owners request failed: ${response.status}`);
+    return await response.text();
+  }
+
+  async function loadRateBureauOwnersHtmlWithIframe(appid) {
+    if (!appid) return '';
+    const url = new URL(`Default.aspx?pcd=officers&appid=${encodeURIComponent(appid)}`, location.href).href;
+    return await new Promise((resolve, reject) => {
+      const iframe = document.createElement('iframe');
+      let done = false;
+      const finish = (err, html) => {
+        if (done) return;
+        done = true;
+        try { iframe.remove(); } catch (e) {}
+        err ? reject(err) : resolve(html || '');
+      };
+      iframe.style.cssText = 'display:none;width:0;height:0;border:0;';
+      iframe.onload = () => {
+        try {
+          finish(null, iframe.contentDocument?.documentElement?.outerHTML || '');
+        } catch (e) {
+          finish(e);
+        }
+      };
+      iframe.onerror = () => finish(new Error('Owners iframe failed to load.'));
+      setTimeout(() => finish(new Error('Owners iframe timed out.')), 12000);
+      iframe.src = url;
+      document.documentElement.appendChild(iframe);
+    });
+  }
+
+  async function getRateBureauOwners(appid) {
+    let html = '';
+    try {
+      html = await fetchRateBureauOwnersHtml(appid);
+    } catch (fetchError) {
+      console.warn('[QQC Extractor] NCRB Owners fetch failed; trying hidden iframe fallback', fetchError);
+      html = await loadRateBureauOwnersHtmlWithIframe(appid);
+    }
+    if (!html) return [];
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    return parseRateBureauOwnersDocument(doc);
+  }
+
+  function rateBureauBasePayload(statusMessage) {
+    return {
+      carrier: 'Jackson Sumner',
+      source: 'rate-bureau-ncrb-managear',
+      sourceUrl: location.href,
+      firstName: '',
+      middleName: '',
+      lastName: '',
+      suffix: '',
+      businessName: '',
+      dba: '',
+      ein: '',
+      primaryPhone: '',
+      phoneType: '',
+      primaryEmail: '',
+      contactType: 'Prospects',
+      customerType: 'Commercial',
+      status: 'Active',
+      requestedEffectiveDate: '',
+      legalStatus: '',
+      manageArId: '',
+      manageArAppId: new URLSearchParams(location.search).get('appid') || '',
+      ownerFullName: '',
+      ownerTitle: '',
+      ownerOwnershipPercent: '',
+      ownerDob: '',
+      owners: [],
+      extractorStatus: statusMessage || 'Rate Bureau detected.',
+      address: { line1: '', line2: '', city: '', state: '', zip: '' }
+    };
+  }
+
+  async function extractRateBureauApplicant() {
+    setExtractorBusy('Reading Rate Bureau applicant...');
+    const appid = new URLSearchParams(location.search).get('appid') || '';
+    const businessName = getRateBureauInputValue('Content_NameText');
+    const dba = getRateBureauInputValue('Content_DBAText');
+    const ein = getRateBureauInputValue('Content_FEINMask').replace(/[^\d]/g, '');
+    const phoneDigits = getRateBureauInputValue('Content_PhoneMask').replace(/[^\d]/g, '');
+    const email = getRateBureauInputValue('Content_txtEmail').toLowerCase();
+    const stateEl = document.getElementById('Content_StateList');
+    const stateValue = (stateEl?.value || '').trim().toUpperCase();
+    const stateText = getRateBureauInputValue('Content_StateList').toUpperCase();
+    const state = /^[A-Z]{2}$/.test(stateValue) ? stateValue : (/^[A-Z]{2}$/.test(stateText) ? stateText : '');
+    const zip = getRateBureauInputValue('Content_ZipMask').replace(/[^\d]/g, '').slice(0, 5);
+    let owners = [];
+    let ownerLoadFailed = false;
+
+    try {
+      setExtractorBusy('Reading Rate Bureau owner...');
+      owners = await getRateBureauOwners(appid);
+    } catch (e) {
+      ownerLoadFailed = true;
+      console.warn('[QQC Extractor] NCRB Owners could not be loaded', e);
+    }
+
+    const primaryOwner = selectRateBureauPrimaryOwner(owners);
+    const ownerName = parseRateBureauOwnerName(primaryOwner?.fullName || '');
+    const extractorStatusText = ownerLoadFailed
+      ? 'Applicant detected, but owner information could not be loaded.'
+      : (primaryOwner ? 'Rate Bureau applicant + owner detected.' : 'No owner/officer found. Enter First and Last manually.');
+    setExtractorBusy('Preparing customer data...');
+
+    return {
+      carrier: 'Jackson Sumner',
+      source: 'rate-bureau-ncrb-managear',
+      sourceUrl: location.href,
+      firstName: ownerName.firstName,
+      middleName: '',
+      lastName: ownerName.lastName,
+      suffix: '',
+      businessName,
+      dba,
+      ein,
+      primaryPhone: phoneDigits,
+      phoneType: formatPhone(phoneDigits),
+      primaryEmail: email,
+      contactType: 'Prospects',
+      customerType: 'Commercial',
+      status: 'Active',
+      requestedEffectiveDate: toMMDDYYYY(getRateBureauInputValue('Content_RequestedEffDateMask')),
+      legalStatus: getRateBureauInputValue('Content_LegalStatusList'),
+      manageArId: extractRateBureauManageArId(),
+      manageArAppId: appid,
+      ownerFullName: ownerName.ownerFullName,
+      ownerTitle: primaryOwner?.title || '',
+      ownerOwnershipPercent: primaryOwner?.ownershipPercent || '',
+      ownerDob: primaryOwner?.dob || '',
+      owners,
+      extractorStatus: extractorStatusText,
+      address: {
+        line1: getRateBureauInputValue('Content_AddressText'),
+        line2: '',
+        city: getRateBureauInputValue('Content_CityText'),
+        state,
+        zip
+      }
+    };
+  }
+
+  try {
+    PAGE_WINDOW.findRateBureauManageARLink = findRateBureauManageARLink;
+    PAGE_WINDOW.openRateBureauManageAR = openRateBureauManageAR;
+    PAGE_WINDOW.findRateBureauWorklistLink = findRateBureauWorklistLink;
+    PAGE_WINDOW.openRateBureauWorklist = openRateBureauWorklist;
+  } catch (e) {}
+
 
   async function autoDetect() {
+    if (isRateBureauApplicantPage()) return await extractRateBureauApplicant();
+    if (isRateBureauWorklistPage()) return rateBureauBasePayload('Select a ManageAR application from the Worklist first.');
+    if (isRateBureauPortalPage()) return rateBureauBasePayload('Rate Bureau detected. Open ManageAR.');
+    if (isRateBureauManageARPage()) return rateBureauBasePayload('Rate Bureau detected. Open Worklist.');
     if (hasErieProfileEmailAnchor()) return await extractErieProfile();
     if (isProgressiveFAO()) return extractProgressiveFAO();
     if (isNatGenNamedInsured()) return extractNatGenNamedInsured();
@@ -1948,43 +2491,28 @@ function extractProgressiveFAO() {
     return { carrier: location.hostname, sourceUrl: location.href, address: {} };
   }
 
-  function mountExtractorPanel() {
+  function mountExtractorPanel(options = {}) {
+    const autoDetectOnOpen = options.autoDetectOnOpen !== false;
     const el = buildExtractorPanel();
 
     el.querySelector('#qqc-detect').onclick = async () => {
       try {
-        const p = sanitizePayloadObject((await autoDetect()) || {});
-        lastExtracted = p;
-        try { await GM_setValue(STORAGE_KEY, p); } catch { }
-        extractorSetUI(p);
-        // reflect to header selectors (do not override Contact type; keep user's choice/default)
-        const ct = extractorPanel.querySelector('#qqc-ct-ex');
-        const cu = extractorPanel.querySelector('#qqc-cust-ex');
-        if (cu) cu.value = p.customerType || (p.businessName ? 'Commercial' : 'Personal');
-        extractorStatus(`Detected from ${p.carrier || 'page'}.`);
+        await runExtractorDetection();
       } catch (e) {
         console.error(e);
-        extractorStatus('Auto-detect failed.');
       }
     };
 
     // Auto-run detection on panel open
-    (async () => {
-      try {
-        const p = sanitizePayloadObject((await autoDetect()) || {});
-        lastExtracted = p;
-        try { await GM_setValue(STORAGE_KEY, p); } catch { }
-        extractorSetUI(p);
-        // reflect to header selectors (do not override Contact type; keep user's choice/default)
-        const ct = extractorPanel.querySelector('#qqc-ct-ex');
-        const cu = extractorPanel.querySelector('#qqc-cust-ex');
-        if (cu) cu.value = p.customerType || (p.businessName ? 'Commercial' : 'Personal');
-        extractorStatus(`Detected from ${p.carrier || 'page'}.`);
-      } catch (e) {
-        console.error(e);
-        extractorStatus('Auto-detect failed.');
-      }
-    })();
+    if (autoDetectOnOpen) {
+      (async () => {
+        try {
+          await runExtractorDetection();
+        } catch (e) {
+          console.error(e);
+        }
+      })();
+    }
 
     el.querySelector('#qqc-save').onclick = async () => {
       try {
@@ -2158,7 +2686,140 @@ function extractProgressiveFAO() {
     input.dispatchEvent(new Event('change', { bubbles: true }));
     input.blur();
   }
-  function onDetailsPage() { return /\/Contacts\/Customer\/Details\/\d+/i.test(location.pathname); }
+  function onDetailsPage() {
+    return /\/Contacts\/(?:CommercialCustomer|Customer)\/Details\/\d+/i.test(location.pathname);
+  }
+  function isCommercialDetailsPage() {
+    return /\/Contacts\/CommercialCustomer\/Details\/\d+/i.test(location.pathname);
+  }
+  function isCommercialPayload(payload) {
+    return (
+      (payload?.customerType || '').toLowerCase() === 'commercial' ||
+      !!payload?.businessName
+    );
+  }
+
+  function visibleSectionButton(form, selector) {
+    const btn = form?.querySelector(selector);
+    return !!(btn && isVisible(btn) && !btn.classList.contains('hide'));
+  }
+
+  function findVisibleAddAddressAction() {
+    return Array.from(document.querySelectorAll('a.h2AddRecordLink'))
+      .find(a => /add an address/i.test(a.textContent || '') && isVisible(a)) ||
+      Array.from(document.querySelectorAll('a,button'))
+        .find(a => /add an address/i.test(a.textContent || '') && isVisible(a));
+  }
+
+  function isVisibleAddressEditorReady() {
+    const detail = Array.from(document.querySelectorAll('.AddressesDetailContainer .section-detaildata')).find(d => isVisible(d))
+      || document.querySelector('.AddressesDetailContainer .section-detaildata');
+    if (!detail || !isVisible(detail)) return false;
+    return Array.from(detail.querySelectorAll('input[name="Line1"], input[name="City"], select[name="StateID"], input[name="Zip"]'))
+      .some(el => isVisible(el) && !el.disabled);
+  }
+
+  function isBasicContactInfoInitialized() {
+    const form = document.querySelector('form#BasicContactInfo');
+    return !!(form && (
+      form.querySelector('.SectionButtons') ||
+      form.querySelector('.PhoneTemplateContainer input[name="Value"]') ||
+      form.querySelector('.EmailTemplateContainer input[name="Value"]')
+    ));
+  }
+
+  function isAddressesInitialized() {
+    const form = document.querySelector('form#Addresses');
+    if (!form) return false;
+    if (findVisibleAddAddressAction()) return true;
+    if (isVisibleAddressEditorReady()) return true;
+    return Array.from(form.querySelectorAll('tbody tr, .section-detaildata, .section-viewdata, .AddressesDetailContainer'))
+      .some(el => isVisible(el) && (el.querySelector('a,button,input,select,textarea') || /\d{5}|[A-Z]{2}/.test(el.textContent || '')));
+  }
+
+  function isPersonalInfoInitialized() {
+    const form = document.querySelector('form#PersonalInfo');
+    return !!(form && (
+      form.querySelector('.SectionButtons .section_edit, .SectionButtons .section_save') ||
+      form.querySelector('input[name="FirstName"], input[name="LastName"], input[name="DateOfBirthString"]')
+    ));
+  }
+
+  function isBusinessInfoInitialized() {
+    const form = document.querySelector('form#business-info');
+    return !!(form && form.querySelector('.SectionButtons .section_edit, .SectionButtons .section_save'));
+  }
+
+  async function waitForQQDetailsReady(payload) {
+    hudInfo('Waiting for QQ Customer Info...');
+    await waitForDomCondition(() => onDetailsPage() ? true : null, {
+      timeout: 45000,
+      timeoutMessage: 'QQ Details page did not load.'
+    });
+
+    const commercial = isCommercialDetailsPage() || isCommercialPayload(payload);
+    hudInfo('Waiting for QQ sections...');
+
+    await waitForDomCondition(() => isBasicContactInfoInitialized() ? true : null, {
+      timeout: 20000,
+      timeoutMessage: 'QQ Basic Contact section did not become ready.'
+    });
+
+    hudInfo('Waiting for Address section...');
+    await waitForDomCondition(() => isAddressesInitialized() ? true : null, {
+      timeout: 20000,
+      timeoutMessage: 'QQ Addresses section did not become ready.'
+    });
+    console.log('[QQC Extractor] Addresses initialized');
+
+    if (commercial) {
+      hudInfo('Waiting for Business Information...');
+      await waitForDomCondition(() => isBusinessInfoInitialized() ? true : null, {
+        timeout: 20000,
+        timeoutMessage: 'QQ Business Information section did not become ready.'
+      });
+    } else {
+      await waitForDomCondition(() => isPersonalInfoInitialized() ? true : null, {
+        timeout: 20000,
+        timeoutMessage: 'QQ Personal Information section did not become ready.'
+      });
+    }
+
+    await new Promise(r => setTimeout(r, 400));
+    console.log('[QQC Extractor] QQ details sections ready.');
+    console.log('[QQC Extractor] Personal/Commercial:', commercial ? 'Commercial' : 'Personal');
+    console.log('[QQC Extractor] Beginning fill.');
+    return true;
+  }
+
+  async function runFillDetailsWhenReady(payload, options = {}) {
+    try {
+      await waitForQQDetailsReady(payload);
+      await runFillDetails(payload);
+      if (options.clearPendingAfter) {
+        try { await GM_setValue(PENDING_KEY, {}); } catch { }
+      }
+      return true;
+    } catch (e) {
+      console.error('[QQC Extractor] Details readiness/fill error', e);
+      pasteStatus(e?.message || 'QQ Customer Info did not finish loading.');
+      hudError(e?.message || 'QQ Customer Info did not finish loading.');
+      return false;
+    }
+  }
+
+  async function waitForSectionSavingDone(form) {
+    const saving = form?.querySelector('.SectionButtons .section_saving, .section_saving');
+    if (!saving) {
+      await new Promise(r => setTimeout(r, 250));
+      return true;
+    }
+    for (let i = 0; i < 40; i++) {
+      if (saving.style.display === 'none' || saving.classList.contains('hide') || !isVisible(saving)) return true;
+      await new Promise(r => setTimeout(r, 150));
+    }
+    return false;
+  }
 
   async function ensurePopupOpen() {
     hudInfo('Opening New Contact popup...');
@@ -2225,10 +2886,8 @@ function extractProgressiveFAO() {
 
     const duplicateDetected = await waitForPossibleDuplicateWarning();
     if (duplicateDetected) {
-      pasteStatus('Possible duplicate found. Stopping automation.');
-      hudError('Duplicate contact detected.');
-      try { await GM_setValue(PENDING_KEY, {}); } catch { }
-      return false;
+      const duplicateAction = await handlePossibleDuplicateWarning(payload);
+      if (duplicateAction !== 'continue') return false;
     }
 
     hudInfo('Popup submitted. Waiting for details...');
@@ -2256,27 +2915,68 @@ function extractProgressiveFAO() {
   }
 
   async function ensureAddressEditorOpen() {
-    // Wait for the link to appear
-    let link = await waitFor(() => Array.from(document.querySelectorAll('a.h2AddRecordLink')).find(a => /add an address/i.test(a.textContent || '') && a.offsetParent !== null), { timeout: 8000, interval: 150 });
-    if (!link) link = await waitFor(() => Array.from(document.querySelectorAll('a,button')).find(a => /add an address/i.test(a.textContent || '') && a.offsetParent !== null), { timeout: 8000, interval: 150 });
+    const initialized = await waitForDomCondition(() => isAddressesInitialized() ? true : null, {
+      timeout: 20000,
+      timeoutMessage: 'QQ Addresses section did not become ready.'
+    });
+    console.log('[QQC Extractor] Addresses initialized');
+    if (!initialized) return false;
+    if (isVisibleAddressEditorReady()) {
+      console.log('[QQC Extractor] Address editor became ready.');
+      return true;
+    }
+
+    console.log('[QQC Extractor] Watching for Add An Address...');
+    let link = await waitForDomCondition(() => findVisibleAddAddressAction(), {
+      timeout: 15000,
+      timeoutMessage: 'QQ Addresses section did not become ready.'
+    });
+    console.log('[QQC Extractor] Add An Address became available.');
+    console.log('[QQC Extractor] Add An Address found:', !!link);
     if (link) {
       try { link.scrollIntoView({ block: 'center' }); } catch { }
       link.click();
-      const editor = await waitForSelector('.AddressesDetailContainer .section-detaildata input[name="Line1"]', { timeout: 15000, interval: 150 });
+      console.log('[QQC Extractor] Add An Address clicked.');
+      console.log('[QQC Extractor] Watching for Address editor...');
+      const editor = await waitForDomCondition(() => {
+        if (!isVisibleAddressEditorReady()) return null;
+        const line1 = document.querySelector('.AddressesDetailContainer .section-detaildata input[name="Line1"]');
+        return line1 && isVisible(line1) && !line1.disabled ? line1 : null;
+      }, {
+        timeout: 20000,
+        timeoutMessage: 'QQ Addresses section did not become ready.'
+      });
+      console.log('[QQC Extractor] Address editor became ready.');
+      console.log('[QQC Extractor] Address editor visible:', !!editor);
       return !!editor;
     }
     // If an editor is already open
-    const already = document.querySelector('.AddressesDetailContainer .section-detaildata input[name="Line1"]');
+    const already = isVisibleAddressEditorReady();
+    console.log('[QQC Extractor] Address editor visible:', !!already);
     return !!already;
   }
 
   async function fillAddress(payload) {
-    hudInfo('Filling Address...');
+    hudInfo('Opening Address...');
+    console.log('[QQC Extractor] Address payload line1:', payload.address?.line1 || '');
+    console.log('[QQC Extractor] Addresses form found:', !!document.querySelector('form#Addresses'));
     const opened = await ensureAddressEditorOpen();
-    if (!opened) return false;
-    const detail = Array.from(document.querySelectorAll('.AddressesDetailContainer .section-detaildata')).find(d => d.offsetParent !== null)
+    console.log('[QQC Extractor] Address editor opened:', !!opened);
+    if (!opened) {
+      console.log('[QQC Extractor] Address saved:', false);
+      pasteStatus('QQ Addresses section did not finish loading.');
+      hudError('QQ Addresses section did not finish loading.');
+      return false;
+    }
+    hudInfo('Filling Address...');
+    const detail = Array.from(document.querySelectorAll('.AddressesDetailContainer .section-detaildata')).find(d => isVisible(d))
       || document.querySelector('.AddressesDetailContainer .section-detaildata');
-    if (!detail) return false;
+    if (!detail) {
+      console.log('[QQC Extractor] Address saved:', false);
+      pasteStatus('QQ Addresses section did not finish loading.');
+      hudError('QQ Addresses section did not finish loading.');
+      return false;
+    }
 
     const setField = (sel, val) => { const el = detail.querySelector(sel); if (!el) return; el.focus(); el.value = val || ''; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); el.blur(); };
     const selectIn = (sel, txt) => {
@@ -2307,6 +3007,8 @@ function extractProgressiveFAO() {
     }
 
     setField('input[name="Line1"]', payload.address?.line1 || '');
+    console.log('[QQC Extractor] Line1 field found:', !!detail.querySelector('input[name="Line1"]'));
+    console.log('[QQC Extractor] Line1 after assignment:', detail.querySelector('input[name="Line1"]')?.value || '');
     setField('input[name="Line2"]', payload.address?.line2 || '');
     setField('input[name="City"]', payload.address?.city || '');
     // Prefer matching by exact value when a 2-letter state code is provided
@@ -2329,13 +3031,20 @@ function extractProgressiveFAO() {
     // Click the section-level Save for Addresses form
     const addrForm = document.querySelector('form#Addresses') || detail.closest('form');
     const save = addrForm?.querySelector('.SectionButtons .section_save') || document.querySelector('form#Addresses .SectionButtons .section_save');
-    if (save) {
-      try { save.classList.remove('hide'); save.style.removeProperty('display'); } catch { }
+    let saved = false;
+    console.log('[QQC Extractor] Address save clicked:', !!(save && isVisible(save) && !save.classList.contains('hide')));
+    if (save && isVisible(save) && !save.classList.contains('hide')) {
+      hudInfo('Saving...');
       save.click();
       // Give QQ time to persist and collapse the editor
-      await new Promise(r => setTimeout(r, 300));
+      saved = await waitForSectionSavingDone(addrForm || detail.closest('form'));
     }
-    return true;
+    console.log('[QQC Extractor] Address saved:', saved);
+    if (!saved) {
+      pasteStatus('QQ Addresses section did not finish loading.');
+      hudError('QQ Addresses section did not finish loading.');
+    }
+    return saved;
   }
 
   async function fillPersonalInfo(payload) {
@@ -2395,6 +3104,81 @@ function extractProgressiveFAO() {
       await new Promise(r => setTimeout(r, 250));
     }
     return true;
+  }
+
+  async function fillBusinessInfo(payload) {
+    hudInfo('Opening Business Information...');
+    const form = document.querySelector('form#business-info');
+    console.log('[QQC Extractor] Business info form found:', !!form);
+    if (!form) {
+      console.log('[QQC Extractor] Business info saved:', false);
+      pasteStatus('QQ Business Information section did not finish loading.');
+      hudError('QQ Business Information section did not finish loading.');
+      return false;
+    }
+
+    try { form.scrollIntoView({ block: 'center' }); } catch { }
+    const saveVisible = () => {
+      const saveBtn = form.querySelector('.SectionButtons .section_save');
+      return saveBtn && isVisible(saveBtn) && !saveBtn.classList.contains('hide');
+    };
+    const editVisible = () => {
+      const editBtn = form.querySelector('.SectionButtons .section_edit');
+      return editBtn && isVisible(editBtn) && !editBtn.classList.contains('hide') ? editBtn : null;
+    };
+    console.log('[QQC Extractor] Watching for Business edit mode...');
+    await waitForDomCondition(() => saveVisible() || editVisible(), {
+      timeout: 20000,
+      timeoutMessage: 'QQ Business Information section did not become ready.'
+    });
+    if (!saveVisible()) {
+      const editBtn = editVisible();
+      if (editBtn) {
+        editBtn.click();
+        console.log('[QQC Extractor] Business Edit clicked');
+        await waitForDomCondition(() => saveVisible() ? true : null, {
+          timeout: 15000,
+          timeoutMessage: 'QQ Business Information section did not become ready.'
+        });
+      }
+    }
+    console.log('[QQC Extractor] Business Information edit mode ready.');
+    console.log('[QQC Extractor] Business Save visible:', saveVisible());
+    if (!saveVisible()) {
+      console.log('[QQC Extractor] Business info saved:', false);
+      pasteStatus('QQ Business Information section did not finish loading.');
+      hudError('QQ Business Information section did not finish loading.');
+      return false;
+    }
+
+    hudInfo('Filling Business Information...');
+    const businessNameField = form.querySelector('input[name="BusinessName"]');
+    const dbaField = form.querySelector('input[name="DBA"]');
+    const feinField = form.querySelector('input[name="FEIN"]');
+    console.log('[QQC Extractor] Business Name field found:', !!businessNameField);
+    console.log('[QQC Extractor] DBA field found:', !!dbaField);
+    console.log('[QQC Extractor] FEIN field found:', !!feinField);
+    console.log('[QQC Extractor] FEIN payload:', payload.ein || '');
+
+    if (payload.businessName && businessNameField) setVal(businessNameField, payload.businessName);
+    if (payload.dba && dbaField) setVal(dbaField, payload.dba);
+    if (payload.ein && feinField) setVal(feinField, payload.ein);
+    console.log('[QQC Extractor] FEIN after assignment:', feinField?.value || '');
+
+    const save = form.querySelector('.SectionButtons .section_save');
+    let saved = false;
+    if (save && saveVisible()) {
+      hudInfo('Saving...');
+      await new Promise(r => setTimeout(r, 150));
+      save.click();
+      saved = await waitForSectionSavingDone(form);
+    }
+    console.log('[QQC Extractor] Business info saved:', saved);
+    if (!saved) {
+      pasteStatus('QQ Business Information section did not finish loading.');
+      hudError('QQ Business Information section did not finish loading.');
+    }
+    return saved;
   }
 
   async function ensureAdditionalContactsEditorOpen() {
@@ -2520,23 +3304,26 @@ function extractProgressiveFAO() {
   async function runFillDetails(payload) {
     if (!onDetailsPage()) { pasteStatus("Not on details page."); return; }
     if (hasPossibleDuplicateWarning()) {
-      pasteStatus('Possible duplicate found. Automation halted.');
-      hudError('Duplicate contact detected.');
-      try { await GM_setValue(PENDING_KEY, {}); } catch { }
-      return;
+      const duplicateAction = await handlePossibleDuplicateWarning(payload);
+      if (duplicateAction !== 'continue') return;
     }
+    const commercial = isCommercialDetailsPage() || isCommercialPayload(payload);
+    console.log('[QQC Extractor] Details page:', location.pathname);
+    console.log('[QQC Extractor] Commercial:', commercial);
     // Wait for Basic Contact Info section
     hudInfo('Filling Basic Contact...');
-    await waitFor(() => document.querySelector("form#BasicContactInfo"), { timeout: 15000, interval: 150 });
     const ok1 = fillBasicContactInfo(payload);
     // Addresses
-    hudInfo('Filling Address...');
-    await waitFor(() => document.querySelector("form#Addresses"), { timeout: 15000, interval: 150 });
     const ok2 = await fillAddress(payload);
-    // Personal Info
-    hudInfo('Filling Personal Info...');
-    await waitFor(() => document.querySelector("form#PersonalInfo"), { timeout: 15000, interval: 150 });
-    const ok3 = await fillPersonalInfo(payload);
+    let ok3 = true;
+    let infoLabel = 'Personal';
+    if (commercial) {
+      infoLabel = 'Business';
+      ok3 = await fillBusinessInfo(payload);
+    } else {
+      hudInfo('Filling Personal Info...');
+      ok3 = await fillPersonalInfo(payload);
+    }
     // Additional Contacts (e.g., Second Named Insured)
     let ok4 = true;
     if (Array.isArray(payload.additionalContacts) && payload.additionalContacts.length) {
@@ -2546,7 +3333,7 @@ function extractProgressiveFAO() {
         ok4 = ok4 && !!r;
       }
     }
-    let __status = `Filled: Basic ${ok1 ? 'OK' : '-'}, Address ${ok2 ? 'OK' : '-'}, Personal ${ok3 ? 'OK' : '-'}`;
+    let __status = `Filled: Basic ${ok1 ? 'OK' : '-'}, Address ${ok2 ? 'OK' : '-'}, ${infoLabel} ${ok3 ? 'OK' : '-'}`;
     if (Array.isArray(payload.additionalContacts) && payload.additionalContacts.length) {
       __status += `, Extra Contacts ${ok4 ? 'OK' : '-'}`;
     }
@@ -2593,13 +3380,7 @@ function extractProgressiveFAO() {
       const ok = await fillPopup(p);
       if (ok) {
         pasteStatus('Waiting for customer details to load...');
-        // Wait for either URL change to details page or presence of any details form
-        const ready = await waitFor(() => onDetailsPage() || document.querySelector('form#BasicContactInfo') || document.querySelector('form#PersonalInfo'), { timeout: 45000, interval: 300 });
-        if (ready) {
-          runFillDetails(p);
-        } else {
-          pasteStatus('Timed out waiting for details page. Try "Fill Details Page".');
-        }
+        await runFillDetailsWhenReady(p, { clearPendingAfter: true });
       } else {
         pasteStatus('Stopped due to duplicate warning.');
       }
@@ -2612,7 +3393,7 @@ function extractProgressiveFAO() {
       const custSel = pastePanel.querySelector('#qqc-cust');
       if (ctSel) p.contactType = ctSel.value;
       if (custSel) p.customerType = custSel.value;
-      runFillDetails(p);
+      await runFillDetailsWhenReady(p);
     };
   }
 
@@ -2704,17 +3485,8 @@ try {
           return;
         }
         if (onDetailsPage()) {
-          hudInfo('Filling details...');
-          await waitFor(() =>
-            document.querySelector('form#BasicContactInfo') ||
-            document.querySelector('form#PersonalInfo') ||
-            document.querySelector('form#Addresses'),
-            { timeout: 20000, interval: 200 }
-          );
-
-          try { await GM_setValue(PENDING_KEY, {}); } catch { }
-
-          await runFillDetails(pending.payload);
+          hudInfo('Waiting for QQ Customer Info...');
+          await runFillDetailsWhenReady(pending.payload, { clearPendingAfter: true });
         }
 
       }

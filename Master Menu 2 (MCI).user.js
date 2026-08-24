@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      6.0.3
+// @version      6.0.4
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -23,6 +23,9 @@
 // @match        https://*.ncjuanciua.org/*
 // @match        https://app.orion180.com/*
 // @match        https://msc.fema.gov/portal/search*
+// @match        https://www.jsausa.com/*
+// @match        https://webportal.ncrb.org/*
+// @match        https://www.ncrb.org/*
 // @run-at       document-idle
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -59,6 +62,9 @@
   const IS_NFIP = IS_TORRENT && PATH.startsWith("/dashboard/agency");
   const IS_BEYOND = IS_BEYOND_HOST || (IS_TORRENT && !IS_NFIP);
   const IS_ORION180 = /app\.orion180\.com/.test(HOST);
+  const IS_RATE_BUREAU =
+    /webportal\.ncrb\.org/.test(HOST) ||
+    (/www\.ncrb\.org/.test(HOST) && PATH.startsWith("/managear/"));
 
   const IN_IFRAME = window.top !== window.self;
   if (IN_IFRAME && !(IS_QQ || IS_PROG)) return;
@@ -94,6 +100,7 @@
     if (IS_BEYOND) return "Beyond Floods";
     if (IS_NG) return "National General";
     if (IS_ORION180) return "Orion180";
+    if (IS_RATE_BUREAU) return "Rate Bureau";
     return location.hostname;
   }
 
@@ -741,7 +748,8 @@
               right: { id: "mci_fd_flood_nfip",   text: "NFIP Flood",   title: "Trigger NFIP Flood downloader" }
             },
             { type: "button", id: "mci_fd_ncjua", text: "NCJUA", className: "mci-btn green" },
-            { type: "button", id: "mci_fd_orion180", text: "Orion 180", className: "mci-btn orion180" }
+            { type: "button", id: "mci_fd_orion180", text: "Orion 180", className: "mci-btn orion180" },
+            { type: "button", id: "mci_fd_jacksonsumner", text: "Jackson Sumner", className: "mci-btn jackson-sumner" }
           ]
         }
       ]
@@ -1016,6 +1024,7 @@
         '.mci-btn.primary{background:#1f6feb}.mci-btn.primary:hover{background:#2b79f0}' +
         '.mci-btn.green{background:#3ba55d}.mci-btn.green:hover{background:#44b569}' +
         '.mci-btn.orion180{background:#D50032}.mci-btn.orion180:hover{background:#e51b49}' +
+        '.mci-btn.jackson-sumner{background:#056897}.mci-btn.jackson-sumner:hover{background:#04577f}' +
         '.mci-btn.blue{background:#007EF5}.mci-btn.blue:hover{background:#2b6ef5}' +
         '.mci-btn.purple{background:#7b68ee}.mci-btn.purple:hover{background:#6c5ce7}' +
         '.mci-btn.brand{background:#1e40af}.mci-btn.brand:hover{background:#1e3a8a}' +
@@ -1787,6 +1796,16 @@
       toast("Orion 180 downloader triggered.");
     });
 
+    onClick("mci_fd_jacksonsumner", function () {
+      // close sub panel + menu
+      $s("#mci_fd_panel").classList.remove("open");
+      $s("#mci_fd_toggle").textContent = "📥 File Downloader ▸";
+      setMenuOpen(false);
+
+      triggerFileDownloader("jackson-sumner");
+      toast("Jackson Sumner downloader triggered.");
+    });
+
     // Menu links
     refreshErieExtractorToggleButton();
 
@@ -1851,6 +1870,10 @@
     else if (host.includes("beyondfloods.com")) key = "beyondfloods";
     else if (host.includes("ncjuanciua.org") || host.includes("insure.ncjuanciua.org")) key = "ncjua";
     else if (host.includes("app.orion180.com")) key = "orion180";
+    else if (
+      host.includes("webportal.ncrb.org") ||
+      (host.includes("ncrb.org") && location.pathname.toLowerCase().startsWith("/managear/"))
+    ) key = "ratebureau";
     // add more as we create them…
 
     if (!key) {
