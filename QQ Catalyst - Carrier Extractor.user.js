@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
-// @version      1.7.2
+// @version      1.7.3
 // @description  Extract from carriers and build QQC payload. Alt+Q: Extractor.
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
@@ -2792,13 +2792,10 @@ function extractProgressiveFAO() {
     return true;
   }
 
-  async function runFillDetailsWhenReady(payload, options = {}) {
+  async function runFillDetailsWhenReady(payload) {
     try {
       await waitForQQDetailsReady(payload);
       await runFillDetails(payload);
-      if (options.clearPendingAfter) {
-        try { await GM_setValue(PENDING_KEY, {}); } catch { }
-      }
       return true;
     } catch (e) {
       console.error('[QQC Extractor] Details readiness/fill error', e);
@@ -2956,10 +2953,68 @@ function extractProgressiveFAO() {
     return !!already;
   }
 
+  function normalizeQQAddressText(value) {
+    return String(value || '')
+      .toUpperCase()
+      .replace(/[.,#]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function qqAlreadyHasAddress(address) {
+    if (!address || !address.line1) return false;
+
+    const wantedStreet = normalizeQQAddressText(address.line1);
+    const wantedCity = normalizeQQAddressText(address.city);
+    const wantedState = normalizeQQAddressText(address.state);
+    const wantedZip = String(address.zip || '').replace(/\D/g, '').slice(0, 5);
+
+    const form = document.querySelector('form#Addresses');
+    if (!form) return false;
+
+    const rows = Array.from(
+      form.querySelectorAll(
+        '.section-viewdata, tbody tr, .AddressesDetailContainer'
+      )
+    );
+
+    return rows.some(row => {
+      // Ignore the currently-open blank editor.
+      if (
+        row.matches?.('.section-detaildata') ||
+        row.querySelector?.('input[name="Line1"]')
+      ) {
+        return false;
+      }
+
+      const text = normalizeQQAddressText(
+        row.innerText || row.textContent || ''
+      );
+
+      if (!text || !text.includes(wantedStreet)) return false;
+
+      if (wantedCity && !text.includes(wantedCity)) return false;
+
+      if (wantedState && !text.includes(wantedState)) return false;
+
+      if (wantedZip && !text.includes(wantedZip)) return false;
+
+      return true;
+    });
+  }
+
   async function fillAddress(payload) {
     hudInfo('Opening Address...');
     console.log('[QQC Extractor] Address payload line1:', payload.address?.line1 || '');
     console.log('[QQC Extractor] Addresses form found:', !!document.querySelector('form#Addresses'));
+
+    // Safety check: never add the same address twice.
+    if (qqAlreadyHasAddress(payload.address)) {
+      console.log('[QQC Extractor] Matching address already exists. Skipping address add.');
+      hudInfo('Address already exists - skipping...');
+      return true;
+    }
+
     const opened = await ensureAddressEditorOpen();
     console.log('[QQC Extractor] Address editor opened:', !!opened);
     if (!opened) {
@@ -3380,7 +3435,7 @@ function extractProgressiveFAO() {
       const ok = await fillPopup(p);
       if (ok) {
         pasteStatus('Waiting for customer details to load...');
-        await runFillDetailsWhenReady(p, { clearPendingAfter: true });
+        await runFillDetailsWhenReady(p);
       } else {
         pasteStatus('Stopped due to duplicate warning.');
       }
@@ -3469,6 +3524,17 @@ try {
   // ---------- Auto-run pending details fill after navigation ----------
   (async () => {
     try {
+      // IMPORTANT: QQ autofill must run only in the main page.
+      // This prevents QQ iframes from processing the same pending job
+      // and repeatedly adding addresses/contacts.
+      if (/qqcatalyst\.com$/i.test(location.hostname)) {
+        try {
+          if (window.top !== window.self) return;
+        } catch (_) {
+          return;
+        }
+      }
+
       const pending = await GM_getValue(PENDING_KEY);
       if (pending && pending.payload && /qqcatalyst\.com$/i.test(location.hostname)) {
         const fresh = (Date.now() - (pending.ts || 0)) < 3 * 60 * 1000; // 3 minutes
@@ -3486,7 +3552,14 @@ try {
         }
         if (onDetailsPage()) {
           hudInfo('Waiting for QQ Customer Info...');
-          await runFillDetailsWhenReady(pending.payload, { clearPendingAfter: true });
+
+          // Consume the pending job BEFORE changing QQ.
+          // QQ may reload during saves, so the same job must not run twice.
+          try {
+            await GM_setValue(PENDING_KEY, {});
+          } catch { }
+
+          await runFillDetailsWhenReady(pending.payload);
         }
 
       }
