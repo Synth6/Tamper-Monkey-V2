@@ -16,7 +16,7 @@
 // @match        https://app.vexcelgroup.com/*
 // @match        https://www.foragentsonly.com/*
 // @match        https://nationalgeneral.torrentflood.com/*
-// @match        https://insure.ncjuanciua.org/*
+// @match        https://insure.ncjuanciua.org/*f
 // @match        https://app.orion180.com/*
 // @match        https://natgen.beyondfloods.com/*
 // @match        https://www.natgen.beyondfloods.com/*
@@ -776,12 +776,40 @@ document.addEventListener("contextmenu", (e) => {
       if (node.nodeType === 3) node = node.parentNode;
       if (!node) return "";
 
-      // Prefer a tighter clickable/text element first
+      // Prefer the actual link under the cursor first
+      try {
+        const link = node.closest && node.closest("a");
+
+        if (link) {
+          const linkText = String(
+            link.innerText ||
+            link.textContent ||
+            link.getAttribute("title") ||
+            link.getAttribute("aria-label") ||
+            ""
+          ).replace(/\s+/g, " ").trim();
+
+          if (linkText) {
+            if (allowPolicy && extractPolicy(linkText)) return linkText;
+
+            if (!allowPolicy && linkText.length <= 120) {
+              return linkText;
+            }
+          }
+        }
+      } catch (_) {}
+
+      // Prefer a tighter clickable/text element next
       let cur = node;
       while (cur && cur !== document.body) {
         const t = ((cur.innerText || cur.textContent) || "").trim();
+
         if (t && allowPolicy && extractPolicy(t)) return t;
-        if (t && !allowPolicy && t.length <= 120) return t;
+
+        if (t && !allowPolicy && t.length <= 120) {
+          return t;
+        }
+
         cur = cur.parentElement;
       }
 
@@ -821,7 +849,10 @@ document.addEventListener("contextmenu", (e) => {
     }
   }
 
-  const allowPolicy = !isQQCatalystPage();
+  // Allow policy detection everywhere, including QQ Catalyst.
+  // This lets linked policy numbers on QQ transaction/list pages work too.
+  const allowPolicy = true;
+
   const underCursor = getTextUnderCursor(e, allowPolicy);
   const selected = (window.getSelection && window.getSelection().toString().trim()) || "";
   const hovered = getSelectedOrHoverText();
