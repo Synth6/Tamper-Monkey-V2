@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name        Smart Lookup (MCI)
 // @namespace    mci-tools
-// @version      4.3.6
+// @version      4.3.7
 // @description  ALT+Right-Click: pinned chooser for Address/Policy lookup. Address: Wake/Maps/Vexcel combos. Policy: Erie/NatGen/Progressive/NFIP/Beyond Floods/Orion180/NCJUA
 // @match        *://*/*
 // @match        file://*/*
@@ -759,14 +759,26 @@ function getQQPolicyNumberFromElement(el){
   return String((el && el.getAttribute("title")) || (el && el.textContent) || "").replace(/\s+/g, " ").trim();
 }
 
-// ALT + RIGHT-CLICK opens chooser pinned at cursor
+// ALT + RIGHT-CLICK = POLICY / CARRIER LOOKUP
+// SHIFT + RIGHT-CLICK = ADDRESS LOOKUP
 document.addEventListener("contextmenu", (e) => {
-  if (!e.altKey) return;
+
+  const isPolicyLookup = e.altKey && !e.shiftKey;
+  const isAddressLookup = e.shiftKey && !e.altKey;
+
+  if (!isPolicyLookup && !isAddressLookup) return;
 
   const tag = (e.target && e.target.tagName || "").toLowerCase();
-  if (tag === "input" || tag === "textarea" || (e.target && e.target.isContentEditable)) return;
+  if (
+    tag === "input" ||
+    tag === "textarea" ||
+    (e.target && e.target.isContentEditable)
+  ) return;
 
-  const qqPolicyEl = isQQCatalystPage() ? findQQPolicyNumberElement(e.target) : null;
+  const qqPolicyEl =
+    isPolicyLookup && isQQCatalystPage()
+      ? findQQPolicyNumberElement(e.target)
+      : null;
 
   function getTextUnderCursor(evt, allowPolicy) {
     try {
@@ -790,7 +802,9 @@ document.addEventListener("contextmenu", (e) => {
           ).replace(/\s+/g, " ").trim();
 
           if (linkText) {
-            if (allowPolicy && extractPolicy(linkText)) return linkText;
+            if (allowPolicy && extractPolicy(linkText)) {
+              return linkText;
+            }
 
             if (!allowPolicy && linkText.length <= 120) {
               return linkText;
@@ -801,10 +815,13 @@ document.addEventListener("contextmenu", (e) => {
 
       // Prefer a tighter clickable/text element next
       let cur = node;
+
       while (cur && cur !== document.body) {
         const t = ((cur.innerText || cur.textContent) || "").trim();
 
-        if (t && allowPolicy && extractPolicy(t)) return t;
+        if (t && allowPolicy && extractPolicy(t)) {
+          return t;
+        }
 
         if (t && !allowPolicy && t.length <= 120) {
           return t;
@@ -816,9 +833,11 @@ document.addEventListener("contextmenu", (e) => {
       // Fall back to direct node text
       let txt = ((node.innerText || node.textContent) || "").trim();
 
-      // If too large, try a smaller child
       if (txt && txt.length > 80 && node.querySelector) {
-        const small = node.querySelector("a, span, div, td, th, label");
+        const small = node.querySelector(
+          "a, span, div, td, th, label"
+        );
+
         if (small) {
           const t2 = ((small.innerText || small.textContent) || "").trim();
           if (t2) txt = t2;
@@ -826,39 +845,109 @@ document.addEventListener("contextmenu", (e) => {
       }
 
       return txt || "";
+
     } catch (_) {
       return "";
     }
   }
 
-  // stop browser menu and most selection behavior
+  // Stop normal browser context menu
   e.preventDefault();
   e.stopPropagation();
 
-  // clear accidental selection that may have happened already
+  // Clear accidental text selection
   try {
     const sel = window.getSelection && window.getSelection();
-    if (sel && sel.removeAllRanges) sel.removeAllRanges();
+    if (sel && sel.removeAllRanges) {
+      sel.removeAllRanges();
+    }
   } catch (_) {}
 
-  if (qqPolicyEl) {
-    const pol = getQQPolicyNumberFromElement(qqPolicyEl);
-    if (pol) {
-      HoverChooser.openPolicyPinned(pol, e.clientX, e.clientY);
+
+  // ============================================================
+  // ALT + RIGHT-CLICK
+  // POLICY / CARRIER LOOKUP ONLY
+  // ============================================================
+  if (isPolicyLookup) {
+
+    // Special QQ Catalyst policy-number handling
+    if (qqPolicyEl) {
+      const pol = getQQPolicyNumberFromElement(qqPolicyEl);
+
+      if (pol) {
+        HoverChooser.openPolicyPinned(
+          pol,
+          e.clientX,
+          e.clientY
+        );
+        return;
+      }
+    }
+
+    const underCursor = getTextUnderCursor(e, true);
+
+    const selected =
+      (window.getSelection &&
+       window.getSelection().toString().trim()) || "";
+
+    const hovered = getSelectedOrHoverText();
+
+    const txt =
+      underCursor ||
+      selected ||
+      hovered;
+
+    const pol = extractPolicy(txt);
+
+    if (!pol) {
+      toast("No policy detected.");
       return;
     }
+
+    HoverChooser.openPolicyPinned(
+      pol,
+      e.clientX,
+      e.clientY
+    );
+
+    return;
   }
 
-  // Allow policy detection everywhere, including QQ Catalyst.
-  // This lets linked policy numbers on QQ transaction/list pages work too.
-  const allowPolicy = true;
 
-  const underCursor = getTextUnderCursor(e, allowPolicy);
-  const selected = (window.getSelection && window.getSelection().toString().trim()) || "";
-  const hovered = getSelectedOrHoverText();
-  const txt = underCursor || selected || hovered;
+  // ============================================================
+  // SHIFT + RIGHT-CLICK
+  // ADDRESS LOOKUP ONLY
+  // ============================================================
+  if (isAddressLookup) {
 
-  HoverChooser.openPinned(txt, e.clientX, e.clientY, {allowPolicy});
+    const underCursor = getTextUnderCursor(e, false);
+
+    const selected =
+      (window.getSelection &&
+       window.getSelection().toString().trim()) || "";
+
+    const hovered = getSelectedOrHoverText();
+
+    const txt =
+      underCursor ||
+      selected ||
+      hovered;
+
+    if (!txt || !isLikelyAddress(txt)) {
+      toast("No address detected.");
+      return;
+    }
+
+    HoverChooser.openPinned(
+      txt,
+      e.clientX,
+      e.clientY,
+      { allowPolicy: false }
+    );
+
+    return;
+  }
+
 }, true);
 
   /* ================= ON-SITE AUTOMATIONS (ONLY IF ARMED/TOKEN) ================= */
