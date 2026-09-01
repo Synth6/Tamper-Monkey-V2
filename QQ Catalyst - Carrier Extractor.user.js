@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
-// @version      1.7.4
+// @version      1.7.2
 // @description  Extract from carriers and build QQC payload. Alt+Q: Extractor.
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
@@ -2922,9 +2922,34 @@ function extractProgressiveCommercialAuto() {
     ));
   }
 
+  function getBusinessInfoForm() {
+    return document.querySelector('form#business-info') ||
+      document.querySelector('input[name="FEIN"]')?.closest('form') ||
+      document.querySelector('input[name="BusinessName"]')?.closest('form') ||
+      document.querySelector('input[name="DBA"]')?.closest('form') ||
+      null;
+  }
+
   function isBusinessInfoInitialized() {
-    const form = document.querySelector('form#business-info');
-    return !!(form && form.querySelector('.SectionButtons .section_edit, .SectionButtons .section_save'));
+    const form = getBusinessInfoForm();
+    if (!form) return false;
+
+    // Existing QQ layout with Edit/Save controls.
+    if (
+      form.querySelector(
+        '.SectionButtons .section_edit, .SectionButtons .section_save'
+      )
+    ) {
+      return true;
+    }
+
+    // QQ commercial layout where Business Information
+    // is already editable and has no section buttons.
+    return !!(
+      form.querySelector('input[name="BusinessName"]') ||
+      form.querySelector('input[name="DBA"]') ||
+      form.querySelector('input[name="FEIN"]')
+    );
   }
 
   async function waitForQQDetailsReady(payload) {
@@ -3340,7 +3365,7 @@ function extractProgressiveCommercialAuto() {
 
   async function fillBusinessInfo(payload) {
     hudInfo('Opening Business Information...');
-    const form = document.querySelector('form#business-info');
+    const form = getBusinessInfoForm();
     console.log('[QQC Extractor] Business info form found:', !!form);
     if (!form) {
       console.log('[QQC Extractor] Business info saved:', false);
@@ -3397,21 +3422,32 @@ function extractProgressiveCommercialAuto() {
     if (payload.ein && feinField) setVal(feinField, payload.ein);
     console.log('[QQC Extractor] FEIN after assignment:', feinField?.value || '');
 
-    const save = form.querySelector('.SectionButtons .section_save');
-    let saved = false;
-    if (save && saveVisible()) {
-      hudInfo('Saving...');
-      await new Promise(r => setTimeout(r, 150));
-      save.click();
-      saved = await waitForSectionSavingDone(form);
-    }
-    console.log('[QQC Extractor] Business info saved:', saved);
-    if (!saved) {
-      pasteStatus('QQ Business Information section did not finish loading.');
-      hudError('QQ Business Information section did not finish loading.');
-    }
-    return saved;
+  const save = form.querySelector('.SectionButtons .section_save');
+  let saved = true;
+
+  if (save && saveVisible()) {
+    // Existing QQ layout: keep using the section Save button.
+    hudInfo('Saving...');
+    await new Promise(r => setTimeout(r, 150));
+    save.click();
+    saved = await waitForSectionSavingDone(form);
+  } else {
+    // Some QQ Commercial layouts have editable Business Information
+    // fields but no section-level Save button. runFillDetails()
+    // will use the existing Save All Changes button afterward.
+    console.log(
+      '[QQC Extractor] Business section has no individual Save button; using Save All Changes.'
+    );
   }
+
+  console.log('[QQC Extractor] Business info saved:', saved);
+
+  if (!saved) {
+    pasteStatus('QQ Business Information section did not finish loading.');
+    hudError('QQ Business Information section did not finish loading.');
+  }
+
+  return saved;
 
   async function ensureAdditionalContactsEditorOpen() {
     // Ensure the section container is present
