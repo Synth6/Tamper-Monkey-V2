@@ -782,16 +782,52 @@ document.addEventListener("contextmenu", (e) => {
 
   function getTextUnderCursor(evt, allowPolicy) {
     try {
-      let node = document.elementFromPoint(
-        evt.clientX,
-        evt.clientY
-      );
+
+      // Start with the ACTUAL element that received the right-click.
+      // This is important for linked policy numbers.
+      let node = evt.target;
 
       if (!node) {
-        node = evt.target;
+        node = document.elementFromPoint(
+          evt.clientX,
+          evt.clientY
+        );
       }
 
       if (!node) return "";
+
+      if (node.nodeType === 3) {
+        node = node.parentElement;
+      }
+
+      if (!node) return "";
+
+
+      // ========================================================
+      // LINK FIRST
+      // Preserve the original working linked-policy behavior.
+      // ========================================================
+      try {
+        const link =
+          node.closest &&
+          node.closest("a");
+
+        if (link) {
+          const linkText = String(
+            link.innerText ||
+            link.textContent ||
+            link.getAttribute("title") ||
+            link.getAttribute("aria-label") ||
+            ""
+          )
+            .replace(/\s+/g, " ")
+            .trim();
+
+          if (linkText) {
+            return linkText;
+          }
+        }
+      } catch (_) {}
 
       if (node.nodeType === 3) {
         node = node.parentNode;
