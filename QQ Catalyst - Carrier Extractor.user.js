@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
-// @version      1.7.2
+// @version      1.7.5
 // @description  Extract from carriers and build QQC payload. Alt+Q: Extractor.
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
@@ -3447,7 +3447,8 @@ function extractProgressiveCommercialAuto() {
     hudError('QQ Business Information section did not finish loading.');
   }
 
-  return saved;
+    return saved;
+  }
 
   async function ensureAdditionalContactsEditorOpen() {
     // Ensure the section container is present
