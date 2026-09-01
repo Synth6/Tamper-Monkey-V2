@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
-// @version      1.7.3
+// @version      1.7.4
 // @description  Extract from carriers and build QQC payload. Alt+Q: Extractor.
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
@@ -20,6 +20,7 @@
 // @match        https://webportal.ncrb.org/*
 // @match        https://www.ncrb.org/managear/*
 // @match        https://www.ncrb.org/ManageAR/*
+// @match        https://clpolicy.foragentsonly.com/*
 // @all-frames   true
 // @run-at       document-idle
 // @grant        GM_setValue
@@ -1404,6 +1405,181 @@ function extractProgressiveFAO() {
   };
 }
 
+// ---------- Extractor (Progressive Commercial Auto) ----------
+function isProgressiveCommercialAuto() {
+  return /clpolicy\.foragentsonly\.com$/i.test(location.hostname) &&
+    /\/Express\/Default\.aspx$/i.test(location.pathname);
+}
+
+function extractProgressiveCommercialAuto() {
+  const fieldValue = (fieldref) => {
+    const el = document.querySelector(`[fieldref="${fieldref}"]`);
+    if (!el) return '';
+
+    if (el.tagName === 'SELECT') {
+      const opt = el.selectedOptions?.[0] || el.options?.[el.selectedIndex];
+      return (opt?.textContent || el.value || '').trim();
+    }
+
+    return (el.value || el.textContent || '').trim();
+  };
+
+  const firstByFieldPrefix = (prefix, matcher = null) => {
+    const els = Array.from(document.querySelectorAll(`[fieldref^="${prefix}"]`));
+
+    for (const el of els) {
+      const ref = el.getAttribute('fieldref') || '';
+
+      if (matcher && !matcher.test(ref)) continue;
+
+      const value = (el.value || el.textContent || '').trim();
+      if (value) return value;
+    }
+
+    return '';
+  };
+
+  const businessName =
+    fieldValue('AccountInput.BusinessName') ||
+    (document.querySelector('#activeAccountNameId')?.textContent || '').trim();
+
+  const dba =
+    fieldValue('AccountInput.DBA');
+
+  const quoteNumber =
+    (document.querySelector('#activeAccountReferenceId')?.textContent || '').trim();
+
+  // Business Owner / President / CEO
+  const ownerName =
+    firstByFieldPrefix('AccountInput.', /Owner.*Name|BusinessOwner.*Name/i) ||
+    firstByFieldPrefix('BusinessOwner', /Name/i);
+
+  let firstName = '';
+  let middleName = '';
+  let lastName = '';
+
+  if (ownerName) {
+    const parts = ownerName.split(/\s+/).filter(Boolean);
+    firstName = parts.shift() || '';
+    lastName = parts.pop() || '';
+    middleName = parts.join(' ');
+  }
+
+  // The owner fields can also appear separately on some Progressive versions.
+  firstName =
+    firstByFieldPrefix('AccountInput.', /Owner.*First|First.*Name/i) ||
+    firstByFieldPrefix('BusinessOwner', /First.*Name/i) ||
+    firstName;
+
+  lastName =
+    firstByFieldPrefix('AccountInput.', /Owner.*Last|Last.*Name/i) ||
+    firstByFieldPrefix('BusinessOwner', /Last.*Name/i) ||
+    lastName;
+
+  const dob =
+    firstByFieldPrefix('AccountInput.', /Birth|DOB/i) ||
+    firstByFieldPrefix('BusinessOwner', /Birth|DOB/i);
+
+  // Progressive breaks the phone into three fields.
+  const phoneArea =
+    fieldValue('AccountInput.PhoneAreaCodeString');
+
+  const phonePrefix =
+    fieldValue('AccountInput.PhoneThreeDigitsString');
+
+  const phoneSuffix =
+    fieldValue('AccountInput.PhoneFourDigitsString');
+
+  let primaryPhone =
+    `${phoneArea}${phonePrefix}${phoneSuffix}`.replace(/[^\d]/g, '');
+
+  // Fallback in case Progressive changes the exact phone field names.
+  if (!primaryPhone) {
+    const phonePieces = Array.from(
+      document.querySelectorAll('[fieldref*="Phone"]')
+    )
+      .map(el => (el.value || el.textContent || '').replace(/[^\d]/g, ''))
+      .filter(Boolean);
+
+    primaryPhone = phonePieces.join('').slice(0, 10);
+  }
+
+  const primaryEmail =
+    firstByFieldPrefix('AccountInput.', /Email/i).toLowerCase();
+
+  const line1 =
+    fieldValue('PrimaryBusinessAddressOutputNonShredded.StreetAddressDup') ||
+    fieldValue('PrimaryBusinessAddressInput.StreetAddress');
+
+  const line2 =
+    firstByFieldPrefix('PrimaryBusinessAddressInput.', /Apartment|Address2|Line2|Suite/i);
+
+  const zip =
+    fieldValue('PrimaryBusinessAddressInput.ZipCode')
+      .replace(/[^\d-]/g, '')
+      .slice(0, 10);
+
+  const city =
+    fieldValue('PrimaryBusinessAddressInput.City');
+
+  let state =
+    fieldValue('PrimaryBusinessAddressInput.State') ||
+    fieldValue('PrimaryBusinessAddressInput.StateCode');
+
+  if (!state) {
+    const stateEl = Array.from(
+      document.querySelectorAll('[fieldref^="PrimaryBusinessAddressInput."]')
+    ).find(el => /State/i.test(el.getAttribute('fieldref') || ''));
+
+    if (stateEl) {
+      const opt =
+        stateEl.selectedOptions?.[0] ||
+        stateEl.options?.[stateEl.selectedIndex];
+
+      state = (opt?.textContent || stateEl.value || stateEl.textContent || '').trim();
+    }
+  }
+
+  const ein =
+    firstByFieldPrefix('AccountInput.', /FEIN|Federal.*ID|Tax.*ID|EIN/i)
+      .replace(/[^\d]/g, '');
+
+  return sanitizePayloadObject({
+    carrier: 'Progressive Commercial Auto',
+    source: 'progressive-commercial-auto',
+    sourceUrl: location.href,
+
+    firstName: toNameCase(firstName),
+    middleName: toNameCase(middleName),
+    lastName: toNameCase(lastName),
+    suffix: '',
+
+    businessName,
+    dba,
+    ein,
+
+    primaryPhone,
+    phoneType: formatPhone(primaryPhone),
+    primaryEmail,
+
+    dob: toMMDDYYYY(dob),
+
+    contactType: 'Prospects',
+    customerType: 'Commercial',
+    status: 'Active',
+
+    quoteNumber,
+
+    address: {
+      line1,
+      line2,
+      city,
+      state,
+      zip
+    }
+  });
+}
+
   // ---------- Extractor (Orion180) ----------
   function isOrion180QuotePage() {
     return /app\.orion180\.com$/i.test(location.hostname) &&
@@ -2474,6 +2650,7 @@ function extractProgressiveFAO() {
     if (isRateBureauPortalPage()) return rateBureauBasePayload('Rate Bureau detected. Open ManageAR.');
     if (isRateBureauManageARPage()) return rateBureauBasePayload('Rate Bureau detected. Open Worklist.');
     if (hasErieProfileEmailAnchor()) return await extractErieProfile();
+    if (isProgressiveCommercialAuto()) return extractProgressiveCommercialAuto();
     if (isProgressiveFAO()) return extractProgressiveFAO();
     if (isNatGenNamedInsured()) return extractNatGenNamedInsured();
     if (isNatGenSummary()) return extractNatGenSummary();
