@@ -2,6 +2,8 @@
 // @name         MCI - NatGen Readable Claim PDF
 // @namespace    https://middlecreekins.com/
 // @version      1.0.1
+// @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/MCI%20-%20NatGen%20Readable%20Claim%20PDF.user.js
+// @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/MCI%20-%20NatGen%20Readable%20Claim%20PDF.user.js
 // @description  Adds a readable PDF download button to NatGen Claims Report Summary pages.
 // @match        https://natgenagency.com/Reports/ClaimsReportSummary.aspx*
 // @match        https://www.natgenagency.com/Reports/ClaimsReportSummary.aspx*
