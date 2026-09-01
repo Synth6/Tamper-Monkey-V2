@@ -769,11 +769,11 @@ document.addEventListener("contextmenu", (e) => {
   if (!isPolicyLookup && !isAddressLookup) return;
 
   const tag = (e.target && e.target.tagName || "").toLowerCase();
-  if (
-    tag === "input" ||
-    tag === "textarea" ||
-    (e.target && e.target.isContentEditable)
-  ) return;
+
+  // Allow INPUT and TEXTAREA fields so policy numbers and
+  // addresses displayed inside fields can still be detected.
+  // Only ignore true editable rich-text areas.
+  if (e.target && e.target.isContentEditable) return;
 
   const qqPolicyEl =
     isPolicyLookup && isQQCatalystPage()
@@ -782,15 +782,58 @@ document.addEventListener("contextmenu", (e) => {
 
   function getTextUnderCursor(evt, allowPolicy) {
     try {
-      let node = document.elementFromPoint(evt.clientX, evt.clientY);
+      let node = document.elementFromPoint(
+        evt.clientX,
+        evt.clientY
+      );
+
+      if (!node) {
+        node = evt.target;
+      }
+
       if (!node) return "";
 
-      if (node.nodeType === 3) node = node.parentNode;
+      if (node.nodeType === 3) {
+        node = node.parentNode;
+      }
+
       if (!node) return "";
 
-      // Prefer the actual link under the cursor first
+
+      // ========================================================
+      // INPUT / TEXTAREA
+      // Their displayed value is not in innerText/textContent.
+      // ========================================================
+      const nodeTag =
+        (node.tagName || "").toLowerCase();
+
+      if (
+        nodeTag === "input" ||
+        nodeTag === "textarea"
+      ) {
+        const value = String(
+          node.value ||
+          node.getAttribute("value") ||
+          node.getAttribute("title") ||
+          node.getAttribute("aria-label") ||
+          ""
+        )
+          .replace(/\s+/g, " ")
+          .trim();
+
+        if (value) {
+          return value;
+        }
+      }
+
+
+      // ========================================================
+      // LINK
+      // ========================================================
       try {
-        const link = node.closest && node.closest("a");
+        const link =
+          node.closest &&
+          node.closest("a");
 
         if (link) {
           const linkText = String(
@@ -799,52 +842,105 @@ document.addEventListener("contextmenu", (e) => {
             link.getAttribute("title") ||
             link.getAttribute("aria-label") ||
             ""
-          ).replace(/\s+/g, " ").trim();
+          )
+            .replace(/\s+/g, " ")
+            .trim();
 
           if (linkText) {
-            if (allowPolicy && extractPolicy(linkText)) {
+
+            if (
+              allowPolicy &&
+              extractPolicy(linkText)
+            ) {
               return linkText;
             }
 
-            if (!allowPolicy && linkText.length <= 120) {
+            if (
+              !allowPolicy &&
+              linkText.length <= 120
+            ) {
               return linkText;
             }
           }
         }
       } catch (_) {}
 
-      // Prefer a tighter clickable/text element next
+
+      // ========================================================
+      // WALK UP ELEMENT TREE
+      // ========================================================
       let cur = node;
 
-      while (cur && cur !== document.body) {
-        const t = ((cur.innerText || cur.textContent) || "").trim();
+      while (
+        cur &&
+        cur !== document.body
+      ) {
 
-        if (t && allowPolicy && extractPolicy(t)) {
+        const curTag =
+          (cur.tagName || "").toLowerCase();
+
+        // Handle a field encountered while walking upward.
+        if (
+          curTag === "input" ||
+          curTag === "textarea"
+        ) {
+          const fieldValue = String(
+            cur.value ||
+            cur.getAttribute("value") ||
+            cur.getAttribute("title") ||
+            cur.getAttribute("aria-label") ||
+            ""
+          )
+            .replace(/\s+/g, " ")
+            .trim();
+
+          if (fieldValue) {
+            return fieldValue;
+          }
+        }
+
+        const t = String(
+          cur.innerText ||
+          cur.textContent ||
+          cur.getAttribute?.("title") ||
+          cur.getAttribute?.("aria-label") ||
+          ""
+        )
+          .replace(/\s+/g, " ")
+          .trim();
+
+        if (
+          t &&
+          allowPolicy &&
+          extractPolicy(t)
+        ) {
           return t;
         }
 
-        if (t && !allowPolicy && t.length <= 120) {
+        if (
+          t &&
+          !allowPolicy &&
+          t.length <= 120
+        ) {
           return t;
         }
 
         cur = cur.parentElement;
       }
 
-      // Fall back to direct node text
-      let txt = ((node.innerText || node.textContent) || "").trim();
 
-      if (txt && txt.length > 80 && node.querySelector) {
-        const small = node.querySelector(
-          "a, span, div, td, th, label"
-        );
-
-        if (small) {
-          const t2 = ((small.innerText || small.textContent) || "").trim();
-          if (t2) txt = t2;
-        }
-      }
-
-      return txt || "";
+      // ========================================================
+      // FINAL FALLBACK
+      // ========================================================
+      return String(
+        node.innerText ||
+        node.textContent ||
+        node.getAttribute?.("title") ||
+        node.getAttribute?.("aria-label") ||
+        ""
+      )
+        .replace(/\s+/g, " ")
+        .trim();
 
     } catch (_) {
       return "";
