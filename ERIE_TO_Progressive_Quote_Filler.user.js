@@ -9,6 +9,8 @@
 // @match        https://www.foragentsonly.com/Quote/Index/*
 // @grant        GM_getValue
 // @grant        unsafeWindow
+// @updateURL   https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/ERIE_TO_Progressive_Quote_Filler.user.js
+// @downloadURL https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/ERIE_TO_Progressive_Quote_Filler.user.js
 // ==/UserScript==
 // ============================================================
 // PROGRESSIVE - SHARED / COMMON
