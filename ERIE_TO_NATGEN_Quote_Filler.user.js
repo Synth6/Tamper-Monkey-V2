@@ -8,8 +8,8 @@
 // @match        https://natgenagency.com/Quote/QuoteAuto.aspx*
 // @match        https://natgenagency.com/Quote/QuoteCoveragesV2.aspx*
 // @match        https://natgenagency.com/Quote/QuoteCoverages.aspx*
-// @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/ERIE_TO_NATGEN_MASTER_COPY_PASTE.user.js
-// @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/ERIE_TO_NATGEN_MASTER_COPY_PASTE.user.js
+// @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/ERIE_TO_NATGEN_Quote_Filler.user.js
+// @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/ERIE_TO_NATGEN_Quote_Filler.user.js
 // @grant        unsafeWindow
 // ==/UserScript==
 
