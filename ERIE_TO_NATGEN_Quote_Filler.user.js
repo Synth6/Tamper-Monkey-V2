@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         ERIE_TO_NATGEN_COPY_PASTE
+// @name         ERIE_TO_NATGEN_Quote_Filler
 // @namespace    https://middlecreekinsurance.com/
 // @version      1.0.0
 // @description  Master combined NatGen filler script (Named Insured, Drivers, Vehicle Selector Probe, Coverages).
