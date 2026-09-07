@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name        Smart Lookup (MCI)
 // @namespace    mci-tools
-// @version      4.3.7
+// @version      4.3.8
 // @description  ALT+Right-Click: pinned chooser for Address/Policy lookup. Address: Wake/Maps/Vexcel combos. Policy: Erie/NatGen/Progressive/NFIP/Beyond Floods/Orion180/NCJUA
 // @match        *://*/*
 // @match        file://*/*
@@ -1320,6 +1320,45 @@ const visible = el => {
       }
 
       (async function main(){
+        const currentPath = (location.pathname || "").toLowerCase();
+
+        // STEP 2: Customer detail page -> wait for Erie's dynamically generated
+        // Documents link, then follow its real href.
+        if (currentPath.startsWith("/customer/search/detail/")) {
+          const docsLink = await observeUntil(() => {
+            const links = Array.from(document.querySelectorAll(
+              'a[href*="/DocumentListWeb/PolicyDocuments/Documents/"]'
+            ));
+
+            return links.find(a => {
+              if (!visible(a)) return false;
+              const text = norm(a.innerText || a.textContent || "");
+              return /^documents$/i.test(text);
+            }) || null;
+          }, 20000);
+
+          if (!docsLink) {
+            toast("Erie: Documents link not found, stopping lookup.", 3500);
+            finish();
+            return;
+          }
+
+          const href = docsLink.href || docsLink.getAttribute("href");
+
+          if (!href) {
+            toast("Erie: Documents link has no URL, stopping lookup.", 3500);
+            finish();
+            return;
+          }
+
+          toast(`Erie Documents: ${pol}`, 2200);
+
+          finish();
+          location.assign(href);
+          return;
+        }
+
+        // STEP 1: Search for the policy
         await observeUntil(() => document.querySelector("#dropdown-select"), 9000);
 
         let tries = 0;
@@ -1367,10 +1406,15 @@ const visible = el => {
           row.querySelector(".custName") ||
           row.querySelector("[ng-click*='gotoCustomerDetail']") ||
           row.querySelector("a");
+
+        // Keep the Erie lookup alive while the customer detail page loads.
+        try {
+          sessionStorage.setItem(K_ERIE_POL, pol);
+          sessionStorage.setItem(K_ERIE_AWAIT, "1");
+        } catch(_) {}
+
         if (link) link.click();
         else row.click();
-
-        finish();
       })();
     })();
   }
