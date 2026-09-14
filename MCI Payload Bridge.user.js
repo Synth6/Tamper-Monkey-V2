@@ -1,11 +1,12 @@
 // ==UserScript==
-// @name         MCI Payload Bridge
+// @name         MCI Erie Payload Bridge
 // @namespace    https://middlecreekinsurance.com/
-// @version      1.1.1
+// @version      1.1.2
 // @description  Shared payload bridge across Erie and NatGen domains using Tampermonkey storage.
 // @match        https://www.agentexchange.com/PersonalLinesWeb/g/*
 // @match        https://natgenagency.com/Quote/*
 // @match        https://*.foragentsonly.com/*
+// @match        https://*.natgenagency.com/*
 // @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/MCI%20Payload%20Bridge.user.js
 // @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/MCI%20Payload%20Bridge.user.js
 // @grant        GM_setValue
