@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
-// @version      1.7.5
+// @version      1.7.6
 // @description  Extract from carriers and build QQC payload. Alt+Q: Extractor.
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
@@ -1292,6 +1292,160 @@
       customerType: 'Personal',
       address: { line1, line2: '', city, state, zip }
     };
+  }
+
+  // ---------- NatGen Homeowners (ho.natgenagency.com) ----------
+  function isNatGenHomeownersQuote() {
+    return /ho\.natgenagency\.com$/i.test(location.hostname) &&
+      /^\/ContentPages\//i.test(location.pathname) &&
+      (!!S('#lblContainerHighLevelInfo') || !!S('#ucBeltBuckle_lblNumber'));
+  }
+
+  function natGenHOValue(id) {
+    const el = document.getElementById(id);
+    if (!el) return '';
+    if ((el.tagName || '').toLowerCase() === 'select') {
+      return (el.value || el.selectedOptions?.[0]?.value || '').trim();
+    }
+    return (el.value || el.textContent || '').trim();
+  }
+
+  function natGenHOQuoteNumber() {
+    const direct = natGenHOValue('ucBeltBuckle_lblNumber');
+    if (direct) return direct;
+    const high = natGenHOValue('lblContainerHighLevelInfo');
+    const m = high.match(/\bQuote\s+(\d+)/i);
+    return m ? m[1] : '';
+  }
+
+  function natGenHOSummaryFallback() {
+    const rawName = natGenHOValue('ucBeltBuckle_lblName');
+    const nameParts = rawName.split(/\s+/).filter(Boolean);
+    const firstName = nameParts.shift() || '';
+    const lastName = nameParts.pop() || '';
+    const middleName = nameParts.join(' ');
+
+    const line1 = natGenHOValue('ucBeltBuckle_lblMailAddr');
+    const csz = parseCityStateZip(natGenHOValue('ucBeltBuckle_lblMailCityState'));
+    const phoneRaw = natGenHOValue('ucBeltBuckle_lblPhone');
+    const primaryPhone = phoneRaw.replace(/[^\d]/g, '').slice(0, 10);
+    const rawEmail = natGenHOValue('ucBeltBuckle_lblEmail');
+    const primaryEmail = /^(?:no\s*email|not\s*provided|n\/?a)$/i.test(rawEmail) ? '' : rawEmail.toLowerCase();
+
+    return sanitizePayloadObject({
+      carrier: 'NatGen Homeowners',
+      source: 'natgen-homeowners-summary',
+      sourceUrl: location.href,
+      quoteNumber: natGenHOQuoteNumber(),
+      firstName: toNameCase(firstName),
+      middleName: toNameCase(middleName),
+      lastName: toNameCase(lastName),
+      suffix: '',
+      primaryPhone,
+      phoneType: formatPhone(primaryPhone),
+      primaryEmail,
+      dob: '',
+      contactType: 'Prospects',
+      customerType: 'Personal',
+      status: 'Active',
+      address: {
+        line1,
+        line2: '',
+        city: csz.city,
+        state: csz.state,
+        zip: csz.zip
+      }
+    });
+  }
+
+  function extractNatGenHomeownersQuote() {
+    // Client Information is the richest quote page. If we're elsewhere in the
+    // quote, use the belt-buckle summary instead of breaking existing NatGen flows.
+    const hasClientInfo = !!S('#MainContent_ucNamedInsured_txtFirstName');
+    if (!hasClientInfo) return natGenHOSummaryFallback();
+
+    const gv = id => natGenHOValue(id);
+
+    const firstName = gv('MainContent_ucNamedInsured_txtFirstName');
+    const middleName = gv('MainContent_ucNamedInsured_txtMiddleName');
+    const lastName = gv('MainContent_ucNamedInsured_txtLastName');
+    const suffix = gv('MainContent_ucNamedInsured_ddlSuffix');
+    const dob = toMMDDYYYY(gv('MainContent_ucNamedInsured_txtDateOfBirth'));
+
+    const area = gv('MainContent_ucContactInfo_ucPhoneNumber_txtAreaCode');
+    const prefix = gv('MainContent_ucContactInfo_ucPhoneNumber_txtPrefix');
+    const line = gv('MainContent_ucContactInfo_ucPhoneNumber_txtLineNumber');
+    const primaryPhone = `${area}${prefix}${line}`.replace(/[^\d]/g, '').slice(0, 10);
+    const phoneKind = gv('MainContent_ucContactInfo_ucPhoneNumber_ddlPhoneType');
+
+    let primaryEmail = gv('MainContent_ucContactInfo_ucEmailAddress_txtEmailAddress').toLowerCase();
+    if (!primaryEmail || /^(?:no\s*email|not\s*provided|n\/?a)$/i.test(primaryEmail)) primaryEmail = '';
+
+    const useDifferentMailing = gv('MainContent_ddlMailingAddress') === 'True';
+    const mailingLine1 = gv('PopupContent_ucMailingAddress_txtAddress');
+
+    let address;
+    if (useDifferentMailing && mailingLine1) {
+      address = {
+        line1: mailingLine1,
+        line2: gv('PopupContent_ucMailingAddress_txtAddress2'),
+        city: gv('PopupContent_ucMailingAddress_txtCity'),
+        state: gv('PopupContent_ucMailingAddress_ddlState'),
+        zip: gv('PopupContent_ucMailingAddress_txtZipCode')
+      };
+    } else {
+      address = {
+        line1: gv('MainContent_ucResidentialAddress_txtAddress'),
+        line2: gv('MainContent_ucResidentialAddress_txtAddress2'),
+        city: gv('MainContent_ucResidentialAddress_txtCity'),
+        state: gv('MainContent_ucResidentialAddress_ddlState'),
+        zip: gv('MainContent_ucResidentialAddress_txtZipCode')
+      };
+    }
+
+    const additionalContacts = [];
+    const hasCoApplicant = gv('MainContent_ddlCoApplicant') === 'True';
+    if (hasCoApplicant) {
+      const coFirst = gv('PopupContent_ucCoApplicant_txtFirstName');
+      const coMiddle = gv('PopupContent_ucCoApplicant_txtMiddleName');
+      const coLast = gv('PopupContent_ucCoApplicant_txtLastName');
+      const coSuffix = gv('PopupContent_ucCoApplicant_ddlSuffix');
+      const coDob = toMMDDYYYY(gv('PopupContent_ucCoApplicant_txtDateOfBirth'));
+      if (coFirst || coLast) {
+        additionalContacts.push({
+          firstName: toNameCase(coFirst),
+          middleName: toNameCase(coMiddle),
+          lastName: toNameCase(coLast),
+          suffix: coSuffix,
+          dob: coDob,
+          relationship: 'Spouse'
+        });
+      }
+    }
+
+    return sanitizePayloadObject({
+      carrier: 'NatGen Homeowners',
+      source: 'natgen-homeowners-client-info',
+      sourceUrl: location.href,
+      quoteNumber: natGenHOQuoteNumber(),
+      effectiveDate: toMMDDYYYY(gv('MainContent_ucGeneralInformation_txtPolicyEffDate')),
+      firstName: toNameCase(firstName),
+      middleName: toNameCase(middleName),
+      lastName: toNameCase(lastName),
+      suffix,
+      dob,
+      gender: gv('MainContent_ucNamedInsured_ddlGender'),
+      maritalStatus: gv('MainContent_ucNamedInsured_ddlMaritalStatus'),
+      primaryPhone,
+      phoneType: formatPhone(primaryPhone),
+      phoneKind,
+      primaryEmail,
+      contactType: 'Prospects',
+      customerType: 'Personal',
+      status: 'Active',
+      address,
+      additionalContacts: additionalContacts.length ? additionalContacts : undefined
+    });
   }
 
   // ---------- Extractors (NatGen + Erie) ----------
@@ -2652,6 +2806,7 @@ function extractProgressiveCommercialAuto() {
     if (hasErieProfileEmailAnchor()) return await extractErieProfile();
     if (isProgressiveCommercialAuto()) return extractProgressiveCommercialAuto();
     if (isProgressiveFAO()) return extractProgressiveFAO();
+    if (isNatGenHomeownersQuote()) return extractNatGenHomeownersQuote();
     if (isNatGenNamedInsured()) return extractNatGenNamedInsured();
     if (isNatGenSummary()) return extractNatGenSummary();
     if (isEriePLW()) return await extractEriePLW();
