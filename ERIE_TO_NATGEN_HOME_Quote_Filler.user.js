@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ERIE_TO_NATGEN_HOME_Quote_Filler
 // @namespace    https://middlecreekinsurance.com/
-// @version      1.0.2
+// @version      1.0.6
 // @description  Erie shared-payload filler for NatGen Homeowners. Fills only the current page; never clicks Search, Next, Save, Done, or Add.
 // @match        https://ho.natgenagency.com/ContentPages/*
 // @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/ERIE_TO_NATGEN_HOME_Quote_Filler.user.js
@@ -13,7 +13,7 @@
 (function () {
   'use strict';
 
-  const VERSION = '1.0.2';
+  const VERSION = '1.0.6';
   const PREFIX = '[MCI NatGen Home]';
   const ROOT = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
@@ -813,6 +813,298 @@
     }
   }
 
+
+  /* =========================================================
+     EMBEDDED NATGEN HOME NAV CONTROLS
+     Adds native-looking controls to NatGen's empty right-side nav.
+     ========================================================= */
+
+  function mountEmbeddedNavControls() {
+    const navRight = document.querySelector('#NavMenu_new_nav_bar .navmenu-right');
+    if (!navRight) return false;
+
+    // Defensive: NatGen/WebForms can redraw sections. Never create duplicates.
+    if (byId('mci-ng-home-nav-fill') || byId('mci-ng-home-nav-address-btn')) return true;
+
+    if (!byId('mci-ng-home-nav-style')) {
+      const style = document.createElement('style');
+      style.id = 'mci-ng-home-nav-style';
+      style.textContent = `
+        #NavMenu_new_nav_bar {
+          overflow: visible !important;
+        }
+
+        #NavMenu_new_nav_bar .navmenu-right {
+          box-sizing: border-box;
+          display: flex !important;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 6px;
+          max-width: calc(100% - 110px);
+          padding: 0 8px 0 6px !important;
+          margin: 0 !important;
+          overflow: visible !important;
+          white-space: nowrap;
+        }
+
+        #NavMenu_new_nav_bar .navmenu-right .mci-ng-home-nav-item {
+          float: none !important;
+          flex: 0 0 auto;
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          position: relative;
+          overflow: visible !important;
+        }
+
+        #NavMenu_new_nav_bar .navmenu-right .mci-ng-home-nav-item > div {
+          height: 40px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          overflow: visible;
+          position: relative;
+        }
+
+        #mci-ng-home-nav-fill,
+        #mci-ng-home-nav-address-btn {
+          appearance: none;
+          box-sizing: border-box;
+          height: 28px;
+          border: 1px solid rgba(255,255,255,.28);
+          border-radius: 3px;
+          background: #3a3a3a;
+          color: #fff;
+          cursor: pointer;
+          font: 700 12px Arial, Helvetica, sans-serif;
+          padding: 0 12px;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+          white-space: nowrap;
+        }
+
+        #mci-ng-home-nav-fill {
+          text-transform: uppercase;
+        }
+
+        #mci-ng-home-nav-address-btn {
+          min-width: 132px;
+          text-align: left;
+          padding-right: 28px;
+          position: relative;
+        }
+
+        #mci-ng-home-nav-address-btn::after {
+          content: "";
+          position: absolute;
+          right: 10px;
+          top: 50%;
+          transform: translateY(-30%);
+          border-left: 4px solid transparent;
+          border-right: 4px solid transparent;
+          border-top: 5px solid #fff;
+          opacity: .9;
+        }
+
+        #mci-ng-home-nav-fill:hover,
+        #mci-ng-home-nav-fill:focus,
+        #mci-ng-home-nav-address-btn:hover,
+        #mci-ng-home-nav-address-btn:focus,
+        #mci-ng-home-nav-address-btn[aria-expanded="true"] {
+          background: #4a4a4a;
+          border-color: rgba(255,255,255,.42);
+          outline: none;
+        }
+
+        #mci-ng-home-nav-menu {
+          display: none;
+          position: fixed;
+          z-index: 2147483647;
+          width: 150px;
+          padding: 4px;
+          margin: 0;
+          border: 1px solid #777;
+          border-radius: 3px;
+          background: #2f2f2f;
+          box-shadow: 0 4px 12px rgba(0,0,0,.35);
+          list-style: none;
+        }
+
+        #mci-ng-home-nav-menu.mci-open {
+          display: block;
+        }
+
+        #mci-ng-home-nav-menu button {
+          appearance: none;
+          display: block;
+          width: 100%;
+          border: 0;
+          border-radius: 2px;
+          background: transparent;
+          color: #fff;
+          cursor: pointer;
+          font: 700 12px Arial, Helvetica, sans-serif;
+          text-align: left;
+          padding: 7px 9px;
+          white-space: nowrap;
+        }
+
+        #mci-ng-home-nav-menu button:hover,
+        #mci-ng-home-nav-menu button:focus {
+          background: #4a4a4a;
+          outline: none;
+        }
+
+        @media (max-width: 760px) {
+          #NavMenu_new_nav_bar .navmenu-right {
+            gap: 4px;
+            padding-right: 4px !important;
+          }
+
+          #mci-ng-home-nav-fill {
+            padding: 0 9px;
+          }
+
+          #mci-ng-home-nav-address-btn {
+            min-width: 122px;
+            padding-left: 9px;
+            padding-right: 24px;
+          }
+
+          #mci-ng-home-nav-menu {
+            width: 140px;
+          }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    const fillLi = document.createElement('li');
+    fillLi.className = 'mci-ng-home-nav-item';
+    fillLi.innerHTML =
+      '<div><button id="mci-ng-home-nav-fill" type="button">Fill Page</button></div>';
+
+    const addressLi = document.createElement('li');
+    addressLi.className = 'mci-ng-home-nav-item';
+    addressLi.innerHTML =
+      '<div>' +
+        '<button id="mci-ng-home-nav-address-btn" type="button" aria-haspopup="true" aria-expanded="false">Address Lookup</button>' +
+      '</div>';
+
+    navRight.appendChild(fillLi);
+    navRight.appendChild(addressLi);
+
+    let addressMenu = byId('mci-ng-home-nav-menu');
+    if (!addressMenu) {
+      addressMenu = document.createElement('ul');
+      addressMenu.id = 'mci-ng-home-nav-menu';
+      addressMenu.innerHTML =
+        '<li><button type="button" data-mci-lookup="wake">Wake County</button></li>' +
+        '<li><button type="button" data-mci-lookup="maps">Google Maps</button></li>' +
+        '<li><button type="button" data-mci-lookup="vexcel">Vexcel</button></li>';
+      document.body.appendChild(addressMenu);
+    }
+
+    const fillBtn = byId('mci-ng-home-nav-fill');
+    if (fillBtn) {
+      fillBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        runCurrentPage();
+      });
+    }
+
+    const addressBtn = byId('mci-ng-home-nav-address-btn');
+
+    function closeAddressMenu() {
+      if (!addressMenu || !addressBtn) return;
+      addressMenu.classList.remove('mci-open');
+      addressBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    function positionAddressMenu() {
+      if (!addressMenu || !addressBtn) return;
+
+      const rect = addressBtn.getBoundingClientRect();
+      const menuWidth = addressMenu.offsetWidth || 150;
+      const viewportWidth = document.documentElement.clientWidth || window.innerWidth || 0;
+
+      let left = rect.right - menuWidth;
+      const minLeft = 4;
+      const maxLeft = Math.max(minLeft, viewportWidth - menuWidth - 4);
+
+      left = Math.max(minLeft, Math.min(left, maxLeft));
+
+      addressMenu.style.left = left + 'px';
+      addressMenu.style.top = Math.round(rect.bottom + 2) + 'px';
+    }
+
+    if (addressBtn) {
+      addressBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const willOpen = !addressMenu.classList.contains('mci-open');
+        closeAddressMenu();
+
+        if (willOpen) {
+          addressMenu.classList.add('mci-open');
+          addressBtn.setAttribute('aria-expanded', 'true');
+          positionAddressMenu();
+        }
+      });
+    }
+
+    addressMenu.addEventListener('click', function (e) {
+      const btn = e.target.closest('button[data-mci-lookup]');
+      if (!btn) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      const mode = clean(btn.getAttribute('data-mci-lookup'));
+      closeAddressMenu();
+      if (mode) openLookup(mode);
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!addressMenu || !addressBtn) return;
+      if (addressMenu.contains(e.target) || addressBtn.contains(e.target)) return;
+      closeAddressMenu();
+    }, true);
+
+    window.addEventListener('resize', function () {
+      if (addressMenu && addressMenu.classList.contains('mci-open')) positionAddressMenu();
+    });
+
+    window.addEventListener('scroll', function () {
+      if (addressMenu && addressMenu.classList.contains('mci-open')) positionAddressMenu();
+    }, true);
+
+    return true;
+  }
+
+  function keepEmbeddedNavControlsMounted() {
+    mountEmbeddedNavControls();
+
+    if (!document.body || typeof MutationObserver === 'undefined') return;
+
+    let queued = false;
+    const observer = new MutationObserver(function () {
+      if (queued) return;
+      queued = true;
+      setTimeout(function () {
+        queued = false;
+        mountEmbeddedNavControls();
+      }, 120);
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+
   /* =========================================================
      MASTER MENU / GLOBAL HOOKS
      ========================================================= */
@@ -833,6 +1125,7 @@
     window.runNatGenHomeCoverages = ROOT.runNatGenHomeCoverages;
     window.runNatGenHomeUnderwriting = ROOT.runNatGenHomeUnderwriting;
     window.runNatGenHomeCurrentPage = ROOT.runNatGenHomeCurrentPage;
+    window.openNatGenHomeAddressLookup = ROOT.openNatGenHomeAddressLookup;
   } catch (_) {}
 
   ROOT.__mciNatGenHomeFiller = {
@@ -841,8 +1134,11 @@
     currentPageKind,
     runCurrentPage,
     openLookup,
-    currentWakeStreetAddress
+    currentWakeStreetAddress,
+    mountEmbeddedNavControls
   };
+
+  keepEmbeddedNavControlsMounted();
 
   console.log(PREFIX, 'Loaded v' + VERSION, ROOT.__mciNatGenHomeFiller);
 })();

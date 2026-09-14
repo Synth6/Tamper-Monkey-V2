@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      6.0.6
+// @version      6.0.7
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -713,13 +713,11 @@
               toggle: { id: "mci_progressive_fillers_toggle", text: "Progressive", className: "mci-btn prog-parent" },
               items: [
                 {
-                  type: "group",
-                  className: "mci-btn-group prog-group",
-                  items: [
-                    { type: "button", id: "mci_prog_fill_named", text: "Nmd", title: "Fill Named Insured", className: "mci-btn prog-named" },
-                    { type: "button", id: "mci_prog_fill_products", text: "Prod", title: "Fill Products", className: "mci-btn prog-products" },
-                    { type: "button", id: "mci_prog_fill_members", text: "Mem", title: "Fill Household Members", className: "mci-btn prog-members" }
-                  ]
+                  type: "button",
+                  id: "mci_prog_fill_page",
+                  text: "Fill Page",
+                  title: "Fill the current Progressive quote page",
+                  className: "mci-btn prog-fill-page"
                 }
               ]
             },
@@ -1050,9 +1048,8 @@
         '.mci-btn.ng-parent:hover{background:#1e40af;opacity:.97;transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.34)!important;filter:brightness(1.05)!important}' +
         '.mci-btn.prog-parent{background:#813E17;padding:4px 8px!important;font-weight:600;opacity:.9}' +
         '.mci-btn.prog-parent:hover{background:#DB7235;opacity:.97;transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.34)!important;filter:brightness(1.05)!important}' +
-        '.mci-btn.prog-named{background:#2563eb}.mci-btn.prog-named:hover{background:#2b6ef5}' +
-        '.mci-btn.prog-products{background:#d97706}.mci-btn.prog-products:hover{background:#ea860c}' +
-        '.mci-btn.prog-members{background:#2f9e58}.mci-btn.prog-members:hover{background:#36ad61}' +
+        '.mci-btn.prog-fill-page{background:#813E17;text-align:center;font-weight:700}' +
+        '.mci-btn.prog-fill-page:hover{background:#DB7235}' +
         '.mci-btn.jones-parent{background:#5b21b6;padding:4px 8px!important;font-weight:600;opacity:.9}' +
         '.mci-btn.jones-parent:hover{background:#6d28d9;opacity:.97;transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.34)!important;filter:brightness(1.05)!important}' +
         '.mci-disclosure-toggle{position:relative;padding-right:22px!important}' +
@@ -1784,28 +1781,62 @@
       });
     }
 
-    onClick("mci_prog_fill_named", function () {
-      runProgressiveFillLauncher({
-        fnName: "testProgressiveNamedInsured",
-        wrongPageMsg: "Open Progressive before running Named Insured.",
-        missingFnMsg: "Progressive Named Insured filler not found (expected: testProgressiveNamedInsured)."
-      });
-    });
+    onClick("mci_prog_fill_page", function () {
+      if (!IS_PROG) {
+        toast("Open a Progressive quote page before using Fill Page.");
+        return;
+      }
 
-    onClick("mci_prog_fill_products", function () {
-      runProgressiveFillLauncher({
-        fnName: "testProgressiveProducts",
-        wrongPageMsg: "Open Progressive before running Products.",
-        missingFnMsg: "Progressive Products filler not found (expected: testProgressiveProducts)."
-      });
-    });
+      let fnName = "";
+      let fnArgs = [];
 
-    onClick("mci_prog_fill_members", function () {
-      runProgressiveFillLauncher({
-        fnName: "testProgressiveHouseholdMembers",
-        wrongPageMsg: "Open Progressive before running Household Members.",
-        missingFnMsg: "Progressive Household Members filler not found (expected: testProgressiveHouseholdMembers)."
-      });
+      // Progressive uses a SPA-style quote flow, so detect the page from
+      // stable page controls instead of relying only on the URL.
+      if (
+        document.getElementById("NamedInsured_Embedded_Questions_List_FirstName") ||
+        document.getElementById("NamedInsured_Embedded_Questions_List_LastName")
+      ) {
+        fnName = "testProgressiveNamedInsured";
+      } else if (
+        document.getElementById("ProductsAA_Embedded_Questions_List_PolicyEffectiveDate") ||
+        document.querySelector('input[id^="ProductsAA_Vehicles_List_"][id$="_Embedded_Questions_List_Vin"]')
+      ) {
+        fnName = "testProgressiveProducts";
+      } else if (
+        document.querySelector('main[aria-labelledby="HouseholdMembers"]') ||
+        Array.from(document.querySelectorAll("h1")).some(function (el) {
+          return String(el.textContent || "").trim() === "Household Members";
+        })
+      ) {
+        fnName = "testProgressiveHouseholdMembers";
+        // The Household Members test function defaults to dry-run mode,
+        // so explicitly request a real fill from the Master Menu.
+        fnArgs = [{ dryRun: false }];
+      }
+
+      if (!fnName) {
+        toast("This Progressive page is not mapped yet.");
+        return;
+      }
+
+      const target = resolveCallableGlobal(fnName);
+      if (!target) {
+        toast("Progressive filler not found on this page.");
+        return;
+      }
+
+      try {
+        const res = target.fn.apply(target.root, fnArgs);
+        if (res && typeof res.then === "function") {
+          res.catch(function (e) {
+            console.warn("[MCI Toolbox] Progressive Fill Page error:", e);
+            toast("Error starting Progressive filler - see console.");
+          });
+        }
+      } catch (e) {
+        console.warn("[MCI Toolbox] Progressive Fill Page error:", e);
+        toast("Error starting Progressive filler - see console.");
+      }
     });
 
     // File downloader triggers
