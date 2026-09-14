@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ERIE_TO_NATGEN_Quote_Filler
 // @namespace    https://middlecreekinsurance.com/
-// @version      1.0.1
+// @version      1.0.3
 // @description  Master combined NatGen filler script (Named Insured, Drivers, Vehicle Selector Probe, Coverages).
 // @match        https://natgenagency.com/Quote/QuoteNamedInsured.aspx*
 // @match        https://natgenagency.com/Quote/QuoteDriver.aspx*
@@ -6226,7 +6226,6 @@
     const root = getNatGenRootWindow();
     const CONTAINER_ID = 'natgenFillThisPageWrap';
     const FILL_BUTTON_ID = 'natgenFillThisPageButton';
-    const CLEAR_BUTTON_ID = 'natgenFillThisPageClearButton';
     const STYLE_ID = 'natgenFillThisPageButtonStyle';
     const ERIE_EXTRACTOR_TOGGLE_KEY = 'mci_pref_erie_extractor_enabled';
     const ERIE_EXTRACTOR_TOGGLE_EVENT = 'mci:erie-extractor-toggle';
@@ -6269,28 +6268,16 @@
       const pathname = String((window.location && window.location.pathname) || '').toLowerCase();
 
       if (pathname.indexOf('/quote/quotenamedinsured.aspx') >= 0) {
-        return {
-          runnerName: 'runNatGenNamedInsured',
-          title: 'Fill Named Insured'
-        };
+        return { runnerName: 'runNatGenNamedInsured', title: 'Fill Named Insured' };
       }
       if (pathname.indexOf('/quote/quotedriver.aspx') >= 0) {
-        return {
-          runnerName: 'runNatGenDrivers',
-          title: 'Fill Drivers'
-        };
+        return { runnerName: 'runNatGenDrivers', title: 'Fill Drivers' };
       }
       if (pathname.indexOf('/quote/quoteauto.aspx') >= 0) {
-        return {
-          runnerName: 'runNatGenVehicleProbe',
-          title: 'Fill Vehicle Page'
-        };
+        return { runnerName: 'runNatGenVehicleProbe', title: 'Fill Vehicle Page' };
       }
       if (pathname.indexOf('/quote/quotecoverages.aspx') >= 0 || pathname.indexOf('/quote/quotecoveragesv2.aspx') >= 0) {
-        return {
-          runnerName: 'runNatGenCoverages',
-          title: 'Fill Coverages'
-        };
+        return { runnerName: 'runNatGenCoverages', title: 'Fill Coverages' };
       }
 
       return null;
@@ -6318,47 +6305,33 @@
         styleEl.id = STYLE_ID;
         styleEl.textContent = [
           '#' + CONTAINER_ID + ' {',
-          '  position: fixed;',
-          '  right: 14px;',
-          '  bottom: 14px;',
-          '  z-index: 2147483647;',
-          '  display: inline-flex;',
-          '  align-items: stretch;',
-          '  border-radius: 6px;',
-          '  overflow: hidden;',
-          '  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);',
-          '  opacity: 0.95;',
+          '  display: block;',
+          '  margin-top: 5px;',
+          '  text-align: right;',
+          '  white-space: nowrap;',
           '}',
-          '#' + CONTAINER_ID + ':hover {',
-          '  opacity: 1;',
-          '}',
-          '#' + CLEAR_BUTTON_ID + ',',
           '#' + FILL_BUTTON_ID + ' {',
-          '  border: 0;',
+          '  box-sizing: border-box;',
+          '  height: 27px;',
           '  margin: 0;',
-          '  font-size: 12px;',
-          '  line-height: 1.2;',
+          '  padding: 0 13px;',
+          '  border: 1px solid #174f91;',
+          '  border-radius: 3px;',
+          '  background: linear-gradient(#2f78bc, #1769aa);',
           '  color: #ffffff;',
+          '  box-shadow: inset 0 1px 0 rgba(255,255,255,0.22);',
           '  cursor: pointer;',
-          '  height: 30px;',
-          '}',
-          '#' + CLEAR_BUTTON_ID + ' {',
-          '  padding: 0 9px;',
-          '  background: #b91c1c;',
-          '  border-right: 1px solid rgba(255,255,255,0.18);',
-          '}',
-          '#' + CLEAR_BUTTON_ID + ':hover {',
-          '  background: #991b1b;',
-          '}',
-          '#' + FILL_BUTTON_ID + ' {',
-          '  padding: 0 12px;',
-          '  background: #111827;',
+          '  font-family: Arial, Helvetica, sans-serif;',
+          '  font-size: 11px;',
+          '  font-weight: bold;',
+          '  line-height: 25px;',
+          '  text-transform: uppercase;',
           '}',
           '#' + FILL_BUTTON_ID + ':hover {',
-          '  background: #1f2937;',
+          '  background: linear-gradient(#4289c7, #2378b8);',
           '}',
           '#' + FILL_BUTTON_ID + ':disabled {',
-          '  opacity: 0.7;',
+          '  opacity: 0.65;',
           '  cursor: wait;',
           '}'
         ].join('\n');
@@ -6368,39 +6341,22 @@
       const config = getNatGenPageFillConfig();
       if (!config) return null;
 
+      const headerRight = document.getElementById('ctl00_pnlMasterHeaderRight');
+      const titleTop = document.getElementById('ctl00_lblHeaderPageTitleTop');
+      if (!headerRight || !titleTop) return null;
+
       let container = document.getElementById(CONTAINER_ID);
-      let clearButton = document.getElementById(CLEAR_BUTTON_ID);
       let fillButton = document.getElementById(FILL_BUTTON_ID);
 
       if (!container) {
         container = document.createElement('div');
         container.id = CONTAINER_ID;
 
-        clearButton = document.createElement('button');
-        clearButton.id = CLEAR_BUTTON_ID;
-        clearButton.type = 'button';
-        clearButton.textContent = 'X';
-        clearButton.title = 'Clear Stored Data';
-        clearButton.addEventListener('click', function () {
-          try {
-            if (typeof root.clearMciSharedPayload === 'function') {
-              root.clearMciSharedPayload();
-            } else if (typeof window.clearMciSharedPayload === 'function') {
-              window.clearMciSharedPayload();
-            } else {
-              try { localStorage.removeItem('mciMasterPayload'); } catch (e) {}
-            }
-          } catch (e) {
-            console.error('[NatGenMaster] Clear Stored Data failed', e);
-          }
-
-          removeNatGenFillThisPageButton();
-        });
-
         fillButton = document.createElement('button');
         fillButton.id = FILL_BUTTON_ID;
         fillButton.type = 'button';
-        fillButton.textContent = 'Fill This Page';
+        fillButton.textContent = 'Fill Page';
+
         fillButton.addEventListener('click', function () {
           const clickConfig = getNatGenPageFillConfig();
           const runnerName = clickConfig ? clickConfig.runnerName : '';
@@ -6409,10 +6365,11 @@
 
           let result;
           fillButton.disabled = true;
+
           try {
             result = runner();
           } catch (e) {
-            console.error('[NatGenMaster] Fill This Page failed', e);
+            console.error('[NatGenMaster] Fill Page failed', e);
             fillButton.disabled = false;
             return;
           }
@@ -6420,7 +6377,7 @@
           if (result && typeof result.then === 'function') {
             result
               .catch(function (e) {
-                console.error('[NatGenMaster] Fill This Page failed', e);
+                console.error('[NatGenMaster] Fill Page failed', e);
               })
               .finally(function () {
                 fillButton.disabled = false;
@@ -6430,9 +6387,10 @@
           }
         });
 
-        container.appendChild(clearButton);
         container.appendChild(fillButton);
-        (document.body || document.documentElement).appendChild(container);
+        titleTop.insertAdjacentElement('afterend', container);
+      } else if (container.parentNode !== headerRight) {
+        titleTop.insertAdjacentElement('afterend', container);
       }
 
       fillButton.title = config.title;
@@ -6441,11 +6399,13 @@
 
     function refreshNatGenFillThisPageButton() {
       const config = getNatGenPageFillConfig();
-      const enabled = getErieExtractorEnabledForNatGen();
-      const hasPayload = hasNatGenSharedPayload();
       const hasRunner = !!(config && typeof root[config.runnerName] === 'function');
 
-      if (!config || !enabled || !hasPayload || !hasRunner) {
+      // The embedded control is a page tool, so keep it visible whenever
+      // this is one of the supported NatGen Auto pages. Do not hide it just
+      // because no Erie payload has been exported yet; the existing runner
+      // will show its normal "No stored payload found" message if needed.
+      if (!config || !hasRunner) {
         removeNatGenFillThisPageButton();
         return;
       }
