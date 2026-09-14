@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ERIE_TO_NATGEN_HOME_Quote_Filler
 // @namespace    https://middlecreekinsurance.com/
-// @version      1.0.1
+// @version      1.0.2
 // @description  Erie shared-payload filler for NatGen Homeowners. Fills only the current page; never clicks Search, Next, Save, Done, or Add.
 // @match        https://ho.natgenagency.com/ContentPages/*
 // @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/ERIE_TO_NATGEN_HOME_Quote_Filler.user.js
@@ -13,7 +13,7 @@
 (function () {
   'use strict';
 
-  const VERSION = '1.0.1';
+  const VERSION = '1.0.2';
   const PREFIX = '[MCI NatGen Home]';
   const ROOT = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
@@ -814,132 +814,6 @@
   }
 
   /* =========================================================
-     SMALL ON-PAGE HELPER BAR
-     ========================================================= */
-
-  function mountHelper() {
-    if (byId('mci-ng-home-tools')) return;
-
-    const kind = currentPageKind();
-    // Loss History / Premium Summary etc. are intentionally not filled yet,
-    // but address lookup remains useful on quote pages.
-    if (!location.pathname.toLowerCase().startsWith('/contentpages/')) return;
-
-    const wrap = document.createElement('div');
-    wrap.id = 'mci-ng-home-tools';
-    wrap.innerHTML = `
-      <button id="mci-ng-home-fill" type="button" ${kind ? '' : 'disabled'}>Fill Page</button>
-      <select id="mci-ng-home-lookup" title="Lookup property address">
-        <option value="">Lookup Address</option>
-        <option value="wake">Wake County Property</option>
-        <option value="maps">Google Maps</option>
-        <option value="vexcel">Vexcel</option>
-      </select>
-    `;
-
-    const style = document.createElement('style');
-    style.textContent = `
-      #mci-ng-home-tools{
-        position:fixed;right:14px;bottom:14px;z-index:2147483646;
-        display:flex;gap:6px;align-items:center;padding:7px;
-        background:#111827;border:1px solid rgba(255,255,255,.16);
-        border-radius:9px;box-shadow:0 5px 18px rgba(0,0,0,.28);
-        font:12px system-ui,Segoe UI,Arial,sans-serif;
-        cursor:move;user-select:none
-      }
-      #mci-ng-home-tools button,#mci-ng-home-tools select{
-        height:30px;border-radius:6px;border:1px solid #cbd5e1;
-        font:12px system-ui,Segoe UI,Arial,sans-serif
-      }
-      #mci-ng-home-tools button{
-        background:#2563eb;color:#fff;border-color:#2563eb;
-        padding:0 12px;font-weight:600;cursor:pointer
-      }
-      #mci-ng-home-tools button:hover{background:#1d4ed8}
-      #mci-ng-home-tools button:disabled{opacity:.45;cursor:not-allowed}
-      #mci-ng-home-tools select{background:#fff;color:#111827;padding:0 8px;cursor:pointer}
-    `;
-    document.head.appendChild(style);
-    document.body.appendChild(wrap);
-
-    // Restore the helper's last position on NatGen pages.
-    const POS_KEY = 'mciNatGenHomeToolsPosition';
-    try {
-      const saved = JSON.parse(localStorage.getItem(POS_KEY) || 'null');
-      if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
-        const maxLeft = Math.max(0, window.innerWidth - wrap.offsetWidth);
-        const maxTop = Math.max(0, window.innerHeight - wrap.offsetHeight);
-        wrap.style.left = Math.min(Math.max(0, saved.left), maxLeft) + 'px';
-        wrap.style.top = Math.min(Math.max(0, saved.top), maxTop) + 'px';
-        wrap.style.right = 'auto';
-        wrap.style.bottom = 'auto';
-      }
-    } catch (_) {}
-
-    // Drag from the dark container itself. Buttons/select remain fully clickable.
-    let drag = null;
-
-    wrap.addEventListener('pointerdown', function (e) {
-      if (e.button !== 0) return;
-      if (e.target.closest('button, select, option')) return;
-
-      const rect = wrap.getBoundingClientRect();
-      drag = {
-        pointerId: e.pointerId,
-        dx: e.clientX - rect.left,
-        dy: e.clientY - rect.top
-      };
-
-      wrap.setPointerCapture(e.pointerId);
-      wrap.style.left = rect.left + 'px';
-      wrap.style.top = rect.top + 'px';
-      wrap.style.right = 'auto';
-      wrap.style.bottom = 'auto';
-      e.preventDefault();
-    });
-
-    wrap.addEventListener('pointermove', function (e) {
-      if (!drag || drag.pointerId !== e.pointerId) return;
-
-      const maxLeft = Math.max(0, window.innerWidth - wrap.offsetWidth);
-      const maxTop = Math.max(0, window.innerHeight - wrap.offsetHeight);
-      const left = Math.min(Math.max(0, e.clientX - drag.dx), maxLeft);
-      const top = Math.min(Math.max(0, e.clientY - drag.dy), maxTop);
-
-      wrap.style.left = left + 'px';
-      wrap.style.top = top + 'px';
-    });
-
-    function finishDrag(e) {
-      if (!drag || (e && drag.pointerId !== e.pointerId)) return;
-
-      const rect = wrap.getBoundingClientRect();
-      try {
-        localStorage.setItem(POS_KEY, JSON.stringify({
-          left: Math.round(rect.left),
-          top: Math.round(rect.top)
-        }));
-      } catch (_) {}
-
-      try {
-        if (e && wrap.hasPointerCapture(e.pointerId)) wrap.releasePointerCapture(e.pointerId);
-      } catch (_) {}
-
-      drag = null;
-    }
-
-    wrap.addEventListener('pointerup', finishDrag);
-    wrap.addEventListener('pointercancel', finishDrag);
-
-    byId('mci-ng-home-fill').addEventListener('click', runCurrentPage);
-    byId('mci-ng-home-lookup').addEventListener('change', function () {
-      const mode = this.value;
-      this.value = '';
-      if (mode) openLookup(mode);
-    });
-  }
-
-  /* =========================================================
      MASTER MENU / GLOBAL HOOKS
      ========================================================= */
 
@@ -960,29 +834,6 @@
     window.runNatGenHomeUnderwriting = ROOT.runNatGenHomeUnderwriting;
     window.runNatGenHomeCurrentPage = ROOT.runNatGenHomeCurrentPage;
   } catch (_) {}
-
-  // Current Master Menu v6.0.4 still has Home placeholders.
-  // Capture these button clicks first so this filler works immediately
-  // without requiring the Master Menu to be patched before testing.
-  const menuMap = {
-    mci_ng_home_client: 'client',
-    mci_ng_home_property: 'property',
-    mci_ng_home_rce: 'rce',
-    mci_ng_home_coverages: 'coverages',
-    mci_ng_home_underwriting: 'underwriting'
-  };
-
-  document.addEventListener('click', function (e) {
-    const btn = e.target && e.target.closest && e.target.closest('button, a');
-    if (!btn || !menuMap[btn.id]) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-    if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
-    runKind(menuMap[btn.id]);
-  }, true);
-
-  mountHelper();
 
   ROOT.__mciNatGenHomeFiller = {
     version: VERSION,

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      6.0.4
+// @version      6.0.6
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -677,14 +677,32 @@
               toggle: { id: "mci_natgen_fillers_toggle", text: "National General", className: "mci-btn ng-parent" },
               items: [
                 {
-                  type: "group",
-                  className: "mci-btn-group ng-group",
-                  items: [
-                    { type: "button", id: "mci_ng_fill_named", text: "Nmd", title: "Fill Named Insured", className: "mci-btn ng-named" },
-                    { type: "button", id: "mci_ng_fill_drivers", text: "Drv", title: "Fill Drivers", className: "mci-btn ng-drivers" },
-                    { type: "button", id: "mci_ng_fill_vehicles", text: "Veh", title: "Fill Vehicles", className: "mci-btn ng-vehicles" },
-                    { type: "button", id: "mci_ng_fill_coverages", text: "Cov", title: "Fill Coverages", className: "mci-btn ng-coverages" }
-                  ]
+                  type: "custom",
+                  html: '<div class="mci-ng-type-label">Auto</div>'
+                },
+                {
+                  type: "button",
+                  id: "mci_ng_auto_fill_page",
+                  text: "Fill Page",
+                  title: "Fill the current NatGen Auto page",
+                  className: "mci-btn ng-auto-fill-page"
+                },
+                {
+                  type: "custom",
+                  html: '<div class="mci-ng-type-label mci-ng-home-label">Home</div>'
+                },
+                {
+                  type: "custom",
+                  html:
+                    '<div class="mci-btn-group ng-home-group mci-ng-home-actions" role="group">' +
+                      '<button class="mci-btn ng-home-fill-page" id="mci_ng_home_fill_page" type="button" title="Fill the current NatGen Home page">Fill Page</button>' +
+                      '<select id="mci_ng_home_address" class="mci-ng-address-select" title="Address Lookup">' +
+                        '<option value="">ADRS</option>' +
+                        '<option value="wake">Wake</option>' +
+                        '<option value="maps">Maps</option>' +
+                        '<option value="vexcel">Vexcel</option>' +
+                      '</select>' +
+                    '</div>'
                 }
               ]
             },
@@ -1040,10 +1058,15 @@
         '.mci-disclosure-toggle{position:relative;padding-right:22px!important}' +
         '.mci-disclosure-toggle::after{content:"";position:absolute;right:8px;top:50%;width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:6px solid rgba(255,255,255,.92);transform:translateY(-50%) rotate(0deg);transform-origin:35% 50%;transition:transform .16s ease,opacity .16s ease;opacity:.88}' +
         '.mci-disclosure-toggle[data-open="1"]::after{transform:translateY(-50%) rotate(90deg);opacity:1}' +
-        '.mci-btn.ng-named{background:#2563eb}.mci-btn.ng-named:hover{background:#2b6ef5}' +
-        '.mci-btn.ng-drivers{background:#2f9e58}.mci-btn.ng-drivers:hover{background:#36ad61}' +
-        '.mci-btn.ng-vehicles{background:#d97706}.mci-btn.ng-vehicles:hover{background:#ea860c}' +
-        '.mci-btn.ng-coverages{background:#0f766e}.mci-btn.ng-coverages:hover{background:#0d857c}' +
+        
+        '.mci-btn.ng-auto-fill-page{background:#2563eb;text-align:center;font-weight:700}' +
+        '.mci-btn.ng-auto-fill-page:hover{background:#2b6ef5}' +
+        '.mci-btn.ng-home-fill-page{background:#2563eb}.mci-btn.ng-home-fill-page:hover{background:#2b6ef5}' +
+        '.mci-ng-address-select{flex:0 0 62px;min-width:62px;height:25px;min-height:25px;padding:3px 4px;border-radius:6px;border:1px solid #00b9ff;background:#475569;color:#fff;font:600 11px system-ui,Segoe UI,Arial;cursor:pointer;text-align:center}' +
+        '.mci-ng-address-select:hover{background:#53657b;filter:brightness(1.08)}' +
+        '.mci-ng-type-label{margin:1px 1px -1px;color:#cfe2ff;font-size:11px;font-weight:700;letter-spacing:.25px}' +
+        '.mci-ng-home-label{margin-top:3px}' +
+        
         '.mci-btn.jones-auto{background:#1d4ed8}.mci-btn.jones-auto:hover{background:#2563eb}' +
         '.mci-btn.jones-home{background:#4f7b2f}.mci-btn.jones-home:hover{background:#5a8a35}' +
         '.mci-btn.erie-toggle{position:relative;padding-right:52px!important;background:#334155}' +
@@ -1677,41 +1700,89 @@
       }
     });
 
-    onClick("mci_ng_fill_named", function () {
-      runNatGenFillLauncher({
-        pagePath: "/quote/quotenamedinsured.aspx",
-        fnName: "testNatGenNamed",
-        wrongPageMsg: "Open NatGen Named Insured page before running this.",
-        missingFnMsg: "NatGen Named Insured filler not found (expected: testNatGenNamed)."
-      });
+    onClick("mci_ng_auto_fill_page", function () {
+      if (!IS_NG || !PATH.startsWith("/quote/")) {
+        toast("Open a NatGen Auto quote page before using Fill Page.");
+        return;
+      }
+
+      let fnName = "";
+      if (PATH.includes("/quote/quotenamedinsured.aspx")) fnName = "testNatGenNamed";
+      else if (PATH.includes("/quote/quotedriver.aspx")) fnName = "testNatGenDrivers";
+      else if (PATH.includes("/quote/quoteauto.aspx")) fnName = "testNatGenVehicles";
+      else if (PATH.includes("/quote/quotecoverages")) fnName = "runNatGenCoverages";
+
+      if (!fnName) {
+        toast("This NatGen Auto page is not mapped yet.");
+        return;
+      }
+
+      const target = resolveCallableGlobal(fnName);
+      if (!target) {
+        toast("NatGen Auto filler not found on this page.");
+        return;
+      }
+
+      try {
+        const res = target.fn.call(target.root);
+        if (res && typeof res.then === "function") {
+          res.catch(function (e) {
+            console.warn("[MCI Toolbox] NatGen Auto Fill Page error:", e);
+            toast("Error starting NatGen Auto filler - see console.");
+          });
+        }
+      } catch (e) {
+        console.warn("[MCI Toolbox] NatGen Auto Fill Page error:", e);
+        toast("Error starting NatGen Auto filler - see console.");
+      }
     });
 
-    onClick("mci_ng_fill_drivers", function () {
-      runNatGenFillLauncher({
-        pagePath: "/quote/quotedriver.aspx",
-        fnName: "testNatGenDrivers",
-        wrongPageMsg: "Open NatGen Drivers page before running this.",
-        missingFnMsg: "NatGen Drivers filler not found (expected: testNatGenDrivers)."
-      });
+    onClick("mci_ng_home_fill_page", function () {
+      if (!IS_NG || !PATH.startsWith("/contentpages/")) {
+        toast("Open a NatGen Homeowners page before using Fill Page.");
+        return;
+      }
+
+      const target = resolveCallableGlobal("runNatGenHomeCurrentPage");
+      if (!target) {
+        toast("NatGen Homeowners filler not found on this page.");
+        return;
+      }
+
+      try {
+        target.fn.call(target.root);
+      } catch (e) {
+        console.warn("[MCI Toolbox] NatGen Home Fill Page error:", e);
+        toast("Error starting NatGen Home filler - see console.");
+      }
     });
 
-    onClick("mci_ng_fill_vehicles", function () {
-      runNatGenFillLauncher({
-        pagePath: "/quote/quoteauto.aspx",
-        fnName: "testNatGenVehicles",
-        wrongPageMsg: "Open NatGen Vehicles page before running this.",
-        missingFnMsg: "NatGen Vehicles filler not found (expected: testNatGenVehicles)."
-      });
-    });
+    const ngHomeAddress = $s("#mci_ng_home_address");
+    if (ngHomeAddress) {
+      ngHomeAddress.addEventListener("change", function () {
+        const mode = this.value;
+        this.value = "";
+        if (!mode) return;
 
-    onClick("mci_ng_fill_coverages", function () {
-      runNatGenFillLauncher({
-        pagePath: "/quote/quotecoverages",
-        fnName: "runNatGenCoverages",
-        wrongPageMsg: "Open NatGen Coverages page before running this.",
-        missingFnMsg: "NatGen Coverages filler not found (expected: runNatGenCoverages)."
+        if (!IS_NG || !PATH.startsWith("/contentpages/")) {
+          toast("Open a NatGen Homeowners page before using ADRS.");
+          return;
+        }
+
+        const target = resolveCallableGlobal("openNatGenHomeAddressLookup");
+        if (!target) {
+          toast("NatGen Homeowners address lookup not found.");
+          return;
+        }
+
+        try {
+          target.fn.call(target.root, mode);
+        } catch (e) {
+          console.warn("[MCI Toolbox] NatGen Home address lookup error:", e);
+          toast("Address lookup failed - see console.");
+        }
       });
-    });
+    }
 
     onClick("mci_prog_fill_named", function () {
       runProgressiveFillLauncher({
