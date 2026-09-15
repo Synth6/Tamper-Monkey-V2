@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      6.0.7
+// @version      6.0.9
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -23,6 +23,7 @@
 // @match        https://*.ncjuanciua.org/*
 // @match        https://app.orion180.com/*
 // @match        https://msc.fema.gov/portal/search*
+// @match        https://fris.nc.gov/map*
 // @match        https://www.jsausa.com/*
 // @match        https://webportal.ncrb.org/*
 // @match        https://www.ncrb.org/*
@@ -723,6 +724,27 @@
             },
             {
               type: "panel",
+              panelId: "mci_orion180_fillers_panel",
+              className: "mci-subsection mci-subsection-orion180",
+              toggle: { id: "mci_orion180_fillers_toggle", text: "Orion 180", className: "mci-btn orion180-parent" },
+              items: [
+                {
+                  type: "custom",
+                  html:
+                    '<div class="mci-btn-group orion180-home-group mci-orion180-home-actions" role="group">' +
+                      '<button class="mci-btn orion180-fill-page" id="mci_orion180_fill_page" type="button" title="Fill the current Orion 180 HO3 page">Fill Page</button>' +
+                      '<select id="mci_orion180_address" class="mci-orion180-address-select" title="Address Lookup">' +
+                        '<option value="">ADRS</option>' +
+                        '<option value="wake">Wake</option>' +
+                        '<option value="maps">Maps</option>' +
+                        '<option value="vexcel">Vexcel</option>' +
+                      '</select>' +
+                    '</div>'
+                }
+              ]
+            },
+            {
+              type: "panel",
               panelId: "mci_jones_forms_panel",
               className: "mci-subsection mci-subsection-jones",
               toggle: { id: "mci_jones_forms_toggle", text: "Jones Forms", className: "mci-btn jones-parent" },
@@ -817,6 +839,13 @@
           right: { id: "mci_county_manual", text: "✏️",title: "Open manual address entry" }
         },
         { type: "button", id: "mci_fema_map", text: "🌊 FEMA Map", className: "mci-btn fema-map" },
+
+        // ============================================================
+        // NC FRIS FLOOD MAP - https://fris.nc.gov/map
+        // Kept separate from FEMA so each website can be maintained independently.
+        // ============================================================
+        { type: "button", id: "mci_fris_map", text: "🗺️ NC FRIS Map", className: "mci-btn fris-map" },
+
         { type: "button", id: "mci_cashCenter", text: "💵 Cash Payment", className: "mci-btn brand" },
         { type: "button", id: "mci_fax",        text: "📠 Fax", className: "mci-btn brand" },
         { type: "button", id: "mci_draw_tool",  text: "🎨 Draw Tool", className: "mci-btn draw-gradient" }
@@ -1050,12 +1079,18 @@
         '.mci-btn.prog-parent:hover{background:#DB7235;opacity:.97;transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.34)!important;filter:brightness(1.05)!important}' +
         '.mci-btn.prog-fill-page{background:#813E17;text-align:center;font-weight:700}' +
         '.mci-btn.prog-fill-page:hover{background:#DB7235}' +
+        '.mci-btn.orion180-parent{background:#D50032;padding:4px 8px!important;font-weight:600;opacity:.92}' +
+        '.mci-btn.orion180-parent:hover{background:#e51b49;opacity:.98;transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.34)!important;filter:brightness(1.05)!important}' +
+        '.mci-btn.orion180-fill-page{background:#D50032;text-align:center;font-weight:700}' +
+        '.mci-btn.orion180-fill-page:hover{background:#e51b49}' +
+        '.mci-orion180-address-select{flex:0 0 62px;min-width:62px;height:25px;min-height:25px;padding:3px 4px;border-radius:6px;border:1px solid #ff5a78;background:#7f1028;color:#fff;font:600 11px system-ui,Segoe UI,Arial;cursor:pointer;text-align:center}' +
+        '.mci-orion180-address-select:hover{background:#991531;filter:brightness(1.08)}' +
         '.mci-btn.jones-parent{background:#5b21b6;padding:4px 8px!important;font-weight:600;opacity:.9}' +
         '.mci-btn.jones-parent:hover{background:#6d28d9;opacity:.97;transform:translateY(0)!important;box-shadow:0 3px 8px rgba(0,0,0,.34)!important;filter:brightness(1.05)!important}' +
         '.mci-disclosure-toggle{position:relative;padding-right:22px!important}' +
         '.mci-disclosure-toggle::after{content:"";position:absolute;right:8px;top:50%;width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:6px solid rgba(255,255,255,.92);transform:translateY(-50%) rotate(0deg);transform-origin:35% 50%;transition:transform .16s ease,opacity .16s ease;opacity:.88}' +
         '.mci-disclosure-toggle[data-open="1"]::after{transform:translateY(-50%) rotate(90deg);opacity:1}' +
-        
+
         '.mci-btn.ng-auto-fill-page{background:#2563eb;text-align:center;font-weight:700}' +
         '.mci-btn.ng-auto-fill-page:hover{background:#2b6ef5}' +
         '.mci-btn.ng-home-fill-page{background:#2563eb}.mci-btn.ng-home-fill-page:hover{background:#2b6ef5}' +
@@ -1063,7 +1098,7 @@
         '.mci-ng-address-select:hover{background:#53657b;filter:brightness(1.08)}' +
         '.mci-ng-type-label{margin:1px 1px -1px;color:#cfe2ff;font-size:11px;font-weight:700;letter-spacing:.25px}' +
         '.mci-ng-home-label{margin-top:3px}' +
-        
+
         '.mci-btn.jones-auto{background:#1d4ed8}.mci-btn.jones-auto:hover{background:#2563eb}' +
         '.mci-btn.jones-home{background:#4f7b2f}.mci-btn.jones-home:hover{background:#5a8a35}' +
         '.mci-btn.erie-toggle{position:relative;padding-right:52px!important;background:#334155}' +
@@ -1114,6 +1149,7 @@
         '.mci-downloader.mci-subsection{padding:5px 6px;border-radius:10px;gap:5px;overflow:hidden}' +
         '.mci-downloader.mci-subsection-ng{background:rgba(30,58,138,.28);border:1px solid rgba(96,165,250,.24)}' +
         '.mci-downloader.mci-subsection-prog{background:rgba(138,100,30,.20);border:1px solid rgba(250,167,96,.20)}' +
+        '.mci-downloader.mci-subsection-orion180{background:rgba(213,0,50,.18);border:1px solid rgba(255,90,120,.28)}' +
         '.mci-downloader.mci-subsection-jones{background:rgba(91,33,182,.24);border:1px solid rgba(167,139,250,.24)}' +
         '.mci-downloader.mci-subsection .mci-downloader-panel{padding-top:1px;gap:6px}' +
         '.mci-btn-group{display:flex;gap:6px;width:100%;max-width:100%;min-width:0}' +
@@ -1170,6 +1206,12 @@
         '.mci-btn.vin-copy{background:#5b21b6}.mci-btn.vin-copy:hover{background:#6d28d9}' +
         '.mci-btn.fema-map{background:linear-gradient(135deg,#0284c7 0%,#06b6d4 55%,#14b8a6 100%);color:#ffffff;border:1px solid rgba(255,255,255,.18)}' +
         '.mci-btn.fema-map:hover{filter:brightness(1.08);transform:translateY(-1px)}' +
+
+        /* ============================================================
+         * NC FRIS FLOOD MAP BUTTON - https://fris.nc.gov/map
+         * ============================================================ */
+        '.mci-btn.fris-map{background:linear-gradient(135deg,#2563eb 0%,#1d4ed8 52%,#1e3a8a 100%);color:#ffffff;border:1px solid rgba(255,255,255,.18)}' +
+        '.mci-btn.fris-map:hover{filter:brightness(1.10);transform:translateY(-1px)}' +
 
         '.qq-row-controls{display:flex;gap:8px;align-items:center}' +
         '#mci_row_color{width:26px;height:29px;border:none;padding:0;background:none;cursor:pointer;}' +
@@ -1382,6 +1424,8 @@
                 otherToggle.textContent = "National General";
               } else if (otherPanelId === "mci_progressive_fillers_panel") {
                 otherToggle.textContent = "Progressive";
+              } else if (otherPanelId === "mci_orion180_fillers_panel") {
+                otherToggle.textContent = "Orion 180";
               } else if (otherPanelId === "mci_jones_forms_panel") {
                 otherToggle.textContent = "Jones Forms";
               }
@@ -1408,6 +1452,11 @@
     });
 
     wirePanel("mci_progressive_fillers_toggle", "mci_progressive_fillers_panel", null, null, {
+      disclosure: true,
+      accordionGroup: "export-submenus"
+    });
+
+    wirePanel("mci_orion180_fillers_toggle", "mci_orion180_fillers_panel", null, null, {
       disclosure: true,
       accordionGroup: "export-submenus"
     });
@@ -1633,6 +1682,30 @@
       toast("Opening FEMA Map page...");
     });
 
+    // ============================================================
+    // NC FRIS FLOOD MAP - https://fris.nc.gov/map
+    // Standalone FRIS userscript listens for this event.
+    // ============================================================
+    onClick("mci_fris_map", function () {
+      const frisUrl = "https://fris.nc.gov/map";
+
+      if (location.href.startsWith(frisUrl)) {
+        window.dispatchEvent(new CustomEvent("mci:fris-map-open", {
+          detail: { source: "mci-menu" }
+        }));
+
+        toast("NC FRIS Map tool opened.");
+        return;
+      }
+
+      window.open(
+        frisUrl + "#mci-open-fris-tool=1",
+        "_blank"
+      );
+
+      toast("Opening NC FRIS Map page...");
+    });
+
     // Cross-site tools (your separate script listens)
 
     onClick("mci_copy", function () {
@@ -1776,6 +1849,59 @@
           target.fn.call(target.root, mode);
         } catch (e) {
           console.warn("[MCI Toolbox] NatGen Home address lookup error:", e);
+          toast("Address lookup failed - see console.");
+        }
+      });
+    }
+
+    onClick("mci_orion180_fill_page", function () {
+      if (!IS_ORION180 || !PATH.startsWith("/quote/")) {
+        toast("Open an Orion 180 HO3 quote page before using Fill Page.");
+        return;
+      }
+
+      const target = resolveCallableGlobal("runOrion180CurrentPage");
+      if (!target) {
+        toast("Orion 180 HO3 filler not found on this page.");
+        return;
+      }
+
+      try {
+        const res = target.fn.call(target.root);
+        if (res && typeof res.then === "function") {
+          res.catch(function (e) {
+            console.warn("[MCI Toolbox] Orion 180 Fill Page error:", e);
+            toast("Error starting Orion 180 filler - see console.");
+          });
+        }
+      } catch (e) {
+        console.warn("[MCI Toolbox] Orion 180 Fill Page error:", e);
+        toast("Error starting Orion 180 filler - see console.");
+      }
+    });
+
+    const orion180Address = $s("#mci_orion180_address");
+    if (orion180Address) {
+      orion180Address.addEventListener("change", function () {
+        const mode = this.value;
+        this.value = "";
+        if (!mode) return;
+
+        if (!IS_ORION180 || !PATH.startsWith("/quote/")) {
+          toast("Open an Orion 180 HO3 quote page before using ADRS.");
+          return;
+        }
+
+        const target = resolveCallableGlobal("openOrion180AddressLookup");
+        if (!target) {
+          toast("Orion 180 address lookup not found.");
+          return;
+        }
+
+        try {
+          target.fn.call(target.root, mode);
+        } catch (e) {
+          console.warn("[MCI Toolbox] Orion 180 address lookup error:", e);
           toast("Address lookup failed - see console.");
         }
       });
