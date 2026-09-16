@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Erie Master Extractor
 // @namespace    https://middlecreekinsurance.com/
-// @version      0.1.4
+// @version      0.1.7
 // @description  Erie-only master extractor for Personal Lines Auto. Collects page-by-page data into one normalized JSON payload.
 // @match        https://www.agentexchange.com/PersonalLinesWeb/g/*
 // @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Erie%20Master%20Extractor.user.js
@@ -17,7 +17,7 @@
   'use strict';
 
   const APP = {
-    version: '0.1.3',
+    version: '0.1.7',
     carrier: 'Erie',
     lob: 'PersonalAuto'
   };
@@ -3502,7 +3502,7 @@
   <title>Erie Master Summary</title>
   <style>
     :root{
-      --bg:#0f1724;
+      --bg:#B7D4FF;
       --panel:#152235;
       --panel2:linear-gradient(135deg, #2f73d8, #1e4fa3);
       --text:#eef4ff;
@@ -3957,138 +3957,204 @@
   const UI = {
     panel: null,
     status: null,
+    shell: null,
+    tab: null,
+    pinnedOpen: false,
+    hoverOpen: false,
 
-          makeDraggable() {
-            if (!UI.panel) return;
+    setOpen(open) {
+      if (!UI.shell) return;
+      UI.shell.classList.toggle('is-open', !!open);
+      if (UI.tab) {
+        UI.tab.setAttribute('aria-expanded', open ? 'true' : 'false');
+        UI.tab.title = open ? 'Hide Erie Master Extractor' : 'Show Erie Master Extractor';
+      }
+    },
 
-            const panel = UI.panel;
-            const header = panel.querySelector('.eme-head');
-            if (!header) return;
-
-            let dragging = false;
-            let startX = 0;
-            let startY = 0;
-            let startLeft = 0;
-            let startTop = 0;
-
-            header.style.cursor = 'move';
-
-            header.addEventListener('mousedown', function (e) {
-              if (!e) return;
-
-              // don't drag when clicking buttons
-              if (e.target.closest('button')) return;
-
-              dragging = true;
-              startX = e.clientX;
-              startY = e.clientY;
-
-              const rect = panel.getBoundingClientRect();
-              startLeft = rect.left;
-              startTop = rect.top;
-
-              panel.style.left = startLeft + 'px';
-              panel.style.top = startTop + 'px';
-              panel.style.right = 'auto';
-              panel.style.bottom = 'auto';
-
-              document.body.style.userSelect = 'none';
-              e.preventDefault();
-            });
-
-            document.addEventListener('mousemove', function (e) {
-              if (!dragging) return;
-
-              const dx = e.clientX - startX;
-              const dy = e.clientY - startY;
-
-              let nextLeft = startLeft + dx;
-              let nextTop = startTop + dy;
-
-              const maxLeft = Math.max(0, window.innerWidth - panel.offsetWidth);
-              const maxTop = Math.max(0, window.innerHeight - panel.offsetHeight);
-
-              if (nextLeft < 0) nextLeft = 0;
-              if (nextTop < 0) nextTop = 0;
-              if (nextLeft > maxLeft) nextLeft = maxLeft;
-              if (nextTop > maxTop) nextTop = maxTop;
-
-              panel.style.left = nextLeft + 'px';
-              panel.style.top = nextTop + 'px';
-            });
-
-            document.addEventListener('mouseup', function () {
-              if (!dragging) return;
-              dragging = false;
-              document.body.style.userSelect = '';
-            });
-          },
+    refreshOpenState() {
+      UI.setOpen(UI.pinnedOpen || UI.hoverOpen);
+    },
 
     init() {
       GM_addStyle(`
-        #erie-master-extractor-panel{
+        #erie-master-extractor-shell{
           position:fixed;
-          right:14px;
-          bottom:14px;
+          right:0;
+          top:50%;
           z-index:2147483647;
-          width:260px;
+          display:flex;
+          align-items:center;
+          width:252px;
+          transform:translateY(-50%) translateX(232px);
+          transition:transform .18s ease;
+          pointer-events:auto;
+          font:12px/1.35 system-ui,Segoe UI,Arial,sans-serif;
+        }
+
+        #erie-master-extractor-shell.is-open{
+          transform:translateY(-50%) translateX(0);
+        }
+
+        #erie-master-extractor-tab{
+          position:relative;
+          flex:0 0 20px;
+          width:20px;
+          min-height:48px;
+          border:1px solid rgba(255,255,255,.24);
+          border-right:0;
+          border-radius:8px 0 0 8px;
+          background:#007EF5;
+          color:#fff;
+          box-shadow:0 8px 24px rgba(0,0,0,.25);
+          cursor:pointer;
+          pointer-events:auto;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          padding:2px 0;
+          font-weight:600;
+          letter-spacing:2.2px;
+          writing-mode:vertical-rl;
+          text-orientation:mixed;
+        }
+
+        #erie-master-extractor-tab:hover{
+          background:#156fd1;
+        }
+
+        #erie-master-extractor-panel{
+          position:relative;
+          flex:0 0 232px;
+          width:232px;
           background:#0e1a2a;
           color:#fff;
           border:1px solid rgba(255,255,255,.16);
-          border-radius:12px;
+          border-right:0;
+          border-radius:0;
           box-shadow:0 12px 30px rgba(0,0,0,.35);
-          font:12px/1.35 system-ui,Segoe UI,Arial,sans-serif;
           overflow:hidden;
+          pointer-events:auto;
         }
+
         #erie-master-extractor-panel .eme-head{
           position:relative;
-          padding:10px 12px;
+          padding:0px 92px 0px 4px;
           background:#007EF5;
           font-weight:700;
         }
+
+        #erie-master-extractor-panel .eme-head-main{
+          display:block;
+        }
+
+        #erie-master-extractor-panel .eme-sub{
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:8px;
+          margin-top:2px;
+          opacity:.9;
+          font-size:10px;
+          font-weight:400;
+          color:#dbe8ff;
+        }
+
         #erie-master-extractor-panel .eme-close{
           position:absolute;
-          top:6px;
+          top:8px;
           right:8px;
-          width:20px;
-          height:20px;
-          line-height:18px;
+          width:22px;
+          height:22px;
+          line-height:20px;
           border:1px solid rgba(255,255,255,.35);
           border-radius:6px;
-          background:#f00;
-          color:#eaf2ff;
+          background:#b83232;
+          color:#fff;
           font-size:14px;
           font-weight:700;
           padding:0;
           cursor:pointer;
-          opacity:.85;
+          opacity:.92;
         }
+
+        #erie-master-extractor-panel .eme-pin{
+          position:absolute;
+          top:8px;
+          right:36px;
+          width:28px;
+          height:22px;
+          line-height:20px;
+          border:1px solid rgba(255,255,255,.28);
+          border-radius:6px;
+          background:rgba(75,40,172,.47);
+          color:#fff;
+          font-size:12px;
+          padding:0;
+          cursor:pointer;
+        }
+
+        #erie-master-extractor-panel .eme-pin:hover{
+          background:#4b5563;
+        }
+
+        #erie-master-extractor-panel .eme-pin.is-pinned{
+          background:#7c3aed;
+        }
+
+        #erie-master-extractor-panel .eme-pin.is-pinned:hover{
+          background:#6d28d9;
+        }
+
         #erie-master-extractor-panel .eme-close:hover{
+          background:#dc2626;
           opacity:1;
-          background:rgba(255,255,255,.14);
         }
-        #erie-master-extractor-panel .eme-sub{
-          opacity:.8;
-          font-size:11px;
-          font-weight:400;
-          margin-top:2px;
-          color:#dbe8ff;
+
+        #erie-master-extractor-panel .eme-head-tools{
+          display:flex;
+          gap:4px;
+          margin:0;
         }
+
+        #erie-master-extractor-panel .eme-mini-btn{
+          width:24px;
+          height:20px;
+          flex:0 0 24px;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          border:1px solid rgba(255,255,255,.22);
+          border-radius:5px;
+          background:#374151;
+          color:#fff;
+          font-size:10px;
+          line-height:1;
+          padding:0;
+          cursor:pointer;
+        }
+
+        #erie-master-extractor-panel .eme-mini-btn:hover{
+          background:#4b5563;
+        }
+
         #erie-master-extractor-panel .eme-body{
-          padding:10px 12px;
+          padding:3px 4px;
           color:#f3f7ff;
         }
+
         #erie-master-extractor-panel label,
         #erie-master-extractor-panel span,
         #erie-master-extractor-panel .eme-status,
         #erie-master-extractor-panel .eme-row{
           color:#f3f7ff;
         }
+
         #erie-master-extractor-panel .eme-row{
           display:flex;
           gap:6px;
           margin-bottom:6px;
         }
+
         #erie-master-extractor-panel button{
           flex:1;
           border:0;
@@ -4097,10 +4163,21 @@
           cursor:pointer;
           font-size:12px;
         }
+
         #erie-master-extractor-panel .eme-primary{ background:#2c7be5; color:#fff; }
         #erie-master-extractor-panel .eme-secondary{ background:#e9eef5; color:#111; }
         #erie-master-extractor-panel .eme-success{ background:#1f9d55; color:#fff; }
         #erie-master-extractor-panel .eme-danger{ background:#b83232; color:#fff; }
+
+        #erie-master-extractor-panel .eme-summary-btn{
+          background:#8b5cf6;
+          color:#fff;
+        }
+
+        #erie-master-extractor-panel .eme-summary-btn:hover{
+          background:#7c3aed;
+        }
+
         #erie-master-extractor-panel .eme-status{
           margin-top:8px;
           background:rgba(255,255,255,.08);
@@ -4109,9 +4186,11 @@
           white-space:pre-line;
           color:#ffffff;
         }
+
         #erie-master-extractor-panel input[type="checkbox"]{
           accent-color:#ffffff;
         }
+
         #erie-master-extractor-toast{
           position:fixed;
           top:16px;
@@ -4125,105 +4204,107 @@
           box-shadow:0 6px 18px rgba(0,0,0,.35);
           font:12px/1.35 system-ui,Segoe UI,Arial,sans-serif;
         }
-
-        #erie-master-extractor-panel .eme-head{
-          position:relative;
-          padding:10px 12px;
-          padding-right:74px;
-          background:#007EF5;
-          font-weight:700;
-        }
-
-        #erie-master-extractor-panel .eme-head-main{
-          display:block;
-        }
-
-        #erie-master-extractor-panel .eme-head-tools{
-          position:absolute;
-          top:30px;
-          right:8px;
-          display:flex;
-          gap:4px;
-        }
-
-        #erie-master-extractor-panel .eme-mini-btn{
-          width:24px;
-          height:22px;
-          display:flex;
-          align-items:center;
-          justify-content:center;
-          border:1px solid rgba(255,255,255,.28);
-          border-radius:6px;
-          background:rgba(75, 40, 172, 0.47);
-          color:#fff;
-          font-size:12px;
-          line-height:1;
-          padding:0;
-          cursor:pointer;
-        }
-
-        #erie-master-extractor-panel .eme-mini-btn:hover{
-          background:rgba(255,255,255,.26);
-        }
-        .eme-summary-btn {
-          background: #8b5cf6; /* nice purple */
-          color: #fff;
-        }
-        .eme-summary-btn:hover {
-          background: #7c3aed;
-        }
       `);
 
-      const panel = document.createElement('div');
-      panel.id = 'erie-master-extractor-panel';
-      panel.innerHTML = `
-        <div class="eme-head">
-          <button id="eme-close" class="eme-close" title="Turn off Erie extractor" aria-label="Turn off Erie extractor" type="button">&times;</button>
+      const shell = document.createElement('div');
+      shell.id = 'erie-master-extractor-shell';
+      shell.innerHTML = `
+        <button
+          id="erie-master-extractor-tab"
+          type="button"
+          aria-expanded="false"
+          title="Show Erie Master Extractor"
+        >ERIE</button>
 
-          <div class="eme-head-main">
-            <div>Erie Master Extractor</div>
-            <div class="eme-sub">v${APP.version}</div>
+        <div id="erie-master-extractor-panel">
+          <div class="eme-head">
+            <button id="eme-pin" class="eme-pin" title="Pin panel open" aria-label="Pin panel open" type="button">📌</button>
+            <button id="eme-close" class="eme-close" title="Turn off Erie extractor" aria-label="Turn off Erie extractor" type="button">&times;</button>
+
+            <div class="eme-head-main">
+              <div>Erie Extractor</div>
+
+              <div class="eme-sub">
+                <span>v${APP.version}</span>
+
+                <div class="eme-head-tools">
+                  <button id="eme-copy" class="eme-mini-btn" title="Copy JSON" aria-label="Copy JSON" type="button">📋</button>
+                  <button id="eme-download" class="eme-mini-btn" title="Download JSON" aria-label="Download JSON" type="button">⬇️</button>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div class="eme-head-tools">
-            <button id="eme-copy" class="eme-mini-btn" title="Copy JSON" aria-label="Copy JSON" type="button">📋</button>
-            <button id="eme-download" class="eme-mini-btn" title="Download JSON" aria-label="Download JSON" type="button">⬇️</button>
+          <div class="eme-body">
+            <div class="eme-row">
+              <button id="eme-collect" class="eme-primary">Collect</button>
+              <button id="eme-harvest" class="eme-secondary">Harvest VINs</button>
+            </div>
+
+            <div class="eme-row">
+              <button id="eme-summary" class="eme-summary-btn">Summary</button>
+              <button id="eme-reset" class="eme-danger">Reset</button>
+            </div>
+
+            <div class="eme-row" style="align-items:center;">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" id="eme-autoCollect">
+                <span>Auto collect</span>
+              </label>
+            </div>
+
+            <div id="eme-status" class="eme-status"></div>
           </div>
-        </div>
-        <div class="eme-body">
-          <div class="eme-row">
-            <button id="eme-collect" class="eme-primary">Collect</button>
-            <button id="eme-harvest" class="eme-secondary">Harvest VINs</button>
-          </div>
-          <div class="eme-row">
-            <button id="eme-summary" class="eme-summary-btn">Summary</button>
-            <button id="eme-reset" class="eme-danger">Reset</button>
-          </div>
-          <div class="eme-row" style="align-items:center;">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-              <input type="checkbox" id="eme-autoCollect">
-              <span>Auto collect</span>
-            </label>
-          </div>
-          <div id="eme-status" class="eme-status"></div>
         </div>
       `;
 
-      document.body.appendChild(panel);
-      UI.panel = panel;
-      UI.status = panel.querySelector('#eme-status');
-      UI.makeDraggable();
+      document.body.appendChild(shell);
 
-      panel.querySelector('#eme-collect').addEventListener('click', Actions.collectCurrentPage);
-      panel.querySelector('#eme-harvest').addEventListener('click', Actions.harvestVins);
-      panel.querySelector('#eme-copy').addEventListener('click', Actions.copyPayload);
-      panel.querySelector('#eme-download').addEventListener('click', Actions.downloadPayload);
-      panel.querySelector('#eme-summary').addEventListener('click', Actions.showSummary);
-      panel.querySelector('#eme-reset').addEventListener('click', Actions.resetPayload);
-      panel.querySelector('#eme-close').addEventListener('click', disableExtractorFromUiClose);
+      UI.shell = shell;
+      UI.panel = shell.querySelector('#erie-master-extractor-panel');
+      UI.tab = shell.querySelector('#erie-master-extractor-tab');
+      UI.status = shell.querySelector('#eme-status');
+      UI.pinnedOpen = false;
+      UI.hoverOpen = false;
+
+      shell.addEventListener('mouseenter', function () {
+        UI.hoverOpen = true;
+        UI.refreshOpenState();
+      });
+
+      shell.addEventListener('mouseleave', function () {
+        UI.hoverOpen = false;
+        UI.refreshOpenState();
+      });
+
+      UI.tab.addEventListener('click', function () {
+        UI.pinnedOpen = !UI.pinnedOpen;
+        const pinBtn = UI.panel.querySelector('#eme-pin');
+        if (pinBtn) {
+          pinBtn.classList.toggle('is-pinned', UI.pinnedOpen);
+          pinBtn.title = UI.pinnedOpen ? 'Unpin panel' : 'Pin panel open';
+        }
+        UI.refreshOpenState();
+      });
+
+      const pinBtn = UI.panel.querySelector('#eme-pin');
+      pinBtn.addEventListener('click', function () {
+        UI.pinnedOpen = !UI.pinnedOpen;
+        pinBtn.classList.toggle('is-pinned', UI.pinnedOpen);
+        pinBtn.title = UI.pinnedOpen ? 'Unpin panel' : 'Pin panel open';
+        UI.refreshOpenState();
+      });
+
+      UI.panel.querySelector('#eme-collect').addEventListener('click', Actions.collectCurrentPage);
+      UI.panel.querySelector('#eme-harvest').addEventListener('click', Actions.harvestVins);
+      UI.panel.querySelector('#eme-copy').addEventListener('click', Actions.copyPayload);
+      UI.panel.querySelector('#eme-download').addEventListener('click', Actions.downloadPayload);
+      UI.panel.querySelector('#eme-summary').addEventListener('click', Actions.showSummary);
+      UI.panel.querySelector('#eme-reset').addEventListener('click', Actions.resetPayload);
+      UI.panel.querySelector('#eme-close').addEventListener('click', disableExtractorFromUiClose);
 
       const settings = Storage.loadSettings();
-      const autoBox = panel.querySelector('#eme-autoCollect');
+      const autoBox = UI.panel.querySelector('#eme-autoCollect');
       autoBox.checked = !!settings.autoCollect;
       autoBox.addEventListener('change', function () {
         const next = Storage.loadSettings();
@@ -4233,6 +4314,7 @@
       });
 
       UI.refresh();
+      UI.refreshOpenState();
     },
 
     refresh() {
@@ -4323,24 +4405,35 @@
   }
 
   function mountExtractorUI() {
-    const existing = document.getElementById('erie-master-extractor-panel');
-    if (existing && UI.panel === existing) return;
+    const existing = document.getElementById('erie-master-extractor-shell');
+    if (existing && UI.shell === existing) return;
     if (existing) existing.remove();
 
+    UI.shell = null;
     UI.panel = null;
+    UI.tab = null;
     UI.status = null;
+    UI.pinnedOpen = false;
+    UI.hoverOpen = false;
     UI.init();
   }
 
   function unmountExtractorUI() {
-    const panel = document.getElementById('erie-master-extractor-panel');
-    if (panel) panel.remove();
+    const shell = document.getElementById('erie-master-extractor-shell');
+    if (shell) shell.remove();
+
+    const legacyPanel = document.getElementById('erie-master-extractor-panel');
+    if (legacyPanel) legacyPanel.remove();
 
     const toast = document.getElementById('erie-master-extractor-toast');
     if (toast) toast.remove();
 
+    UI.shell = null;
     UI.panel = null;
+    UI.tab = null;
     UI.status = null;
+    UI.pinnedOpen = false;
+    UI.hoverOpen = false;
   }
 
   function applyExtractorEnabledState() {
