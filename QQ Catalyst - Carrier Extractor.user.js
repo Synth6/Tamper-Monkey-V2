@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
-// @version      1.7.6
+// @version      1.8.3
 // @description  Extract from carriers and build QQC payload. Alt+Q: Extractor.
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
@@ -141,8 +141,15 @@
   let lastExtracted = null; // preserves full detected payload (incl. additionalContacts)
   let extractorDetectionPromise = null;
   let extractorBusyTimer = null;
+  let extractorSlidePinned = false;
+  let extractorSlideCloseTimer = null;
 
   function closeExtractorPanel() {
+    if (extractorSlideCloseTimer) {
+      clearTimeout(extractorSlideCloseTimer);
+      extractorSlideCloseTimer = null;
+    }
+    extractorSlidePinned = false;
     if (extractorHost) {
       extractorHost.remove();
       extractorHost = null;
@@ -344,6 +351,8 @@
     }
     return trimmed;
   }
+
+
 
   function sanitizePayloadObject(data) {
     if (data == null) return data;
@@ -597,7 +606,7 @@
       spinner.textContent = '';
     }
     if (text) text.textContent = message || 'Getting customer data...';
-    extractorPanel.querySelectorAll('#qqc-detect, #qqc-save').forEach(btn => {
+    extractorPanel.querySelectorAll('#qqc-detect, #qqc-save, #qqc-save-bottom').forEach(btn => {
       btn.disabled = true;
       btn.style.opacity = '0.65';
       btn.style.cursor = 'wait';
@@ -612,7 +621,7 @@
     const row = extractorPanel.querySelector('#qqc-busy-row');
     const spinner = extractorPanel.querySelector('#qqc-busy-spinner');
     const text = extractorPanel.querySelector('#qqc-busy-text');
-    extractorPanel.querySelectorAll('#qqc-detect, #qqc-save').forEach(btn => {
+    extractorPanel.querySelectorAll('#qqc-detect, #qqc-save, #qqc-save-bottom').forEach(btn => {
       btn.disabled = false;
       btn.style.opacity = '';
       btn.style.cursor = 'pointer';
@@ -682,11 +691,24 @@
   function buildExtractorPanel() {
     if (extractorPanel && extractorHost?.isConnected) return extractorPanel;
     closeExtractorPanel();
+
     extractorHost = document.createElement('div');
     extractorHost.id = '__qqc_extractor_host';
-    extractorHost.style.cssText = 'all:initial;position:fixed;right:16px;bottom:16px;z-index:2147483647;';
+    extractorHost.style.cssText = [
+      'all:initial',
+      'position:fixed',
+      'right:0',
+      'top:50%',
+      'transform:translateY(-50%)',
+      'z-index:2147483647',
+      'width:405px',
+      'height:auto',
+      'pointer-events:auto'
+    ].join(';') + ';';
+
     extractorHost.attachShadow({ mode: 'open' });
     document.documentElement.appendChild(extractorHost);
+
     const shadow = extractorHost.shadowRoot;
     shadow.innerHTML = `
       <style>
@@ -694,76 +716,221 @@
         *{ box-sizing:border-box; font-family:system-ui,Segoe UI,Arial,sans-serif; }
         button,select,input,textarea{ font:inherit; }
         @keyframes qqc-spin{to{transform:rotate(360deg)}}
-        #qqc-busy-spinner{width:14px;height:14px;border:2px solid #bfdbfe;border-top-color:#2563eb;border-radius:50%;animation:qqc-spin .8s linear infinite;flex:0 0 auto;}
+        #qqc-busy-spinner{
+          width:14px;height:14px;border:2px solid #bfdbfe;border-top-color:#2563eb;
+          border-radius:50%;animation:qqc-spin .8s linear infinite;flex:0 0 auto;
+        }
+
+        #qqc-slide-wrap{
+          position:relative;
+          width:405px;
+          transform:translateX(405px);
+          transition:transform .22s ease;
+          will-change:transform;
+        }
+        #qqc-slide-wrap.open{
+          transform:translateX(0);
+        }
+
+        #qqc-slide-tab{
+          position:absolute;
+          left:-24px;
+          top:92px;
+          width:24px;
+          height:68px;
+          border:1px solid #1e40af;
+          border-right:none;
+          border-radius:7px 0 0 7px;
+          background:#2563eb;
+          color:#fff;
+          font-weight:700;
+          font-size:10px;
+          cursor:pointer;
+          box-shadow:-3px 4px 10px rgba(0,0,0,.18);
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          padding:4px 0;
+          writing-mode:vertical-rl;
+          text-orientation:mixed;
+          transform:none;
+          letter-spacing:.1px;
+          user-select:none;
+        }
+        #qqc-slide-tab:hover{
+          background:#1d4ed8;
+        }
+        #qqc-slide-tab[data-pinned="true"]{
+          background:#0f766e;
+          border-color:#115e59;
+        }
+
+        #qqc-extractor-panel{
+          width:405px;
+          margin-left:0;
+          background:#729cf7;
+          color:#000;
+          border:1px solid #374151;
+          border-right:none;
+          border-radius:8px 0 0 8px;
+          font:12px system-ui;
+          box-shadow:-8px 8px 24px rgba(0,0,0,.35);
+          overflow:hidden;
+        }
       </style>
-      <div id="qqc-extractor-panel" style="width:405px;background:#729cf7;color:#000;border:1px solid #374151;border-radius:8px;font:12px system-ui;box-shadow:0 8px 24px rgba(0,0,0,.35)">
-      <div id="qqc-header-ex" style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#758cad;border-bottom:1px solid #374151;border-radius:8px 8px 0 0;gap:8px;">
-        <button id="qqc-save" style="background:#10b981;border:none;color:#062026;padding:6px 8px;border-radius:6px;cursor:pointer">Send to QQ Catalyst</button>
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-          <label style="color:#fff;font-size:11px;">Contact</label>
-          <select id="qqc-ct-ex" style="height:22px;">
-            <option>Customers</option>
-            <option>Prospects</option>
-          </select>
-          <label style="color:#fff;font-size:11px;">Customer</label>
-          <select id="qqc-cust-ex" style="height:22px;">
-            <option>Personal</option>
-            <option>Commercial</option>
-          </select>
-          <span id="qqc-status" style="color:#f2ec41;font-size:11px;"></span>
-          <button id="qqc-close" style="background:#dc2626;border:1px solid #991b1b;color:#fff;padding:6px 8px;border-radius:6px;cursor:pointer">X</button>
+
+      <div id="qqc-slide-wrap">
+        <button id="qqc-slide-tab" type="button" title="Hover to open. Click to pin open." aria-label="Open QQ Data panel">QQ Data</button>
+
+        <div id="qqc-extractor-panel">
+          <div id="qqc-header-ex" style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#758cad;border-bottom:1px solid #374151;gap:8px;">
+            <button id="qqc-save" style="background:#10b981;border:none;color:#062026;padding:6px 8px;border-radius:6px;cursor:pointer">Send to QQ Catalyst</button>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+              <label style="color:#fff;font-size:11px;">Contact</label>
+              <select id="qqc-ct-ex" style="height:22px;">
+                <option>Customers</option>
+                <option>Prospects</option>
+              </select>
+              <label style="color:#fff;font-size:11px;">Customer</label>
+              <select id="qqc-cust-ex" style="height:22px;">
+                <option>Personal</option>
+                <option>Commercial</option>
+              </select>
+              <span id="qqc-status" style="color:#f2ec41;font-size:11px;"></span>
+              <button id="qqc-close" title="Close QQ Data" style="background:#dc2626;border:1px solid #991b1b;color:#fff;padding:6px 8px;border-radius:6px;cursor:pointer">X</button>
+            </div>
+          </div>
+
+          <div style="padding:10px;max-height:78vh;overflow:auto;">
+            <div id="qqc-busy-row" style="display:none;align-items:center;gap:7px;margin-bottom:8px;padding:6px 8px;border:1px solid rgba(37,99,235,.25);border-radius:6px;background:#eef5ff;color:#111827;font-size:12px;">
+              <span id="qqc-busy-spinner"></span>
+              <span id="qqc-busy-text">Getting customer data...</span>
+            </div>
+
+            <div id="qqc-person-tabs" style="display:flex;gap:6px;margin-bottom:8px;">
+              <button type="button" id="qqc-tab-insured" data-qqc-person-tab="insured" style="flex:1;background:#1d4ed8;color:#fff;border:1px solid #1e40af;padding:5px 8px;border-radius:6px;cursor:pointer;font-weight:600;">Insured</button>
+              <button type="button" id="qqc-tab-second" data-qqc-person-tab="second" style="flex:1;background:#dbeafe;color:#1e3a8a;border:1px solid #93c5fd;padding:5px 8px;border-radius:6px;cursor:pointer;font-weight:600;">Second Insured</button>
+            </div>
+
+            <div id="qqc-insured-panel">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <label>First<input id="qqc-first" style="width:100%"></label>
+                <label>Middle<input id="qqc-middle" style="width:100%"></label>
+                <label>Last<input id="qqc-last" style="width:100%"></label>
+                <label>Suffix<input id="qqc-suffix" style="width:100%"></label>
+                <label>Business Name<input id="qqc-biz" style="width:100%" placeholder="if Commercial"></label>
+                <label>Phone<input id="qqc-phonetype" placeholder="(###) ###-#### or label" style="width:100%"></label>
+                <label>Email<input id="qqc-email" style="width:100%"></label>
+                <label>DOB<input id="qqc-dob" placeholder="mm/dd/yyyy" style="width:100%"></label>
+                <label>SSN<input id="qqc-ssn" style="width:100%" placeholder="###-##-####"></label>
+                <label>DL Number<input id="qqc-dln" style="width:100%"></label>
+                <label>DL State<input id="qqc-dlstate" style="width:100%"></label>
+                <label>EIN<input id="qqc-ein" style="width:100%" placeholder="business"></label>
+              </div>
+            </div>
+
+            <div id="qqc-second-panel" style="display:none;">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <label>First<input id="qqc-second-first" style="width:100%"></label>
+                <label>Middle<input id="qqc-second-middle" style="width:100%"></label>
+                <label>Last<input id="qqc-second-last" style="width:100%"></label>
+                <label>Suffix<input id="qqc-second-suffix" style="width:100%"></label>
+                <label>Relationship<input id="qqc-second-relationship" style="width:100%" placeholder="Spouse"></label>
+                <label>Phone<input id="qqc-second-phone" placeholder="(###) ###-####" style="width:100%"></label>
+                <label>Email<input id="qqc-second-email" style="width:100%"></label>
+                <label>DOB<input id="qqc-second-dob" placeholder="mm/dd/yyyy" style="width:100%"></label>
+                <label>SSN<input id="qqc-second-ssn" style="width:100%" placeholder="###-##-####"></label>
+                <label>DL Number<input id="qqc-second-dln" style="width:100%"></label>
+                <label>DL State<input id="qqc-second-dlstate" style="width:100%"></label>
+              </div>
+              <div id="qqc-second-empty-note" style="display:none;margin-top:8px;padding:6px 8px;border:1px solid rgba(30,64,175,.25);border-radius:6px;background:#eff6ff;color:#1e3a8a;">
+                No second insured was detected.
+              </div>
+            </div>
+
+            <hr style="border-color:#374151;margin:10px 0">
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <label>Street<input id="qqc-addr1" style="width:100%"></label>
+              <label>Line 2<input id="qqc-addr2" style="width:100%"></label>
+              <label>City<input id="qqc-city" style="width:100%"></label>
+              <label>State<input id="qqc-state" style="width:100%"></label>
+              <label>Zip<input id="qqc-zip" style="width:100%"></label>
+            </div>
+
+            <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+              <button id="qqc-detect" style="background:#2563eb;border:none;color:#fff;padding:6px 8px;border-radius:6px;cursor:pointer">Auto Detect</button>
+              <button id="qqc-save-bottom" style="background:#10b981;border:none;color:#062026;padding:6px 8px;border-radius:6px;cursor:pointer;display:none">Send to QQ</button>
+              <button id="qqc-copy" style="background:#2563eb;border:none;color:#fff;padding:6px 8px;border-radius:6px;cursor:pointer;display:none">Copy JSON</button>
+            </div>
+
+            <textarea id="qqc-json" placeholder="Payload (view/edit)" style="width:100%;height:140px;margin-top:8px"></textarea>
+          </div>
         </div>
-      </div>
-      <div style="padding:10px;max-height:65vh;overflow:auto;">
-        <div id="qqc-busy-row" style="display:none;align-items:center;gap:7px;margin-bottom:8px;padding:6px 8px;border:1px solid rgba(37,99,235,.25);border-radius:6px;background:#eef5ff;color:#111827;font-size:12px;">
-          <span id="qqc-busy-spinner"></span>
-          <span id="qqc-busy-text">Getting customer data...</span>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <label>First<input id="qqc-first" style="width:100%"></label>
-          <label>Middle<input id="qqc-middle" style="width:100%"></label>
-          <label>Last<input id="qqc-last" style="width:100%"></label>
-          <label>Suffix<input id="qqc-suffix" style="width:100%"></label>
-          <label>Business Name<input id="qqc-biz" style="width:100%" placeholder="if Commercial"></label>
-          <label>Phone<input id="qqc-phonetype" placeholder="(###) ###-#### or label" style="width:100%"></label>
-          <label>Email<input id="qqc-email" style="width:100%"></label>
-          <label>DOB<input id="qqc-dob" placeholder="mm/dd/yyyy" style="width:100%"></label>
-          <label>DL Number<input id="qqc-dln" style="width:100%"></label>
-          <label>DL State<input id="qqc-dlstate" style="width:100%"></label>
-          <label>EIN<input id="qqc-ein" style="width:100%" placeholder="business"></label>
-        </div>
-        <hr style="border-color:#374151;margin:10px 0">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <label>Street<input id="qqc-addr1" style="width:100%"></label>
-          <label>Line 2<input id="qqc-addr2" style="width:100%"></label>
-          <label>City<input id="qqc-city" style="width:100%"></label>
-          <label>State<input id="qqc-state" style="width:100%"></label>
-          <label>Zip<input id="qqc-zip" style="width:100%"></label>
-        </div>
-        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-          <button id="qqc-detect" style="background:#2563eb;border:none;color:#fff;padding:6px 8px;border-radius:6px;cursor:pointer">Auto Detect</button>
-          <button id="qqc-save" style="background:#10b981;border:none;color:#062026;padding:6px 8px;border-radius:6px;cursor:pointer;display:none">Send to QQ</button>
-          <button id="qqc-copy" style="background:#2563eb;border:none;color:#fff;padding:6px 8px;border-radius:6px;cursor:pointer;display:none">Copy JSON</button>
-        </div>
-        <textarea id="qqc-json" placeholder="Payload (view/edit)" style="width:100%;height:140px;margin-top:8px"></textarea>
-      </div>
       </div>
     `;
     const el = shadow.querySelector('#qqc-extractor-panel');
     extractorPanel = el;
+
+    const slideWrap = shadow.querySelector('#qqc-slide-wrap');
+    const slideTab = shadow.querySelector('#qqc-slide-tab');
+
+    const setSlideOpen = (open) => {
+      if (!slideWrap) return;
+      slideWrap.classList.toggle('open', !!open);
+      if (slideTab) {
+        slideTab.setAttribute('aria-expanded', open ? 'true' : 'false');
+      }
+    };
+
+    const cancelSlideClose = () => {
+      if (extractorSlideCloseTimer) {
+        clearTimeout(extractorSlideCloseTimer);
+        extractorSlideCloseTimer = null;
+      }
+    };
+
+    const scheduleSlideClose = () => {
+      cancelSlideClose();
+      if (extractorSlidePinned) return;
+      extractorSlideCloseTimer = setTimeout(() => {
+        setSlideOpen(false);
+        extractorSlideCloseTimer = null;
+      }, 420);
+    };
+
+    if (slideWrap) {
+      slideWrap.addEventListener('mouseenter', () => {
+        cancelSlideClose();
+        setSlideOpen(true);
+      });
+      slideWrap.addEventListener('mouseleave', scheduleSlideClose);
+    }
+
+    if (slideTab) {
+      slideTab.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        extractorSlidePinned = !extractorSlidePinned;
+        slideTab.dataset.pinned = extractorSlidePinned ? 'true' : 'false';
+        slideTab.title = extractorSlidePinned
+          ? 'Pinned open. Click to unpin.'
+          : 'Hover to open. Click to pin open.';
+        cancelSlideClose();
+        setSlideOpen(extractorSlidePinned || !slideWrap.classList.contains('open'));
+      });
+    }
+
     el.querySelector('#qqc-close')?.addEventListener('click', closeExtractorPanel);
-    // Fix any mojibake in header text and close label
+
+    // Fix any mojibake in header text and close label.
     try {
-      const htxt = extractorPanel.querySelector('#qqc-header-ex strong');
-      if (htxt) htxt.textContent = 'Carrier -> QQC';
       const cbtn = extractorPanel.querySelector('#qqc-close');
       if (cbtn) cbtn.textContent = 'X';
     } catch { }
-    // Make entire header draggable, but ignore clicks on the close button
-    const headerHandle = extractorPanel.querySelector('#qqc-header-ex');
-    if (headerHandle) {
-      makeDraggable(extractorHost, headerHandle, { exclude: '#qqc-close' });
-    }
+
+    // The extractor is now an anchored right-side slideout, so do not make it draggable.
+    setSlideOpen(false);
     // Move Contact/Customer selectors out of header into own row below header
     try {
       const header = extractorPanel.querySelector('#qqc-header-ex');
@@ -802,17 +969,65 @@
         if (ctDefault) ctDefault.value = 'Prospects';
       } catch { }
     } catch { }
-    // Hide deprecated inputs/buttons
+    // Insured / Second Insured tabs
     try {
-      extractorPanel.querySelector('#qqc-dln')?.closest('label')?.style?.setProperty('display', 'none', 'important');
-      extractorPanel.querySelector('#qqc-dlstate')?.closest('label')?.style?.setProperty('display', 'none', 'important');
+      const insuredTab = extractorPanel.querySelector('#qqc-tab-insured');
+      const secondTab = extractorPanel.querySelector('#qqc-tab-second');
+      const insuredPanel = extractorPanel.querySelector('#qqc-insured-panel');
+      const secondPanel = extractorPanel.querySelector('#qqc-second-panel');
+
+      const activatePersonTab = (which) => {
+        const showSecond = which === 'second';
+        if (insuredPanel) insuredPanel.style.display = showSecond ? 'none' : 'block';
+        if (secondPanel) secondPanel.style.display = showSecond ? 'block' : 'none';
+
+        if (insuredTab) {
+          insuredTab.style.background = showSecond ? '#dbeafe' : '#1d4ed8';
+          insuredTab.style.color = showSecond ? '#1e3a8a' : '#fff';
+          insuredTab.style.borderColor = showSecond ? '#93c5fd' : '#1e40af';
+        }
+        if (secondTab) {
+          secondTab.style.background = showSecond ? '#1d4ed8' : '#dbeafe';
+          secondTab.style.color = showSecond ? '#fff' : '#1e3a8a';
+          secondTab.style.borderColor = showSecond ? '#1e40af' : '#93c5fd';
+        }
+      };
+
+      insuredTab?.addEventListener('click', () => activatePersonTab('insured'));
+      secondTab?.addEventListener('click', () => activatePersonTab('second'));
+      activatePersonTab('insured');
+    } catch { }
+
+    // Hide deprecated inputs/buttons. Driver License fields remain visible so
+    // extracted values can be reviewed or corrected before sending to QQ.
+    try {
       extractorPanel.querySelector('#qqc-copy')?.style?.setProperty('display', 'none', 'important');
       extractorPanel.querySelector('#qqc-json')?.style?.setProperty('display', 'none', 'important');
     } catch { }
     return el;
   }
   function extractorReadUI() {
-    const get = id => extractorPanel.querySelector(id).value.trim();
+    const get = id => extractorPanel.querySelector(id)?.value?.trim() || '';
+    const priorSecond = Array.isArray(lastExtracted?.additionalContacts) ? (lastExtracted.additionalContacts[0] || {}) : {};
+
+    const second = {
+      firstName: toNameCase(get('#qqc-second-first')),
+      middleName: get('#qqc-second-middle'),
+      lastName: toNameCase(get('#qqc-second-last')),
+      suffix: get('#qqc-second-suffix'),
+      relationship: get('#qqc-second-relationship') || priorSecond.relationship || 'Spouse',
+      primaryPhone: get('#qqc-second-phone').replace(/[^\d]/g, ''),
+      phoneType: get('#qqc-second-phone'),
+      primaryEmail: get('#qqc-second-email').toLowerCase(),
+      dob: get('#qqc-second-dob'),
+      ssn: get('#qqc-second-ssn').replace(/\D/g, '') || priorSecond.ssn || '',
+      licenseNumber: get('#qqc-second-dln'),
+      licenseState: get('#qqc-second-dlstate').toUpperCase()
+    };
+    const hasSecond = Object.entries(second).some(([key, value]) =>
+      !['relationship', 'ssn'].includes(key) && String(value || '').trim()
+    );
+
     return sanitizePayloadObject({
       carrier: location.hostname, sourceUrl: location.href,
       firstName: toNameCase(get('#qqc-first')), middleName: get('#qqc-middle'), lastName: toNameCase(get('#qqc-last')), suffix: get('#qqc-suffix'),
@@ -820,13 +1035,18 @@
       primaryPhone: get('#qqc-phonetype').replace(/[^\d]/g, ''), phoneType: get('#qqc-phonetype'),
       primaryEmail: get('#qqc-email').toLowerCase(),
       dob: get('#qqc-dob'),
+      ssn: get('#qqc-ssn').replace(/\D/g, '') || lastExtracted?.ssn || '',
+      licenseNumber: get('#qqc-dln'),
+      licenseState: get('#qqc-dlstate').toUpperCase(),
       ein: get('#qqc-ein'),
       contactType: 'Customers',
       customerType: get('#qqc-biz') ? 'Commercial' : 'Personal',
       status: 'Active',
-      address: { line1: get('#qqc-addr1'), line2: get('#qqc-addr2'), city: get('#qqc-city'), state: get('#qqc-state'), zip: get('#qqc-zip') }
+      address: { line1: get('#qqc-addr1'), line2: get('#qqc-addr2'), city: get('#qqc-city'), state: get('#qqc-state'), zip: get('#qqc-zip') },
+      additionalContacts: hasSecond ? [second] : []
     });
   }
+
   function extractorSetUI(p) {
     if (!extractorPanel) { console.warn('[QQC Extractor] extractorPanel missing; cannot set UI'); return; }
     const set = (id, v) => { const n = extractorPanel.querySelector(id); if (n) n.value = v || ''; };
@@ -839,7 +1059,35 @@
     set('#qqc-phonetype', p.phoneType || formatPhone(p.primaryPhone));
     set('#qqc-email', p.primaryEmail);
     set('#qqc-dob', p.dob);
+    set('#qqc-ssn', p.ssn);
+    set('#qqc-dln', p.licenseNumber);
+    set('#qqc-dlstate', p.licenseState);
     set('#qqc-ein', p.ein);
+
+    const second = Array.isArray(p.additionalContacts) ? (p.additionalContacts[0] || {}) : {};
+    set('#qqc-second-first', toNameCase(second.firstName));
+    set('#qqc-second-middle', second.middleName);
+    set('#qqc-second-last', toNameCase(second.lastName));
+    set('#qqc-second-suffix', second.suffix);
+    set('#qqc-second-relationship', second.relationship || (second.firstName || second.lastName ? 'Spouse' : ''));
+    set('#qqc-second-phone', second.phoneType || formatPhone(second.primaryPhone));
+    set('#qqc-second-email', second.primaryEmail);
+    set('#qqc-second-dob', second.dob);
+    set('#qqc-second-ssn', second.ssn);
+    set('#qqc-second-dln', second.licenseNumber);
+    set('#qqc-second-dlstate', second.licenseState);
+
+    const secondTab = extractorPanel.querySelector('#qqc-tab-second');
+    const secondNote = extractorPanel.querySelector('#qqc-second-empty-note');
+    const hasSecond = !!(second.firstName || second.lastName || second.dob || second.licenseNumber || second.primaryPhone || second.primaryEmail);
+    if (secondTab) {
+      secondTab.disabled = !hasSecond;
+      secondTab.style.opacity = hasSecond ? '1' : '.55';
+      secondTab.style.cursor = hasSecond ? 'pointer' : 'not-allowed';
+      secondTab.title = hasSecond ? '' : 'No second insured detected';
+    }
+    if (secondNote) secondNote.style.display = hasSecond ? 'none' : 'block';
+
     set('#qqc-addr1', p.address?.line1);
     set('#qqc-addr2', p.address?.line2);
     set('#qqc-city', p.address?.city);
@@ -2214,84 +2462,306 @@ function extractProgressiveCommercialAuto() {
     }
     return { line1, line2: '', city, state, zip };
   }
-  function parseEriePLWSecondContact() {
+
+  // Erie PLW exposes the complete customer model in an inline
+  // `new plw.customer.ViewModel({...})` constructor. Reading that model
+  // gives us the unmasked SSN, DOB, and driver-license values without
+  // depending on what Erie currently renders on screen.
+  function erieExtractBalancedObjectAt(source, startIndex) {
+    if (!source || startIndex < 0 || source[startIndex] !== '{') return null;
+    let depth = 0;
+    let inString = false;
+    let quote = '';
+    let escaped = false;
+
+    for (let i = startIndex; i < source.length; i++) {
+      const ch = source[i];
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch === '\\') {
+          escaped = true;
+        } else if (ch === quote) {
+          inString = false;
+          quote = '';
+        }
+        continue;
+      }
+
+      if (ch === '"' || ch === "'" || ch === '`') {
+        inString = true;
+        quote = ch;
+        continue;
+      }
+
+      if (ch === '{') depth++;
+      if (ch === '}') {
+        depth--;
+        if (depth === 0) return source.slice(startIndex, i + 1);
+      }
+    }
+    return null;
+  }
+
+  function erieEvalTrustedObjectLiteral(raw) {
+    if (!raw) return null;
+    try {
+      // Trusted object literal embedded by Erie in its own page.
+      // eslint-disable-next-line no-new-func
+      return Function('"use strict"; return (' + raw + ');')();
+    } catch {
+      return null;
+    }
+  }
+
+  function erieFindInlineCustomerVM() {
+    try {
+      const scripts = Array.from(document.scripts || []);
+      const needle = 'new plw.customer.ViewModel(';
+
+      for (const script of scripts) {
+        const source = script?.textContent || '';
+        const pos = source.indexOf(needle);
+        if (pos < 0) continue;
+
+        const after = pos + needle.length;
+        const brace = source.indexOf('{', after);
+        if (brace < 0) continue;
+
+        const raw = erieExtractBalancedObjectAt(source, brace);
+        const vm = erieEvalTrustedObjectLiteral(raw);
+        if (vm && (vm.FirstNamedInsured || vm.SecondNamedInsured)) return vm;
+      }
+    } catch (err) {
+      console.warn('[QQC Extractor] Erie inline customer model read failed', err);
+    }
+    return null;
+  }
+
+  function eriePersonFromInlineModel(form) {
+    if (!form) return null;
+    const ssnForm = form.SSNForm || {};
+    const dobForm = form.DateOfBirthForm || {};
+
+    const primaryPhoneObj = Array.isArray(form.PhoneNumberList) && form.PhoneNumberList.length
+      ? form.PhoneNumberList[0]
+      : null;
+    const primaryPhoneRaw = primaryPhoneObj?.Number || '';
+    const primaryPhone = String(primaryPhoneRaw || '').replace(/[^\d]/g, '');
+
+    return {
+      firstName: String(form.FirstName || '').trim(),
+      middleName: String(form.MiddleName || '').trim(),
+      lastName: String(form.LastName || '').trim(),
+      suffix: String(form.Suffix || '').trim(),
+      dob: toMMDDYYYY(String(form.DateOfBirth || dobForm.DateOfBirth || '').trim()),
+      ssn: String(
+        form.ExistingSSN ||
+        form.SSN ||
+        ssnForm.ExistingSSN ||
+        ssnForm.SSN ||
+        ''
+      ).replace(/[^\d]/g, ''),
+      licenseNumber: String(form.DriverLicenseNumber || '').trim(),
+      licenseState: String(form.DriverLicenseState || '').trim(),
+      gender: String(form.Gender || '').trim(),
+      maritalStatus: String(form.MaritalStatus || form.MaritalStatusDescription || '').trim(),
+      primaryPhone,
+      phoneType: primaryPhoneObj?.Type || formatPhone(primaryPhone),
+      primaryEmail: String(form.EmailAddress || '').trim().toLowerCase()
+    };
+  }
+
+  function erieReadInlineNamedInsureds() {
+    const vm = erieFindInlineCustomerVM();
+    if (!vm) return { primary: null, secondary: null };
+    return {
+      primary: eriePersonFromInlineModel(vm.FirstNamedInsured || null),
+      secondary: eriePersonFromInlineModel(vm.SecondNamedInsured || null)
+    };
+  }
+
+  function eriePLWNamedInsuredData(index) {
+    try {
+      const probe = S(index === 2 ? '#SecondNamedInsured_FirstName' : '#FirstNamedInsured_FirstName')
+        || S(index === 2 ? '#licenseNumber2' : '#licenseNumber1')
+        || S(index === 2 ? '.Column.Col2.Column-Customer' : '.Column.Col1.Column-Customer');
+      const koObj = window.ko;
+      if (!probe || !koObj) return null;
+      const data = (typeof koObj.dataFor === 'function' ? koObj.dataFor(probe) : null)
+        || (typeof koObj.contextFor === 'function' ? koObj.contextFor(probe)?.$data : null);
+      return data || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function eriePLWUnwrap(value) {
+    try {
+      return (typeof value === 'function') ? value() : value;
+    } catch {
+      return value;
+    }
+  }
+
+  function eriePLWPersonSensitive(index) {
+    const data = eriePLWNamedInsuredData(index);
+    const ssnForm = eriePLWUnwrap(data?.SSNForm);
+    const dobForm = eriePLWUnwrap(data?.DateOfBirthForm);
+    const ssn = String(eriePLWUnwrap(ssnForm?.SSN) || eriePLWUnwrap(ssnForm?.ExistingSSN) || '').replace(/\D/g, '');
+    const dob = toMMDDYYYY(String(eriePLWUnwrap(dobForm?.DateOfBirth) || ''));
+    const licenseNumber = String(eriePLWUnwrap(data?.DriverLicenseNumber) || '').trim();
+    const licenseState = String(eriePLWUnwrap(data?.DriverLicenseState) || '').trim();
+    const suffix = String(eriePLWUnwrap(data?.Suffix) || '').trim();
+    return { ssn, dob, licenseNumber, licenseState, suffix };
+  }
+
+  function parseEriePLWSecondContact(inlineSecondary) {
+    const inline = inlineSecondary || erieReadInlineNamedInsureds().secondary;
+
     const root = S('.Column.Col2.Column-Customer') || S('#ddlSecondNamedInsured')?.closest('.Column') || document;
-    if (!root) return null;
-    // Read name
-    let firstName = V(root.querySelector('#SecondNamedInsured_FirstName'));
-    let middleName = V(root.querySelector('#SecondNamedInsured_MiddleName'));
-    let lastName = V(root.querySelector('#SecondNamedInsured_LastName'));
-    if (!firstName || !lastName) {
+    if (!root && !inline) return null;
+
+    let firstName = inline?.firstName || V(root?.querySelector('#SecondNamedInsured_FirstName'));
+    let middleName = inline?.middleName || V(root?.querySelector('#SecondNamedInsured_MiddleName'));
+    let lastName = inline?.lastName || V(root?.querySelector('#SecondNamedInsured_LastName'));
+
+    if ((!firstName || !lastName) && root) {
       const opt = root.querySelector('#ddlSecondNamedInsured option:checked');
       const text = (opt?.textContent || '').trim();
       if (text && !/^\-\s*None\s*\-$/i.test(text)) {
         const parts = text.split(/\s+/);
-        firstName = parts[0] || '';
-        lastName = parts.slice(1).join(' ') || '';
+        firstName = firstName || parts[0] || '';
+        lastName = lastName || parts.slice(1).join(' ') || '';
       }
     }
+
     if (!(firstName || lastName)) return null;
-    // Phone
-    let phoneDisplay = '';
-    let primaryPhone = '';
-    const roPhone = (root !== document) && Array.from(root.querySelectorAll('.named-insured-value')).find(e => /\(\d{3}\)\s*\d{3}-\d{4}/.test((e.textContent || '').trim()));
-    if (roPhone) {
-      phoneDisplay = (roPhone.textContent || '').trim();
-      primaryPhone = phoneDisplay.replace(/[^\d]/g, '');
-    } else {
-      const inp = root.querySelector('#SecondNamedInsuredNumber_0');
-      if (inp) {
-        primaryPhone = V(inp).replace(/[^\d]/g, '');
-        phoneDisplay = formatPhone(primaryPhone);
+
+    let phoneDisplay = inline?.phoneType || '';
+    let primaryPhone = inline?.primaryPhone || '';
+    if (!primaryPhone && root) {
+      const roPhone = Array.from(root.querySelectorAll('.named-insured-value'))
+        .find(e => /\(\d{3}\)\s*\d{3}-\d{4}/.test((e.textContent || '').trim()));
+      if (roPhone) {
+        phoneDisplay = (roPhone.textContent || '').trim();
+        primaryPhone = phoneDisplay.replace(/[^\d]/g, '');
+      } else {
+        const inp = root.querySelector('#SecondNamedInsuredNumber_0');
+        if (inp) {
+          primaryPhone = V(inp).replace(/[^\d]/g, '');
+          phoneDisplay = formatPhone(primaryPhone);
+        }
       }
     }
-    // Email
-    let primaryEmail = (root !== document ? (root.querySelector('.customer-lockdown-email')?.textContent || '').trim() : '');
-    if (!primaryEmail) {
-      const ei = root.querySelector('#SecondNamedInsured_EmailAddress');
-      primaryEmail = V(ei);
+
+    let primaryEmail = inline?.primaryEmail || '';
+    if (!primaryEmail && root) {
+      primaryEmail = (root.querySelector('.customer-lockdown-email')?.textContent || '').trim();
+      if (!primaryEmail) primaryEmail = V(root.querySelector('#SecondNamedInsured_EmailAddress'));
     }
-    // DOB (try masked read-only span or editable input)
-    const grabDob = () => {
-      const cands = [
-        '.named-insured-value .obscured-text-field-container span',
-        '.named-insured-value span',
-        '.named-insured-value'
-      ];
-      for (const sel of cands) {
-        const el = Array.from(root.querySelectorAll(sel)).find(isVisible);
-        const txt = (el?.textContent || '').trim();
-        const m = txt && txt.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/);
-        if (m) return `${m[1]}/${m[2]}/${m[3]}`;
-      }
-      const inp = root.querySelector('#txtDateOfBirth_2');
-      return V(inp);
-    };
-    let dob = grabDob();
-    if (dob && /\*/.test(dob)) dob = '';
-    dob = toMMDDYYYY(dob || '');
+
+    const sensitive = eriePLWPersonSensitive(2);
+
+    let dob = inline?.dob || '';
+    if (!dob && root) {
+      const inputDob = V(root.querySelector('#txtDateOfBirth_2'));
+      if (inputDob && !/\*/.test(inputDob)) dob = toMMDDYYYY(inputDob);
+    }
+    dob = dob || sensitive.dob || '';
+
+    const licenseNumber =
+      inline?.licenseNumber ||
+      V(root?.querySelector('#licenseNumber2')) ||
+      sensitive.licenseNumber ||
+      '';
+
+    const licenseState =
+      inline?.licenseState ||
+      V(root?.querySelector('#selLicenseState2')) ||
+      sensitive.licenseState ||
+      T(root?.querySelector('#selLicenseState2 option:checked')) ||
+      '';
+
+    const suffix =
+      inline?.suffix ||
+      V(root?.querySelector('#SecondNamedInsured_Suffix')) ||
+      sensitive.suffix ||
+      '';
+
+    const ssn =
+      inline?.ssn ||
+      sensitive.ssn ||
+      V(root?.querySelector('#SSNText_2')).replace(/\D/g, '') ||
+      '';
+
     return {
-      firstName, middleName, lastName,
-      primaryPhone, phoneType: phoneDisplay,
+      firstName, middleName, lastName, suffix,
+      primaryPhone,
+      phoneType: phoneDisplay || formatPhone(primaryPhone),
       primaryEmail,
       dob,
+      ssn,
+      licenseNumber,
+      licenseState,
+      gender: inline?.gender || '',
+      maritalStatus: inline?.maritalStatus || '',
       relationship: 'Spouse'
     };
   }
+
   async function extractEriePLW() {
-    const { firstName, middleName, lastName } = parseEriePLWName();
-    const { primaryPhone, phoneType } = parseEriePLWPhone();
-    const primaryEmail = parseEriePLWEmail();
-    const dob = await revealEriePLWDob();
-    const licenseNumber = V(S('#licenseNumber1')) || '';
-    const licenseState = V(S('#selLicenseState1')) || T(S('#selLicenseState1 option:checked')) || '';
+    const inline = erieReadInlineNamedInsureds();
+    const inlinePrimary = inline.primary || {};
+
+    const domName = parseEriePLWName();
+    const firstName = inlinePrimary.firstName || domName.firstName || '';
+    const middleName = inlinePrimary.middleName || domName.middleName || '';
+    const lastName = inlinePrimary.lastName || domName.lastName || '';
+
+    const domPhone = parseEriePLWPhone();
+    const primaryPhone = inlinePrimary.primaryPhone || domPhone.primaryPhone || '';
+    const phoneType = inlinePrimary.phoneType || domPhone.phoneType || formatPhone(primaryPhone);
+    const primaryEmail = inlinePrimary.primaryEmail || parseEriePLWEmail() || '';
+
+    // Prefer the complete inline Erie model. DOM/Knockout reads remain fallbacks.
+    const sensitive = eriePLWPersonSensitive(1);
+    const revealedDob = await revealEriePLWDob();
+    const dob = inlinePrimary.dob || revealedDob || sensitive.dob || '';
+    const ssn =
+      inlinePrimary.ssn ||
+      sensitive.ssn ||
+      V(S('#SSNText_1')).replace(/\D/g, '') ||
+      '';
+
+    const licenseNumber =
+      inlinePrimary.licenseNumber ||
+      V(S('#licenseNumber1')) ||
+      sensitive.licenseNumber ||
+      '';
+
+    const licenseState =
+      inlinePrimary.licenseState ||
+      V(S('#selLicenseState1')) ||
+      sensitive.licenseState ||
+      T(S('#selLicenseState1 option:checked')) ||
+      '';
+
     const address = parseEriePLWAddress();
-    const suffix = V(S('#FirstNamedInsured_Suffix')) || '';
-    const second = parseEriePLWSecondContact();
+    const suffix =
+      inlinePrimary.suffix ||
+      V(S('#FirstNamedInsured_Suffix')) ||
+      sensitive.suffix ||
+      '';
+
+    const second = parseEriePLWSecondContact(inline.secondary);
+
     return {
       carrier: 'Erie-PLW', sourceUrl: location.href,
       firstName, middleName, lastName, suffix,
       primaryPhone, phoneType, primaryEmail, dob,
+      ssn,
       licenseNumber, licenseState,
       contactType: 'Customers', customerType: 'Personal',
       address,
@@ -2868,6 +3338,11 @@ function extractProgressiveCommercialAuto() {
         extractorStatus('Send failed (invalid JSON?).');
       }
     };
+
+    const bottomSave = el.querySelector('#qqc-save-bottom');
+    if (bottomSave) {
+      bottomSave.onclick = () => el.querySelector('#qqc-save')?.click();
+    }
 
     el.querySelector('#qqc-copy').onclick = () => {
       const txt = extractorPanel.querySelector('#qqc-json').value.trim() || JSON.stringify(extractorReadUI(), null, 2);
@@ -3500,7 +3975,17 @@ function extractProgressiveCommercialAuto() {
     const dobEl = pf.querySelector('input[name="DateOfBirthString"]');
     const dobStr = toMMDDYYYY(payload.dob || '');
     if (dobEl && dobStr) setDateValue(dobEl, dobStr);
-    // License info not required per current workflow
+    if (payload.ssn) {
+      setField('input[name="SSN"]', payload.ssn);
+    }
+    // Driver License
+    if (payload.licenseNumber) {
+      setField('input[name="DriverLicense"]', payload.licenseNumber);
+    }
+    if (payload.licenseState) {
+      selectIn('select[name="LicenseStateID"]', payload.licenseState);
+    }
+
     // If applicable, populate FEIN for commercial accounts
     if ((payload.customerType || '').toLowerCase() === 'commercial' || payload.businessName) {
       if (payload.ein) {
@@ -3642,87 +4127,254 @@ function extractProgressiveCommercialAuto() {
 
   async function fillAdditionalContact(contact) {
     hudInfo('Adding Additional Contact...');
+
     const opened = await ensureAdditionalContactsEditorOpen();
     if (!opened) return false;
+
     const form = document.querySelector('form#AdditionalContacts');
-    const detail = Array.from(form.querySelectorAll('.AdditionalContactsDetailContainer .section-detaildata')).find(d => d.offsetParent !== null) || form.querySelector('.AdditionalContactsDetailContainer .section-detaildata');
+    if (!form) return false;
+
+    const detail = Array.from(
+      form.querySelectorAll('.AdditionalContactsDetailContainer .section-detaildata')
+    ).find(d => d.offsetParent !== null)
+      || form.querySelector('.AdditionalContactsDetailContainer .section-detaildata');
+
     if (!detail) return false;
-    // Ensure the Additional Contacts section is in edit mode
-    const isVisible = (el) => el && el.offsetParent !== null && !(el.classList?.contains('hide'));
-    const saveBtn = form.querySelector('.SectionButtons .section_save');
-    if (!isVisible(saveBtn)) {
-      const editBtn = form.querySelector('.SectionButtons .section_edit');
+
+    const btnVisible = (el) =>
+      !!(el && el.offsetParent !== null && !el.classList?.contains('hide'));
+
+    // Existing contacts can open in display mode. Put the detail record into Edit mode first.
+    let saveBtn = detail.querySelector('.SectionButtons .section_save')
+      || form.querySelector('.SectionButtons .section_save');
+
+    if (!btnVisible(saveBtn)) {
+      const editBtn = detail.querySelector('.SectionButtons .section_edit')
+        || form.querySelector('.SectionButtons .section_edit');
+
       if (editBtn) {
         try { editBtn.scrollIntoView({ block: 'center' }); } catch { }
         editBtn.click();
+
         await waitFor(() => {
-          const sb = form.querySelector('.SectionButtons .section_save');
-          return sb && isVisible(sb);
-        }, { timeout: 8000, interval: 120 });
+          const sb = detail.querySelector('.SectionButtons .section_save')
+            || form.querySelector('.SectionButtons .section_save');
+          return btnVisible(sb) ? sb : null;
+        }, { timeout: 10000, interval: 120 });
       }
     }
-    const setField = (sel, val) => { const el = detail.querySelector(sel); if (!el) return; el.focus(); el.value = val || ''; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); el.blur(); };
-    const selectIn = (sel, txt) => { const el = detail.querySelector(sel); if (!el || !txt) return; const dn = (txt || '').trim().toLowerCase(); let opt = Array.from(el.options).find(o => o.textContent.trim().toLowerCase() === dn) || Array.from(el.options).find(o => o.textContent.trim().toLowerCase().includes(dn)); if (!opt) opt = Array.from(el.options).find(o => (o.value || '').trim().toLowerCase() === dn); if (opt) { el.value = opt.value; el.dispatchEvent(new Event('change', { bubbles: true })); } };
 
+    const setField = (sel, val) => {
+      const el = detail.querySelector(sel);
+      if (!el) return false;
+
+      const next = val == null ? '' : String(val);
+      try { el.focus(); } catch { }
+
+      // Native setter helps QQ/jQuery see the change consistently.
+      try {
+        const proto = el instanceof HTMLTextAreaElement
+          ? HTMLTextAreaElement.prototype
+          : HTMLInputElement.prototype;
+        const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+        if (desc?.set) desc.set.call(el, next);
+        else el.value = next;
+      } catch {
+        el.value = next;
+      }
+
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      try { el.blur(); } catch { }
+      return true;
+    };
+
+    const chooseOption = (el, wanted) => {
+      if (!el || wanted == null || wanted === '') return false;
+      const target = String(wanted).trim().toLowerCase();
+      const opts = Array.from(el.options || []);
+
+      let opt =
+        opts.find(o => String(o.value || '').trim().toLowerCase() === target) ||
+        opts.find(o => (o.textContent || '').trim().toLowerCase() === target) ||
+        opts.find(o => (o.textContent || '').trim().toLowerCase().includes(target));
+
+      if (!opt) return false;
+
+      el.value = opt.value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    };
+
+    const selectInAsync = async (sel, wanted, opts = {}) => {
+      if (!wanted) return false;
+      const timeout = opts.timeout || 8000;
+
+      const el = await waitFor(() => {
+        const node = detail.querySelector(sel);
+        if (!node) return null;
+
+        const target = String(wanted).trim().toLowerCase();
+        const options = Array.from(node.options || []);
+        const match = options.some(o =>
+          String(o.value || '').trim().toLowerCase() === target ||
+          (o.textContent || '').trim().toLowerCase() === target ||
+          (o.textContent || '').trim().toLowerCase().includes(target)
+        );
+
+        return match ? node : null;
+      }, { timeout, interval: 120 });
+
+      return el ? chooseOption(el, wanted) : false;
+    };
+
+    // Exact QQ Additional Contact fields confirmed from the page dump.
     setField('input[name="FirstName"]', toNameCase(contact.firstName));
     setField('input[name="MiddleName"]', contact.middleName || '');
     setField('input[name="LastName"]', toNameCase(contact.lastName));
+
     const dobStr = toMMDDYYYY(contact.dob || '');
     if (dobStr) setField('input[name="DateOfBirthString"]', dobStr);
 
-    // Relationship (Category + Specific)
-    const rel = (contact.relationship || '').toLowerCase();
-    const relCatSel = 'select[name="RelationCategoryID"]';
-    const relSel = 'select[name="RelationID"]';
-    if (rel) {
-      // Heuristic: set Relation Type first so Relationship list is correct
-      const isRelative = /(spouse|husband|wife|child|parent|relative|domestic|partner|brother|sister|roommate|resident)/i.test(contact.relationship || '');
-      selectIn(relCatSel, isRelative ? 'Relative' : 'Non Relative');
-      // Brief pause to allow dependent list to refresh
-      await new Promise(r => setTimeout(r, 120));
-      selectIn(relSel, contact.relationship);
+    if (contact.ssn) {
+      setField('input[name="SSN"]', String(contact.ssn).replace(/\D/g, ''));
     }
 
-    // Address (optional)
+    if (contact.licenseNumber) {
+      setField('input[name="DriverLicense"]', contact.licenseNumber);
+    }
+
+    if (contact.licenseState) {
+      await selectInAsync('select[name="LicenseStateID"]', contact.licenseState);
+    }
+
+    // Gender uses QQ values M / F / U / X.
+    if (contact.gender) {
+      const genderMap = {
+        male: 'M',
+        female: 'F',
+        unknown: 'U',
+        'not specified or non-binary': 'X',
+        nonbinary: 'X',
+        'non-binary': 'X'
+      };
+      const rawGender = String(contact.gender).trim();
+      const gender = genderMap[rawGender.toLowerCase()] || rawGender.toUpperCase();
+      await selectInAsync('select[name="GenderID"]', gender);
+    }
+
+    if (contact.maritalStatus) {
+      await selectInAsync('select[name="MaritalStatusID"]', contact.maritalStatus);
+    }
+
+    // Relationship is a dependent pair in QQ.
+    // RelationCategoryID: Relative=1, Non Relative=2.
+    // Confirmed Spouse is RelationID=3.
+    const relationship = String(contact.relationship || 'Spouse').trim();
+    if (relationship) {
+      const isRelative = /(spouse|husband|wife|child|parent|relative|domestic partner|brother|sister|resident relative)/i.test(relationship);
+
+      const relationCategory = detail.querySelector('select[name="RelationCategoryID"]');
+      if (relationCategory) {
+        chooseOption(relationCategory, isRelative ? '1' : '2')
+          || chooseOption(relationCategory, isRelative ? 'Relative' : 'Non Relative');
+      }
+
+      // QQ reloads RelationID options after RelationCategoryID changes.
+      if (/^spouse$/i.test(relationship)) {
+        const relationSelect = await waitFor(() => {
+          const el = detail.querySelector('select[name="RelationID"]');
+          if (!el) return null;
+          return Array.from(el.options || []).some(o =>
+            String(o.value || '') === '3' ||
+            (o.textContent || '').trim().toLowerCase() === 'spouse'
+          ) ? el : null;
+        }, { timeout: 10000, interval: 150 });
+
+        if (relationSelect) {
+          chooseOption(relationSelect, '3') || chooseOption(relationSelect, 'Spouse');
+        }
+      } else {
+        await selectInAsync('select[name="RelationID"]', relationship, { timeout: 10000 });
+      }
+    }
+
+    // Address if supplied.
     if (contact.address) {
-      // Set country first
       const countrySel = detail.querySelector('select[name="CountryID"]');
       if (countrySel) {
-        let val = Array.from(countrySel.options).find(o => (o.value || '').toUpperCase() === 'USA')?.value;
-        if (!val) val = Array.from(countrySel.options).find(o => o.textContent.trim().toLowerCase() === 'united states')?.value;
-        if (val) { countrySel.value = val; countrySel.dispatchEvent(new Event('change', { bubbles: true })); await new Promise(r => setTimeout(r, 120)); }
+        chooseOption(countrySel, 'USA') || chooseOption(countrySel, 'United States');
+        await new Promise(r => setTimeout(r, 150));
       }
+
       setField('input[name="Line1"]', contact.address.line1 || '');
       setField('input[name="Line2"]', contact.address.line2 || '');
       setField('input[name="City"]', contact.address.city || '');
-      const st = (contact.address.state || '').trim();
-      if (st) selectIn('select[name="StateID"]', st);
+
+      if (contact.address.state) {
+        await selectInAsync('select[name="StateID"]', contact.address.state);
+      }
+
       setField('input[name="Zip"]', (contact.address.zip || '').slice(0, 5));
     }
 
-    // Phone
-    const phoneInput = detail.querySelector('.PhoneTemplateContainer [data-section="phone"] input[name="Value"], .PhoneTemplateContainer input[name="Value"]');
-    if (phoneInput) {
-      setField('[data-section="phone"] input[name="Value"], .PhoneTemplateContainer input[name="Value"]', (contact.primaryPhone || '').replace(/[^\d]/g, ''));
-      const phoneTypeSel = detail.querySelector('.PhoneTemplateContainer .PhoneTypes');
-      if (phoneTypeSel) selectIn('.PhoneTemplateContainer .PhoneTypes', (contact.phoneType || '').toLowerCase().includes('mobile') ? 'Cell' : (contact.phoneType || ''));
+    // Phone.
+    if (contact.primaryPhone) {
+      setField(
+        '.PhoneTemplateContainer [data-section="phone"] input[name="Value"], .PhoneTemplateContainer input[name="Value"]',
+        String(contact.primaryPhone).replace(/\D/g, '')
+      );
+
+      const phoneType = String(contact.phoneType || '');
+      if (phoneType) {
+        const qqPhoneType = /mobile|cell/i.test(phoneType) ? 'Cell' : phoneType;
+        await selectInAsync('.PhoneTemplateContainer .PhoneTypes', qqPhoneType);
+      }
     }
 
-    // Email
-    const emailInput = detail.querySelector('.EmailTemplateContainer input[name="Value"]');
-    if (emailInput) setField('.EmailTemplateContainer input[name="Value"]', (contact.primaryEmail || '').toLowerCase());
-
-    // Save
-    const save = form.querySelector('.SectionButtons .section_save');
-    if (save) {
-      try { save.classList.remove('hide'); save.style.removeProperty('display'); } catch { }
-      save.click();
-      // Wait for save to complete (spinner or detail collapse)
-      const spinner = form.querySelector('.SectionButtons .section_saving');
-      for (let i = 0; i < 20; i++) { await new Promise(r => setTimeout(r, 150)); if (!spinner || spinner.style.display === 'none') break; }
-      await new Promise(r => setTimeout(r, 200));
+    // Email.
+    if (contact.primaryEmail) {
+      setField('.EmailTemplateContainer input[name="Value"]', String(contact.primaryEmail).toLowerCase());
+      await selectInAsync('.EmailTemplateContainer .EmailTypes', 'Personal');
     }
-    return true;
+
+    // Save this Additional Contact.
+    saveBtn = detail.querySelector('.SectionButtons .section_save')
+      || form.querySelector('.SectionButtons .section_save');
+
+    if (!saveBtn) return false;
+
+    try {
+      saveBtn.classList.remove('hide');
+      saveBtn.style.removeProperty('display');
+      saveBtn.scrollIntoView({ block: 'center' });
+    } catch { }
+
+    saveBtn.click();
+
+    // Wait until QQ finishes saving. An existing record may remain open,
+    // while a new record can return to the list, so accept either state.
+    const saved = await waitFor(() => {
+      const spinner = detail.querySelector('.SectionButtons .section_saving')
+        || form.querySelector('.SectionButtons .section_saving');
+
+      const hasErrors = !!detail.querySelector('.errors li, .errors.error, .errors .error');
+      if (hasErrors) return null;
+
+      const spinnerVisible = spinner && spinner.offsetParent !== null && spinner.style.display !== 'none';
+      if (spinnerVisible) return null;
+
+      const currentSave = detail.querySelector('.SectionButtons .section_save')
+        || form.querySelector('.SectionButtons .section_save');
+
+      const returnedToView = currentSave && !btnVisible(currentSave);
+      const listVisible = form.querySelector('.AdditionalContactsListContainer')?.offsetParent !== null;
+
+      return (returnedToView || listVisible || !spinnerVisible) ? true : null;
+    }, { timeout: 10000, interval: 180 });
+
+    return !!saved;
   }
 
   async function runFillDetails(payload) {
