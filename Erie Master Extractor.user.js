@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Erie Master Extractor
 // @namespace    https://middlecreekinsurance.com/
-// @version      0.1.7
+// @version      0.1.8
 // @description  Erie-only master extractor for Personal Lines Auto. Collects page-by-page data into one normalized JSON payload.
 // @match        https://www.agentexchange.com/PersonalLinesWeb/g/*
 // @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Erie%20Master%20Extractor.user.js
@@ -17,7 +17,7 @@
   'use strict';
 
   const APP = {
-    version: '0.1.7',
+    version: '0.1.8',
     carrier: 'Erie',
     lob: 'PersonalAuto'
   };
@@ -85,6 +85,27 @@
     normalizeMoney(v) {
       const s = U.cleanString(v).replace(/[$,]/g, '');
       return s;
+    },
+
+    normalizeStateName(v) {
+      const raw = U.cleanString(v);
+      if (!raw) return '';
+
+      const states = {
+        AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California',
+        CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware', FL: 'Florida', GA: 'Georgia',
+        HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa',
+        KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland',
+        MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi', MO: 'Missouri',
+        MT: 'Montana', NE: 'Nebraska', NV: 'Nevada', NH: 'New Hampshire', NJ: 'New Jersey',
+        NM: 'New Mexico', NY: 'New York', NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio',
+        OK: 'Oklahoma', OR: 'Oregon', PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina',
+        SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont',
+        VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming',
+        DC: 'District of Columbia'
+      };
+
+      return states[raw.toUpperCase()] || raw;
     },
 
     boolFromErie(v) {
@@ -1127,7 +1148,7 @@
         isSecondary: !!(flags && flags.isSecondary),
         license: {
           number: U.cleanString(form.DriverLicenseNumber || ''),
-          state: U.cleanString(form.DriverLicenseState || ''),
+          state: U.normalizeStateName(form.DriverLicenseState || ''),
           dateFirstLicensed: U.cleanString(form.FirstLicenseDate || '')
         },
         ssn: U.cleanString(
@@ -1176,7 +1197,7 @@
 
         license: {
           number: U.cleanString(d.DriverLicenseNumber || ''),
-          state: U.cleanString(d.DriverLicenseState || ''),
+          state: U.normalizeStateName(d.DriverLicenseState || ''),
           status: '',
           dateFirstLicensed: U.cleanString(d.FirstLicenseDate || '')
         },
