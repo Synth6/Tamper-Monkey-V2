@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         QQ Catalyst - Copy Claim
 // @namespace    https://middlecreekins.com/
-// @version      1.0.1
+// @version      1.1.0
 // @description  Copy the currently open QQ Catalyst claim to the MCI Customer Search clipboard format.
 // @match        https://app.qqcatalyst.com/Contacts/Customer/Details/*
 // @match        https://app.qqcatalyst.com/Contacts/CommercialCustomer/Details/*
@@ -15,6 +15,7 @@
     'use strict';
 
     const BUTTON_ID = 'mci-copy-qq-claim-button';
+    const PASTE_BUTTON_ID = 'mci-paste-qq-claim-button';
     const STYLE_ID = 'mci-copy-qq-claim-style';
     const PAYLOAD_SOURCE = 'MCI_QQ_CLAIM';
     const PAYLOAD_VERSION = 1;
@@ -465,6 +466,339 @@
         }
     }
 
+    async function readClipboardText() {
+        if (navigator.clipboard && window.isSecureContext) {
+            try {
+                return await navigator.clipboard.readText();
+            } catch (error) {
+                console.warn('[MCI Paste Claim] Clipboard API failed; using manual paste fallback.', error);
+            }
+        }
+
+        const manual = window.prompt(
+            'QQ could not read the clipboard automatically. Press Ctrl+V to paste the MCI claim data here, then click OK.'
+        );
+        return manual || '';
+    }
+
+    function dispatchFieldEvents(element) {
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+        element.dispatchEvent(new Event('blur', { bubbles: true }));
+
+        if (window.jQuery) {
+            try {
+                window.jQuery(element).trigger('input').trigger('change').trigger('blur');
+            } catch (_error) {
+                // Native events above are sufficient when QQ is not using jQuery for this field.
+            }
+        }
+    }
+
+    function setTextControl(root, names, value) {
+        if (value === null || value === undefined) {
+            return false;
+        }
+
+        for (const name of names) {
+            const element = root.querySelector(`[name="${CSS.escape(name)}"]`);
+            if (!element || element.matches('select, input[type="checkbox"]')) {
+                continue;
+            }
+            element.value = String(value ?? '');
+            dispatchFieldEvents(element);
+            return true;
+        }
+        return false;
+    }
+
+    function setCheckboxControl(root, names, value) {
+        if (value === null || value === undefined) {
+            return false;
+        }
+
+        for (const name of names) {
+            const element = root.querySelector(`[name="${CSS.escape(name)}"]`);
+            if (!element || !element.matches('input[type="checkbox"]')) {
+                continue;
+            }
+            element.checked = Boolean(value);
+            dispatchFieldEvents(element);
+            return true;
+        }
+        return false;
+    }
+
+    function normalizedOptionText(value) {
+        return clean(value).toLowerCase();
+    }
+
+    function setSelectControl(root, names, value) {
+        if (value === null || value === undefined || clean(value) === '') {
+            return false;
+        }
+
+        for (const name of names) {
+            const element = root.querySelector(`[name="${CSS.escape(name)}"]`);
+            if (!element || !element.matches('select')) {
+                continue;
+            }
+
+            const wanted = normalizedOptionText(value);
+            const options = Array.from(element.options || []);
+            const exact = options.find(option =>
+                normalizedOptionText(option.textContent) === wanted ||
+                normalizedOptionText(option.value) === wanted
+            );
+            const contains = exact || options.find(option =>
+                normalizedOptionText(option.textContent).includes(wanted) ||
+                wanted.includes(normalizedOptionText(option.textContent))
+            );
+
+            if (!contains) {
+                return false;
+            }
+
+            element.value = contains.value;
+            dispatchFieldEvents(element);
+            return true;
+        }
+        return false;
+    }
+
+    function setAssociatedPolicyFromNumber(root, policyNumber) {
+        const wanted = clean(policyNumber);
+        if (!wanted) {
+            return false;
+        }
+
+        const policyIdControl = root.querySelector('[name="PolicyID"]');
+        if (!policyIdControl) {
+            return false;
+        }
+
+        for (const row of document.querySelectorAll('#PolicyList tr[data-policyid]')) {
+            const lobDivs = row.querySelectorAll('.PolicyItem.lob div');
+            const displayedPolicy = clean(lobDivs[1]?.textContent || '');
+            if (displayedPolicy.toLowerCase() !== wanted.toLowerCase()) {
+                continue;
+            }
+
+            policyIdControl.value = clean(row.getAttribute('data-policyid') || '');
+            dispatchFieldEvents(policyIdControl);
+            return true;
+        }
+
+        return false;
+    }
+
+    function findActionElement(root, phrases) {
+        const wanted = phrases.map(text => clean(text).toLowerCase());
+        const candidates = root.querySelectorAll('button, a, input[type="button"], input[type="submit"]');
+        for (const element of candidates) {
+            const text = clean(
+                element.matches('input') ? element.value : element.textContent
+            ).toLowerCase();
+            if (wanted.some(phrase => text === phrase || text.includes(phrase))) {
+                return element;
+            }
+        }
+        return null;
+    }
+
+    function delay(ms) {
+        return new Promise(resolve => window.setTimeout(resolve, ms));
+    }
+
+    async function ensureRepeatedRows(root, rowSelector, desiredCount, addPhrases) {
+        let rows = Array.from(root.querySelectorAll(rowSelector));
+        let attempts = 0;
+        while (rows.length < desiredCount && attempts < desiredCount + 3) {
+            const addButton = findActionElement(root, addPhrases);
+            if (!addButton) {
+                break;
+            }
+            addButton.click();
+            attempts += 1;
+            await delay(120);
+            rows = Array.from(root.querySelectorAll(rowSelector));
+        }
+        return rows;
+    }
+
+    async function pasteParties(root, parties) {
+        if (!Array.isArray(parties) || !parties.length) {
+            return { requested: 0, filled: 0 };
+        }
+
+        let rows = await ensureRepeatedRows(
+            root,
+            '.ClaimPartiesContainer .tabular-row:has([name="ClaimPartyFullName"])',
+            parties.length,
+            ['Add Claim Party', 'Add Party']
+        );
+        rows = rows.filter(row => row.querySelector('[name="ClaimPartyFullName"]'));
+
+        let filled = 0;
+        for (let index = 0; index < Math.min(rows.length, parties.length); index += 1) {
+            const row = rows[index];
+            const party = parties[index] || {};
+            setTextControl(row, ['ClaimPartyFullName'], party.full_name ?? '');
+            setTextControl(row, ['ClaimPartyPhoneNumber'], party.phone ?? '');
+            setTextControl(row, ['ClaimPartyEmailAddress'], party.email ?? '');
+            if (party.party_type) {
+                setSelectControl(row, ['ClaimPartyTypeId'], party.party_type);
+            }
+            filled += 1;
+        }
+
+        return { requested: parties.length, filled };
+    }
+
+    async function pastePayments(root, payments) {
+        if (!Array.isArray(payments) || !payments.length) {
+            return { requested: 0, filled: 0 };
+        }
+
+        let rows = await ensureRepeatedRows(
+            root,
+            '.tabular-row:has([name="ClaimPaymentDate"])',
+            payments.length,
+            ['Add Claim Payment', 'Add Payment']
+        );
+        rows = rows.filter(row => row.querySelector('[name="ClaimPaymentDate"]'));
+
+        let filled = 0;
+        for (let index = 0; index < Math.min(rows.length, payments.length); index += 1) {
+            const row = rows[index];
+            const payment = payments[index] || {};
+            setTextControl(row, ['ClaimPaymentDate'], payment.payment_date ?? '');
+            setTextControl(row, ['ClaimPaymentCheckNumber'], payment.check_number ?? '');
+            setTextControl(row, ['ClaimPaymentAmount'], payment.amount ?? '');
+            setTextControl(row, ['ClaimPaymentComments'], payment.comments ?? '');
+            filled += 1;
+        }
+
+        return { requested: payments.length, filled };
+    }
+
+    async function applyMciClaimPayload(payload) {
+        const root = claimsRoot();
+        if (!root) {
+            throw new Error('Open the QQ claim you want to fill before clicking Paste Claim.');
+        }
+
+        if (!payload || payload.source !== PAYLOAD_SOURCE || payload.version !== PAYLOAD_VERSION) {
+            throw new Error('The clipboard does not contain compatible MCI claim data.');
+        }
+
+        const claim = payload.claim;
+        if (!claim || typeof claim !== 'object') {
+            throw new Error('The MCI claim payload is missing its claim data.');
+        }
+
+        const currentClaimNumber = clean(root.querySelector('[name="ClaimNumber"]')?.value || '');
+        const incomingClaimNumber = clean(claim.claim_number || '');
+        let claimNumberPreserved = false;
+        if (incomingClaimNumber) {
+            if (!currentClaimNumber) {
+                setTextControl(root, ['ClaimNumber'], incomingClaimNumber);
+            } else if (currentClaimNumber.toLowerCase() !== incomingClaimNumber.toLowerCase()) {
+                claimNumberPreserved = true;
+            }
+        }
+
+        setSelectControl(root, ['ClaimStatusId'], claim.status);
+        setSelectControl(root, ['ClaimTypeId'], claim.claim_type);
+        setTextControl(root, ['DateOpened'], claim.date_opened);
+        setTextControl(root, ['DateOfLoss'], claim.date_of_loss);
+        setTextControl(root, ['DateReported'], claim.date_reported);
+        setTextControl(root, ['DateClosed'], claim.date_closed);
+        setSelectControl(root, ['CoverageID'], claim.coverage);
+        setCheckboxControl(root, ['DisputedSuitPending'], claim.disputed_suit_pending);
+        setCheckboxControl(root, ['ChargeableToCompany'], claim.chargeable_to_company);
+        setTextControl(root, ['AmountOfLoss'], claim.amount_of_loss);
+        setTextControl(root, ['AmountSalvaged'], claim.amount_salvaged);
+        setTextControl(root, ['AmountReserved'], claim.amount_reserved);
+        setTextControl(root, ['AmountPaid'], claim.amount_paid);
+
+        const policyMatched = setAssociatedPolicyFromNumber(root, claim.policy_number);
+
+        setTextControl(root, ['Street', 'LossStreet', 'AddressLine1', 'LossAddressLine1'], claim.loss_street);
+        setTextControl(root, ['City', 'LossCity'], claim.loss_city);
+        if (!setSelectControl(root, ['StateID', 'LossStateID'], claim.loss_state)) {
+            setTextControl(root, ['State', 'LossState', 'Province'], claim.loss_state);
+        }
+        setTextControl(root, ['Zip', 'ZIP', 'ZipCode', 'LossZip'], claim.loss_zip);
+        if (!setSelectControl(root, ['CountryID', 'LossCountryID'], claim.loss_country)) {
+            setTextControl(root, ['Country', 'LossCountry'], claim.loss_country);
+        }
+        setTextControl(
+            root,
+            ['LossLocationDescription', 'LocationDescription', 'DescribeLocationOfLoss'],
+            claim.loss_location_description
+        );
+        setTextControl(root, ['IncidentDescription'], claim.incident_description);
+
+        const vehicle = payload.vehicle && typeof payload.vehicle === 'object'
+            ? payload.vehicle
+            : {};
+        setTextControl(root, ['Year'], vehicle.year);
+        setTextControl(root, ['Make'], vehicle.make);
+        setTextControl(root, ['Model'], vehicle.model);
+        setTextControl(root, ['VIN'], vehicle.vin);
+        if (!setSelectControl(root, ['BodyType'], vehicle.vehicle_type)) {
+            setTextControl(root, ['BodyType'], vehicle.vehicle_type);
+        }
+
+        const partyResult = await pasteParties(root, payload.parties || []);
+        const paymentResult = await pastePayments(root, payload.payments || []);
+
+        return {
+            claimNumberPreserved,
+            policyMatched,
+            policyRequested: clean(claim.policy_number || ''),
+            partyResult,
+            paymentResult,
+        };
+    }
+
+    async function pasteClaim() {
+        try {
+            const clipboardText = String(await readClipboardText() || '').trim();
+            if (!clipboardText) {
+                throw new Error('No claim data was pasted from the clipboard.');
+            }
+
+            let payload;
+            try {
+                payload = JSON.parse(clipboardText);
+            } catch (_error) {
+                throw new Error('The clipboard does not contain valid MCI claim JSON.');
+            }
+
+            const result = await applyMciClaimPayload(payload);
+            const notes = ['Claim pasted from MCI. Review the QQ fields and click QQ Save when ready.'];
+            if (result.claimNumberPreserved) {
+                notes.push('Existing QQ Claim Number was preserved.');
+            }
+            if (result.policyRequested && !result.policyMatched) {
+                notes.push(`Policy ${result.policyRequested} could not be matched automatically.`);
+            }
+            if (result.partyResult.requested > result.partyResult.filled) {
+                notes.push(`Only ${result.partyResult.filled} of ${result.partyResult.requested} claim parties could be filled automatically.`);
+            }
+            if (result.paymentResult.requested > result.paymentResult.filled) {
+                notes.push(`Only ${result.paymentResult.filled} of ${result.paymentResult.requested} claim payments could be filled automatically.`);
+            }
+
+            toast(notes.join(' '), 'success');
+        } catch (error) {
+            console.error('[MCI Paste Claim]', error);
+            toast(error?.message || 'Claim could not be pasted.', 'error');
+        }
+    }
+
     function ensureStyles() {
         if (document.getElementById(STYLE_ID)) {
             return;
@@ -473,7 +807,8 @@
         const style = document.createElement('style');
         style.id = STYLE_ID;
         style.textContent = `
-            #${BUTTON_ID} {
+            #${BUTTON_ID},
+            #${PASTE_BUTTON_ID} {
                 display: inline-block;
                 margin-left: 10px;
                 padding: 4px 10px;
@@ -488,13 +823,25 @@
                 box-shadow: none;
             }
 
-            #${BUTTON_ID}:hover {
+            #${BUTTON_ID}:hover,
+            #${PASTE_BUTTON_ID}:hover {
                 background: #0d6fae;
                 border-color: #0d6fae;
             }
 
-            #${BUTTON_ID}:active {
+            #${BUTTON_ID}:active,
+            #${PASTE_BUTTON_ID}:active {
                 transform: translateY(1px);
+            }
+
+            #${PASTE_BUTTON_ID} {
+                background: #16794a;
+                border-color: #16794a;
+            }
+
+            #${PASTE_BUTTON_ID}:hover {
+                background: #11663e;
+                border-color: #11663e;
             }
 
             .mci-copy-claim-toast {
@@ -522,6 +869,7 @@
 
     function removeButton() {
         document.getElementById(BUTTON_ID)?.remove();
+        document.getElementById(PASTE_BUTTON_ID)?.remove();
     }
 
     function ensureButton() {
@@ -570,8 +918,32 @@
             claimsHeading.appendChild(button);
         }
 
-        // Only show the button when a claim detail record is actually open.
-        button.style.display = claimsRoot() ? 'inline-block' : 'none';
+        let pasteButton = document.getElementById(PASTE_BUTTON_ID);
+        if (pasteButton && pasteButton.parentElement !== claimsHeading) {
+            pasteButton.remove();
+            pasteButton = null;
+        }
+
+        if (!pasteButton) {
+            pasteButton = document.createElement('button');
+            pasteButton.id = PASTE_BUTTON_ID;
+            pasteButton.type = 'button';
+            pasteButton.textContent = 'Paste Claim';
+            pasteButton.title =
+                'Paste claim data copied from MCI Customer Search. QQ is not saved automatically.';
+            pasteButton.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                pasteClaim();
+            });
+
+            claimsHeading.appendChild(pasteButton);
+        }
+
+        // Only show the buttons when a claim detail record is actually open.
+        const hasOpenClaim = Boolean(claimsRoot());
+        button.style.display = hasOpenClaim ? 'inline-block' : 'none';
+        pasteButton.style.display = hasOpenClaim ? 'inline-block' : 'none';
     }
 
     let refreshTimer = 0;
