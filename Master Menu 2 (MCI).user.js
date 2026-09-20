@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      6.0.10
+// @version      6.0.11
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -869,7 +869,9 @@
                 '<div class="group"><div class="list">' +
                   '<span><b>SMART LOOKUP</b></span>' +
                   '<div><span class="kbd">ALT</span> + <span class="kbd">Right-Click</span></div>' +
-                  '<div>Name → Address → Policy #</div>' +
+                  '<div>Policy # → Carrier Lookup</div>' +
+                  '<div style="margin-top:5px;"><span class="kbd">SHIFT</span> + <span class="kbd">Right-Click</span></div>' +
+                  '<div>Address → Wake / Maps / Vexcel</div>' +
                 '</div></div>' +
 
                 '<hr style="border:none;border-top:1px dashed rgba(255,255,255,.2);margin:8px 0;">' +
