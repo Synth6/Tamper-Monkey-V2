@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         QQ Catalyst - Copy Claim
 // @namespace    https://middlecreekins.com/
-// @version      1.1.0
+// @version      1.1.1
 // @description  Copy the currently open QQ Catalyst claim to the MCI Customer Search clipboard format.
 // @match        https://app.qqcatalyst.com/Contacts/Customer/Details/*
 // @match        https://app.qqcatalyst.com/Contacts/CommercialCustomer/Details/*
+// @match        https://app.qqcatalyst.com/Policies/Policy/Details/*
 // @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/QQ%20Catalyst%20-%20Copy%20Claim.user.js
 // @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/QQ%20Catalyst%20-%20Copy%20Claim.user.js
 // @grant        GM_setClipboard
