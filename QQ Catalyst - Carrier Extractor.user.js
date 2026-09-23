@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
-// @version      1.8.3
+// @version      1.8.4
 // @description  Extract from carriers and build QQC payload. Alt+Q: Extractor.
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
@@ -1056,7 +1056,7 @@
     set('#qqc-suffix', p.suffix);
     set('#qqc-biz', p.businessName);
     // Show formatted phone in single phone field
-    set('#qqc-phonetype', p.phoneType || formatPhone(p.primaryPhone));
+    set('#qqc-phonetype', formatPhone(p.primaryPhone) || p.phoneType);
     set('#qqc-email', p.primaryEmail);
     set('#qqc-dob', p.dob);
     set('#qqc-ssn', p.ssn);
@@ -1070,7 +1070,7 @@
     set('#qqc-second-last', toNameCase(second.lastName));
     set('#qqc-second-suffix', second.suffix);
     set('#qqc-second-relationship', second.relationship || (second.firstName || second.lastName ? 'Spouse' : ''));
-    set('#qqc-second-phone', second.phoneType || formatPhone(second.primaryPhone));
+    set('#qqc-second-phone', formatPhone(second.primaryPhone) || second.phoneType);
     set('#qqc-second-email', second.primaryEmail);
     set('#qqc-second-dob', second.dob);
     set('#qqc-second-ssn', second.ssn);
@@ -2568,7 +2568,8 @@ function extractProgressiveCommercialAuto() {
       gender: String(form.Gender || '').trim(),
       maritalStatus: String(form.MaritalStatus || form.MaritalStatusDescription || '').trim(),
       primaryPhone,
-      phoneType: primaryPhoneObj?.Type || formatPhone(primaryPhone),
+      phoneType: formatPhone(primaryPhone),
+      phoneKind: String(primaryPhoneObj?.Type || '').trim(),
       primaryEmail: String(form.EmailAddress || '').trim().toLowerCase()
     };
   }
@@ -2722,7 +2723,8 @@ function extractProgressiveCommercialAuto() {
 
     const domPhone = parseEriePLWPhone();
     const primaryPhone = inlinePrimary.primaryPhone || domPhone.primaryPhone || '';
-    const phoneType = inlinePrimary.phoneType || domPhone.phoneType || formatPhone(primaryPhone);
+    const phoneType = formatPhone(primaryPhone) || inlinePrimary.phoneType || domPhone.phoneType || '';
+    const phoneKind = inlinePrimary.phoneKind || '';
     const primaryEmail = inlinePrimary.primaryEmail || parseEriePLWEmail() || '';
 
     // Prefer the complete inline Erie model. DOM/Knockout reads remain fallbacks.
@@ -2760,7 +2762,7 @@ function extractProgressiveCommercialAuto() {
     return {
       carrier: 'Erie-PLW', sourceUrl: location.href,
       firstName, middleName, lastName, suffix,
-      primaryPhone, phoneType, primaryEmail, dob,
+      primaryPhone, phoneType, phoneKind, primaryEmail, dob,
       ssn,
       licenseNumber, licenseState,
       contactType: 'Customers', customerType: 'Personal',
