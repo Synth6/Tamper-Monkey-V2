@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MCI Erie Payload Bridge
 // @namespace    https://middlecreekinsurance.com/
-// @version      1.1.4
+// @version      1.1.5
 // @description  Shared payload bridge across Customer Search, Erie, NatGen, Progressive, and Orion 180 domains using Tampermonkey storage.
 // @match        https://www.agentexchange.com/PersonalLinesWeb/g/*
 // @match        https://natgenagency.com/Quote/*
@@ -287,79 +287,6 @@
     return { ok: true, payload: payload, name: name };
   }
 
-  function isCarrierQuoteHost() {
-    const host = String(location.hostname || '').toLowerCase();
-    return (
-      host === 'natgenagency.com' ||
-      host.endsWith('.natgenagency.com') ||
-      host === 'foragentsonly.com' ||
-      host.endsWith('.foragentsonly.com') ||
-      host === 'app.orion180.com'
-    );
-  }
-
-  function mountCustomerSearchImportButton() {
-    if (!isCarrierQuoteHost() || !document.body) return false;
-
-    const existing = document.getElementById('mci-customer-search-payload-load');
-    if (existing) return true;
-
-    const button = document.createElement('button');
-    button.id = 'mci-customer-search-payload-load';
-    button.type = 'button';
-    button.textContent = 'Load MCI Customer';
-    button.title = 'Load quote data copied from MCI Customer Search';
-    Object.assign(button.style, {
-      position: 'fixed',
-      right: '14px',
-      bottom: '14px',
-      zIndex: '2147483646',
-      height: '32px',
-      padding: '0 12px',
-      border: '1px solid #166534',
-      borderRadius: '6px',
-      background: '#16a34a',
-      color: '#ffffff',
-      font: '600 12px/1 system-ui, Segoe UI, Arial, sans-serif',
-      cursor: 'pointer',
-      boxShadow: '0 3px 12px rgba(0,0,0,.22)'
-    });
-
-    button.addEventListener('mouseenter', function () {
-      button.style.background = '#15803d';
-    });
-    button.addEventListener('mouseleave', function () {
-      button.style.background = '#16a34a';
-    });
-    button.addEventListener('click', async function (event) {
-      event.preventDefault();
-      event.stopPropagation();
-      const original = button.textContent;
-      button.disabled = true;
-      button.textContent = 'Loading...';
-      try {
-        const result = await importMciPayloadFromClipboard();
-        if (result && result.ok) {
-          button.textContent = 'Loaded ✓';
-          button.title = 'Loaded: ' + result.name;
-          setTimeout(function () {
-            button.textContent = original;
-            button.disabled = false;
-          }, 2200);
-          return;
-        }
-      } catch (e) {
-        console.error(LOG, 'Customer Search clipboard import failed', e);
-        window.alert('MCI Customer Search data could not be loaded.');
-      }
-      button.textContent = original;
-      button.disabled = false;
-    });
-
-    document.body.appendChild(button);
-    return true;
-  }
-
   function clearMciSharedPayload() {
     try {
       GM_deleteValue(SHARED_KEY);
@@ -398,11 +325,4 @@
   window.clearMciSharedPayload = clearMciSharedPayload;
   window.importMciPayloadFromClipboard = importMciPayloadFromClipboard;
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', mountCustomerSearchImportButton, { once: true });
-  } else {
-    mountCustomerSearchImportButton();
-  }
-  setTimeout(mountCustomerSearchImportButton, 800);
-  setTimeout(mountCustomerSearchImportButton, 2200);
 })();

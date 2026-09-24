@@ -594,6 +594,26 @@
     }
   }
 
+  async function loadMciCustomerSearchPayload() {
+    const target = resolveCallableGlobal("importMciPayloadFromClipboard");
+    if (!target) {
+      toast("MCI Payload Bridge not found on this page.");
+      return;
+    }
+
+    try {
+      const result = await target.fn.call(target.root);
+      if (result && result.ok) {
+        toast("Loaded " + (result.name || "MCI customer") + ".");
+      } else if (result && result.reason !== "empty") {
+        toast("MCI customer data was not loaded.");
+      }
+    } catch (e) {
+      console.warn("[MCI Toolbox] MCI Customer Search payload load error:", e);
+      toast("Could not load MCI customer data - see console.");
+    }
+  }
+
   function runProgressiveFillLauncher(opts) {
     const fnName = opts && opts.fnName ? opts.fnName : "";
     const wrongPageMsg = opts && opts.wrongPageMsg ? opts.wrongPageMsg : "Open Progressive before running this.";
@@ -665,6 +685,13 @@
     {
       label: "Quote Export",
       items: [
+        (IS_NG || IS_PROG || IS_ORION180) ? {
+          type: "button",
+          id: "mci_load_customer_search_payload",
+          text: "📋 Load MCI Customer",
+          title: "Load quote data copied from MCI Customer Search",
+          className: "mci-btn mci-customer-load"
+        } : null,
         { type: "button", id: "mci_erie_extractor_toggle", text: getErieExtractorToggleLabel(getErieExtractorEnabled()), className: "mci-btn erie-toggle" },
         {
           type: "panel",
@@ -869,9 +896,7 @@
                 '<div class="group"><div class="list">' +
                   '<span><b>SMART LOOKUP</b></span>' +
                   '<div><span class="kbd">ALT</span> + <span class="kbd">Right-Click</span></div>' +
-                  '<div>Policy # → Carrier Lookup</div>' +
-                  '<div style="margin-top:5px;"><span class="kbd">SHIFT</span> + <span class="kbd">Right-Click</span></div>' +
-                  '<div>Address → Wake / Maps / Vexcel</div>' +
+                  '<div>Name → Address → Policy #</div>' +
                 '</div></div>' +
 
                 '<hr style="border:none;border-top:1px dashed rgba(255,255,255,.2);margin:8px 0;">' +
@@ -1103,6 +1128,8 @@
 
         '.mci-btn.jones-auto{background:#1d4ed8}.mci-btn.jones-auto:hover{background:#2563eb}' +
         '.mci-btn.jones-home{background:#4f7b2f}.mci-btn.jones-home:hover{background:#5a8a35}' +
+        '.mci-btn.mci-customer-load{background:linear-gradient(180deg,#22c55e 0%,#16a34a 52%,#15803d 100%);color:#fff;text-align:center;font-weight:700;border:1px solid rgba(255,255,255,.18)}' +
+        '.mci-btn.mci-customer-load:hover{background:linear-gradient(180deg,#4ade80 0%,#22c55e 52%,#16a34a 100%)}' +
         '.mci-btn.erie-toggle{position:relative;padding-right:52px!important;background:#334155}' +
         '.mci-btn.erie-toggle:hover{background:#3f4f63}' +
         '.mci-btn.erie-toggle::before{content:"";position:absolute;right:10px;top:50%;transform:translateY(-50%);width:34px;height:18px;border-radius:999px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25)}' +
@@ -1747,6 +1774,10 @@
         return;
       }
       triggerContactMapper("auto");
+    });
+
+    onClick("mci_load_customer_search_payload", function () {
+      loadMciCustomerSearchPayload();
     });
 
     // Export quote (expects global functions available)
