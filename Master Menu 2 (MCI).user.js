@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      6.0.11
+// @version      6.0.12
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -672,17 +672,6 @@
     } : null,
 
     {
-      label: "Simple",
-      items: [
-        {
-          type: "pair",
-          left:  { id: "mci_copy",  text: "✂️Copy",  className: "mci-btn ring copy-ring" },
-          right: { id: "mci_paste", text: "📋Paste", className: "mci-btn ring paste-ring" }
-        }
-      ]
-    },
-
-    {
       label: "Quote Export",
       items: [
         (IS_NG || IS_PROG || IS_ORION180) ? {
@@ -1202,12 +1191,8 @@
         '.mci-btn.ring:active{transform:translateY(1px);box-shadow:inset 0 3px 6px rgba(0,0,0,.75),inset 0 1px 2px rgba(255,255,255,.08);}' +
 
         /* Copy button */
-        '.mci-btn.copy-ring{background:linear-gradient(180deg,#5c6675 0%,#3b434f 52%,#262c34 100%);color:#e8edf5;}' +
-        '.mci-btn.copy-ring:hover{background:linear-gradient(180deg,#6b7686 0%,#46505d 52%,#2f3640 100%);}' +
 
         /* Paste button */
-        '.mci-btn.paste-ring{background:linear-gradient(180deg,#34d4c7 0%,#1aa39a 52%,#0f6d67 100%);color:#ffffff;}' +
-        '.mci-btn.paste-ring:hover{background:linear-gradient(180deg,#49e3d6 0%,#20b5ab 52%,#13827c 100%);}' +
 
         /* Row Highlighter Button */
         '.mci-btn.qq-highlight-live{color:#111;border:1px solid rgba(255,255,255,.18);box-shadow:0 0 0 1px rgba(0,0,0,.45),0 6px 14px rgba(0,0,0,.25),inset 0 1px 2px rgba(255,255,255,.22)}' +
@@ -1733,18 +1718,6 @@
       );
 
       toast("Opening NC FRIS Map page...");
-    });
-
-    // Cross-site tools (your separate script listens)
-
-    onClick("mci_copy", function () {
-      window.dispatchEvent(new CustomEvent("mci:copy"));
-      toast("Copy requested…");
-    });
-
-    onClick("mci_paste", function () {
-      window.dispatchEvent(new CustomEvent("mci:paste"));
-      toast("Paste requested…");
     });
 
     onClick("mci_county_run", function () {
