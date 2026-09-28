@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      6.0.12
+// @version      6.0.13
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -80,6 +80,7 @@
   const PREF_HOVER_KEY = "mci_pref_hover_open";
   const PREF_ERIE_EXTRACTOR_ENABLED_KEY = "mci_pref_erie_extractor_enabled";
   const EVENT_ERIE_EXTRACTOR_TOGGLE = "mci:erie-extractor-toggle";
+  const PREF_AUTO_FILE_DOWNLOADER_KEY = "mci_pref_auto_file_downloader";
   const EVENT_COUNTY_RUN = "mci-county-run";
   const EVENT_COUNTY_MANUAL = "mci-county-manual";
 
@@ -463,6 +464,66 @@
     try { window.postMessage({ __mci: "run-file-downloader", detail: detail }, "*"); } catch (e) {}
   }
 
+  function getAutoFileDownloaderEnabled() {
+    try { return !!GM_getValue(PREF_AUTO_FILE_DOWNLOADER_KEY, false); } catch (e) { return false; }
+  }
+
+  function setAutoFileDownloaderEnabled(enabled) {
+    try { GM_setValue(PREF_AUTO_FILE_DOWNLOADER_KEY, !!enabled); } catch (e) {}
+  }
+
+  function getAutoFileDownloaderLabel(enabled) {
+    return "Auto File Downloader: " + (enabled ? "On" : "Off");
+  }
+
+  function refreshAutoFileDownloaderButton(root) {
+    root = root || (document.getElementById(HOST_ID) && document.getElementById(HOST_ID).shadowRoot);
+    if (!root) return;
+    const btn = root.querySelector("#mci_fd_auto_toggle");
+    if (!btn) return;
+    const enabled = getAutoFileDownloaderEnabled();
+    btn.textContent = getAutoFileDownloaderLabel(enabled);
+    btn.setAttribute("data-on", enabled ? "1" : "0");
+  }
+
+  function autoTriggerFileDownloader() {
+    if (!getAutoFileDownloaderEnabled()) return;
+
+    let trigger = null;
+    if (IS_ERIE || IS_NG) {
+      trigger = function () { triggerFileDownloader("erie-natgen"); };
+    } else if (IS_ORION180) {
+      trigger = function () { triggerFileDownloader("orion180"); };
+    } else if (IS_BEYOND) {
+      trigger = function () { window.dispatchEvent(new CustomEvent("mci:flood-beyond")); };
+    } else if (IS_NFIP) {
+      trigger = function () { window.dispatchEvent(new CustomEvent("mci:flood-nfip")); };
+    } else if (/ncjua-nciua\.org|ncjuanciua\.org/.test(HOST)) {
+      trigger = function () { triggerFileDownloader("ncjua"); };
+    } else if (/jsausa\.com/.test(HOST)) {
+      trigger = function () { triggerFileDownloader("jackson-sumner"); };
+    } else if (IS_PROG) {
+      trigger = function () {
+        const path = String(location.pathname || "").toLowerCase();
+        const isCommercial =
+          /clpolicy\.foragentsonly\.com/i.test(HOST) ||
+          path.includes("business") ||
+          path.includes("commercial") ||
+          path.includes("existingquote");
+        window.dispatchEvent(new CustomEvent(isCommercial ? "mci:progressive-commercial" : "mci:progressive-residential"));
+        if (!isCommercial) window.dispatchEvent(new CustomEvent("mci:progressive-downloader"));
+      };
+    }
+
+    if (!trigger) return;
+
+    setTimeout(function () {
+      try { trigger(); } catch (e) {
+        console.warn("[MCI Toolbox] Auto file downloader trigger failed:", e);
+      }
+    }, 1200);
+  }
+
   function triggerCountyFinder(mode, address) {
     const isManual = mode === "manual";
     const detail = {
@@ -783,6 +844,7 @@
     {
       label: "File Downloader",
       items: [
+        { type: "button", id: "mci_fd_auto_toggle", text: getAutoFileDownloaderLabel(getAutoFileDownloaderEnabled()), className: "mci-btn fd-auto-toggle" },
         {
           type: "panel",
           panelId: "mci_fd_panel",
@@ -1177,6 +1239,14 @@
         /* Downloader Buttons */
         '.mci-btn.downloader{background:linear-gradient(180deg,#b04dff 0%,#9100f5 55%,#5e00a8 100%)}' +
         '.mci-btn.downloader:hover{background:linear-gradient(180deg,#c066ff 0%,#a020ff 55%,#6b00c2 100%)}' +
+        '.mci-btn.fd-auto-toggle{position:relative;padding-right:52px!important;background:#334155}' +
+        '.mci-btn.fd-auto-toggle:hover{background:#3f4f63}' +
+        '.mci-btn.fd-auto-toggle::before{content:"";position:absolute;right:10px;top:50%;transform:translateY(-50%);width:34px;height:18px;border-radius:999px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25)}' +
+        '.mci-btn.fd-auto-toggle::after{content:"";position:absolute;right:27px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:50%;background:#cbd5e1;transition:right .16s ease,background .16s ease}' +
+        '.mci-btn.fd-auto-toggle[data-on="1"]{background:#1f7a3d}' +
+        '.mci-btn.fd-auto-toggle[data-on="1"]:hover{background:#258d47}' +
+        '.mci-btn.fd-auto-toggle[data-on="1"]::before{background:rgba(17,94,39,.75);border-color:rgba(167,243,208,.55)}' +
+        '.mci-btn.fd-auto-toggle[data-on="1"]::after{right:11px;background:#dcfce7}' +
         /* QQ Get Customer Data Button */
         '.mci-btn.qqc{background:linear-gradient(180deg,#ff7a33 0%,#EE6521 52%,#b94b12 100%)}' +
         '.mci-btn.qqc:hover{background:linear-gradient(180deg,#ff8c4d 0%,#ff7029 52%,#c55418 100%)}' +
@@ -1971,6 +2041,15 @@
       }
     });
 
+    refreshAutoFileDownloaderButton(root);
+    onClick("mci_fd_auto_toggle", function () {
+      const enabled = !getAutoFileDownloaderEnabled();
+      setAutoFileDownloaderEnabled(enabled);
+      refreshAutoFileDownloaderButton(root);
+      toast("Auto File Downloader " + (enabled ? "enabled." : "disabled."));
+      if (enabled) autoTriggerFileDownloader();
+    });
+
     // File downloader triggers
     onClick("mci_fd_erie", function () {
       $s("#mci_fd_panel").classList.remove("open");
@@ -2136,7 +2215,14 @@
   /*************************
    * BOOT                  *
    *************************/
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount);
-  else mount();
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () {
+      mount();
+      autoTriggerFileDownloader();
+    });
+  } else {
+    mount();
+    autoTriggerFileDownloader();
+  }
 
 })();
