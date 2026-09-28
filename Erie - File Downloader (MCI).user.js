@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Erie - File Downloader (MCI)
 // @namespace    mci-tools
-// @version      1.0.2
+// @version      1.0.3
 // @description  Click-to-open PDF + copy suggested filename for Erie downloads. Triggered from Master Menu.
 // @match        https://portal.agentexchange.com/*
 // @match        https://www.agentexchange.com/*
@@ -69,22 +69,30 @@
     const mainLabel = row.querySelector('.info-label');
     const mainLabelText = mainLabel ? (mainLabel.innerText || '').trim() : '';
 
-    // Recipient column extra name, like Wells Fargo Home Mortgage
+    // Recipient column, like Insured / Agent / Other Interest
+    let recipient = '';
     let recipientExtra = '';
     Array.prototype.forEach.call(tds, function (td) {
-      const text = (td.innerText || '').trim();
-      if (/Other Interest/i.test(text)) {
-        const info = td.querySelector('.info-label');
-        if (info) recipientExtra = (info.innerText || '').trim();
-      }
+      const dataTh = (td.getAttribute('data-th') || '').trim();
+      if (!/^Recipient$/i.test(dataTh)) return;
+
+      const info = td.querySelector('.info-label');
+      recipientExtra = info ? (info.innerText || '').trim() : '';
+
+      const clone = td.cloneNode(true);
+      Array.prototype.forEach.call(clone.querySelectorAll('.info-label'), function (el) {
+        el.remove();
+      });
+      recipient = (clone.innerText || '').trim();
     });
 
     return [
       eriePolicy,
       typeBtn ? (typeBtn.innerText || '').trim() : '',
       mainLabelText,
-      recipientExtra,
-      finalDate
+      finalDate,
+      recipient,
+      recipientExtra
     ]
       .filter(Boolean)
       .join(' ')
