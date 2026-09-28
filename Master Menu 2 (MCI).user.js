@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      6.0.13
+// @version      6.0.14
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -473,7 +473,7 @@
   }
 
   function getAutoFileDownloaderLabel(enabled) {
-    return "Auto File Downloader: " + (enabled ? "On" : "Off");
+    return "Auto Downloader";
   }
 
   function refreshAutoFileDownloaderButton(root) {
@@ -844,7 +844,7 @@
     {
       label: "File Downloader",
       items: [
-        { type: "button", id: "mci_fd_auto_toggle", text: getAutoFileDownloaderLabel(getAutoFileDownloaderEnabled()), className: "mci-btn fd-auto-toggle" },
+        { type: "button", id: "mci_fd_auto_toggle", text: getAutoFileDownloaderLabel(getAutoFileDownloaderEnabled()), title: "Automatically open the matching carrier file downloader", className: "mci-btn fd-auto-toggle" },
         {
           type: "panel",
           panelId: "mci_fd_panel",
