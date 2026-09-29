@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Erie - File Downloader (MCI)
 // @namespace    mci-tools
-// @version      1.0.3
+// @version      1.0.4
 // @description  Click-to-open PDF + copy suggested filename for Erie downloads. Triggered from Master Menu.
 // @match        https://portal.agentexchange.com/*
 // @match        https://www.agentexchange.com/*
@@ -122,10 +122,9 @@
       row.querySelector('form[action*="/api/pdf/download"]') && row.querySelector('.download-btn')
     );
 
-    if (!rows.length) {
-      showMessage('Erie: No PDF rows found on this page.');
-      return;
-    }
+    // Auto Downloader may trigger on every Erie page.
+    // If this page has no downloadable PDF rows, quietly do nothing.
+    if (!rows.length) return;
 
     rows.forEach((row) => {
       row.style.outline = '2px solid orange';
