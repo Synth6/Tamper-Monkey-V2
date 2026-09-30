@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      6.0.14
+// @version      6.0.18
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
@@ -38,6 +38,14 @@
 
 (function () {
   "use strict";
+
+  // Dedicated MCI tool windows should not load the normal page-side UI.
+  if (
+    window.name === "mciNcPropertyLookupWindow" ||
+    window.name === "erie-master-summary-window"
+  ) {
+    return;
+  }
 
   /*************************
    * ENV / HOST DETECT      *
@@ -154,6 +162,53 @@
         white-space:pre-line !important;
         overflow:visible !important;
         text-overflow:unset !important;
+      }
+
+      /* Smart Lookup chooser:
+         carrier sites such as Erie can apply aggressive global text/form styles.
+         Keep this popup isolated and readable without changing the carrier page. */
+      #mci-hover-chooser{
+        background:rgba(15,15,15,.94) !important;
+        color:#fff !important;
+        border:1px solid rgba(255,255,255,.14) !important;
+        font:12px/1.25 system-ui,Segoe UI,Arial !important;
+      }
+
+      #mci-hover-chooser,
+      #mci-hover-chooser .row,
+      #mci-hover-chooser .lbl,
+      #mci-hover-chooser .sub{
+        color:#fff !important;
+      }
+
+      #mci-hover-chooser .lbl,
+      #mci-hover-chooser .sub{
+        opacity:.88 !important;
+        background:transparent !important;
+        text-shadow:none !important;
+      }
+
+      #mci-hover-chooser select,
+      #mci-hover-chooser #mci-hc-select{
+        background:#fff !important;
+        color:#111 !important;
+        border:1px solid rgba(255,255,255,.22) !important;
+        -webkit-text-fill-color:#111 !important;
+      }
+
+      #mci-hover-chooser select option,
+      #mci-hover-chooser #mci-hc-select option{
+        background:#fff !important;
+        color:#111 !important;
+        -webkit-text-fill-color:#111 !important;
+      }
+
+      #mci-hover-chooser button,
+      #mci-hover-chooser #mci-hc-close{
+        background:#fff !important;
+        color:#111 !important;
+        border:1px solid rgba(255,255,255,.22) !important;
+        -webkit-text-fill-color:#111 !important;
       }
     `;
     document.head.appendChild(st);
@@ -522,6 +577,57 @@
         console.warn("[MCI Toolbox] Auto file downloader trigger failed:", e);
       }
     }, 1200);
+  }
+
+  function getHighlightedText() {
+    let text = "";
+
+    try {
+      text = String(window.getSelection ? window.getSelection().toString() : "").trim();
+    } catch (e) {}
+
+    // Also support highlighted text inside a normal input/textarea.
+    if (!text) {
+      try {
+        const el = document.activeElement;
+        if (el && /^(INPUT|TEXTAREA)$/i.test(el.tagName)) {
+          const start = Number(el.selectionStart);
+          const end = Number(el.selectionEnd);
+          if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+            text = String(el.value || "").slice(start, end).trim();
+          }
+        }
+      } catch (e2) {}
+    }
+
+    return text;
+  }
+
+  function triggerNcProperty() {
+    const selectedText = getHighlightedText();
+    const detail = {
+      source: "mci-menu",
+      selectedText: selectedText
+    };
+
+    try {
+      window.dispatchEvent(new CustomEvent("mci:nc-property-open", {
+        detail: detail
+      }));
+    } catch (e) {}
+
+    try {
+      document.dispatchEvent(new CustomEvent("mci:nc-property-open", {
+        detail: detail
+      }));
+    } catch (e2) {}
+
+    try {
+      window.postMessage({
+        __mci: "nc-property-open",
+        detail: detail
+      }, "*");
+    } catch (e3) {}
   }
 
   function triggerCountyFinder(mode, address) {
@@ -916,6 +1022,7 @@
           left:  { id: "mci_county_run", text: "📍 County Finder", title: "Run County Finder using selection / hover / page detection" },
           right: { id: "mci_county_manual", text: "✏️",title: "Open manual address entry" }
         },
+        { type: "button", id: "mci_nc_property", text: "🏠 NC Property", title: "Open NC Property Lookup", className: "mci-btn nc-property" },
         { type: "button", id: "mci_fema_map", text: "🌊 FEMA Map", className: "mci-btn fema-map" },
 
         // ============================================================
@@ -1100,7 +1207,7 @@
     wireErieExtractorToggleSyncListeners();
     if (root.getElementById(MENU_ID)) return root;
 
-    if (IS_QQ) ensureGlobalStyles();
+    ensureGlobalStyles();
 
     root.innerHTML =
       '<style>' +
@@ -1288,6 +1395,8 @@
         '.mci-btn.vin-nhtsa{background:#0f766e}.mci-btn.vin-nhtsa:hover{background:#0d857c}' +
         '.mci-btn.vin-google{background:#b45309}.mci-btn.vin-google:hover{background:#c2410c}' +
         '.mci-btn.vin-copy{background:#5b21b6}.mci-btn.vin-copy:hover{background:#6d28d9}' +
+        '.mci-btn.nc-property{background:linear-gradient(135deg,#166534 0%,#15803d 52%,#0f766e 100%);color:#ffffff;border:1px solid rgba(255,255,255,.18);font-weight:700}' +
+        '.mci-btn.nc-property:hover{filter:brightness(1.10);transform:translateY(-1px)}' +
         '.mci-btn.fema-map{background:linear-gradient(135deg,#0284c7 0%,#06b6d4 55%,#14b8a6 100%);color:#ffffff;border:1px solid rgba(255,255,255,.18)}' +
         '.mci-btn.fema-map:hover{filter:brightness(1.08);transform:translateY(-1px)}' +
 
@@ -1743,6 +1852,17 @@
         toast("VIN copied.");
       } catch (e) {
         toast("Could not copy VIN.");
+      }
+    });
+
+    onClick("mci_nc_property", function () {
+      try {
+        const highlighted = getHighlightedText();
+        triggerNcProperty();
+        toast(highlighted ? "NC Property opened with highlighted address." : "NC Property opened.");
+      } catch (e) {
+        console.warn("[MCI Toolbox] NC Property trigger error:", e);
+        toast("NC Property trigger failed.");
       }
     });
 
