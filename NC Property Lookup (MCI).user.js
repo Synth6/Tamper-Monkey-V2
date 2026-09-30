@@ -3,6 +3,8 @@
 // @namespace    mci-tools
 // @version      1.2.40
 // @description  NC property lookup with statewide parcel matching plus county-specific enrichment.
+// @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/NC%20Property%20Lookup%20(MCI).user.js
+// @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/NC%20Property%20Lookup%20(MCI).user.js
 // @match        http://*/*
 // @match        https://*/*
 // @run-at       document-idle
