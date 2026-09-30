@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Erie Master Extractor
 // @namespace    https://middlecreekinsurance.com/
-// @version      0.1.8
+// @version      0.1.9
 // @description  Erie-only master extractor for Personal Lines Auto. Collects page-by-page data into one normalized JSON payload.
 // @match        https://www.agentexchange.com/PersonalLinesWeb/g/*
 // @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Erie%20Master%20Extractor.user.js
@@ -16,8 +16,16 @@
 (function () {
   'use strict';
 
+  // Dedicated MCI tool windows should not load the normal page-side UI.
+  if (
+    window.name === 'mciNcPropertyLookupWindow' ||
+    window.name === 'erie-master-summary-window'
+  ) {
+    return;
+  }
+
   const APP = {
-    version: '0.1.8',
+    version: '0.1.9',
     carrier: 'Erie',
     lob: 'PersonalAuto'
   };
