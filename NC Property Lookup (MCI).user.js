@@ -4827,7 +4827,7 @@
           position:sticky; top:0; z-index:20;
           background:linear-gradient(135deg,#1976c8 0%,#0d5f9f 58%,#084a7d 100%) !important;
           color:#fff !important;
-          padding:13px 15px; display:flex; align-items:center; justify-content:space-between;
+          padding:4px 8px; display:flex; align-items:center; justify-content:space-between;
           border-radius:11px 11px 0 0;
           cursor:move; user-select:none;
           box-shadow:0 2px 7px rgba(0,0,0,.22);
