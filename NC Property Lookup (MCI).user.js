@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NC Property Lookup (MCI)
 // @namespace    mci-tools
-// @version      1.2.40
+// @version      1.2.41
 // @description  NC property lookup with statewide parcel matching plus county-specific enrichment.
 // @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/NC%20Property%20Lookup%20(MCI).user.js
 // @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/NC%20Property%20Lookup%20(MCI).user.js
@@ -4933,32 +4933,35 @@
           padding:12px;border-radius:7px;font:12px Consolas,monospace;margin-top:12px;max-height:300px;overflow:auto;
         }
         #${UI_ID} .mci-nc-foot{
-          margin-top:12px;font-size:11px;color:#697986;line-height:1.45;
+          margin-top:5px;font-size:11px;color:#697986;line-height:1.45;
         }
       </style>
       <div class="mci-nc-panel">
+        <!-- Header Section -->
         <div class="mci-nc-head">
-          <div>
-            <div class="mci-nc-title">MCI - NC Property Lookup</div>
-                      <span
-              class="mci-nc-version"
-              title="Highlighted-address prefill build from v1.2.36 baseline. Address matching uses NC OneMap's statewide geocoder. Wake, Harnett, Chatham, Johnston, Durham, Orange, Lee, Nash, Wilson, Vance, Granville, Franklin, Edgecombe, Cumberland, Sampson, Moore and Warren have dedicated county enrichment. Harnett now also checks its approved 5/6-mile fire-insurance districts for protection-class resolution. Warren uses the county's direct BTTax POST workflow and falls back to the Tax Record link if the report card cannot be read. Other NC counties use current NC OSFM fire-station and fire-district fallback data. Other NC counties still use the statewide parcel record while we add their official data adapters. Fields marked Not Found are intentionally left blank rather than guessed."
-            >
-              v1.2.40
-            </span>
-          </div>
+        <div class="mci-nc-foot">
+          <span
+            class="mci-nc-version"
+            title="Highlighted-address prefill build from v1.2.36 baseline. Address matching uses NC OneMap's statewide geocoder. Wake, Harnett, Chatham, Johnston, Durham, Orange, Lee, Nash, Wilson, Vance, Granville, Franklin, Edgecombe, Cumberland, Sampson, Moore and Warren have dedicated county enrichment. Harnett now also checks its approved 5/6-mile fire-insurance districts for protection-class resolution. Warren uses the county's direct BTTax POST workflow and falls back to the Tax Record link if the report card cannot be read. Other NC counties use current NC OSFM fire-station and fire-district fallback data. Other NC counties still use the statewide parcel record while we add their official data adapters. Fields marked Not Found are intentionally left blank rather than guessed."
+          >
+            v1.2.40
+          </span>
+        </div>
+          <div class="mci-nc-title">MCI - NC Property Lookup</div>
           <button class="mci-nc-close" title="Close">×</button>
         </div>
+
+        <!-- Body Section -->
         <div class="mci-nc-body">
           <div class="mci-nc-search">
-            <input class="mci-nc-input" type="text"
-              placeholder="471 Red Cedar Way Fuquay Varina, NC 27526">
+            <input class="mci-nc-input" type="text" placeholder="471 Red Cedar Way Fuquay Varina, NC 27526">
             <button class="mci-nc-go">Look Up</button>
           </div>
           <div class="mci-nc-status"></div>
           <div class="mci-nc-results"></div>
           <pre class="mci-nc-json"></pre>
         </div>
+
       </div>`;
 
     document.body.appendChild(wrap);
