@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NC Property Lookup (MCI)
 // @namespace    mci-tools
-// @version      1.2.41
+// @version      1.2.42
 // @description  NC property lookup with statewide parcel matching plus county-specific enrichment.
 // @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/NC%20Property%20Lookup%20(MCI).user.js
 // @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/NC%20Property%20Lookup%20(MCI).user.js
@@ -48,8 +48,8 @@
   // Shared dedicated-window marker. Companion MCI userscripts use this
   // window name to stay out of the NC Property popup.
   const POPUP_NAME = 'mciNcPropertyLookupWindow';
-  const POPUP_WIDTH = 820;
-  const POPUP_HEIGHT = 850;
+  const POPUP_WIDTH = 620;
+  const POPUP_HEIGHT = 800;
   let ncPropertyPopup = null;
   let pendingSelectedText = '';
 
@@ -4954,7 +4954,7 @@
         <!-- Body Section -->
         <div class="mci-nc-body">
           <div class="mci-nc-search">
-            <input class="mci-nc-input" type="text" placeholder="471 Red Cedar Way Fuquay Varina, NC 27526">
+            <input class="mci-nc-input" type="text" placeholder="9704 Fayetteville Rd, Raleigh, NC 27603">
             <button class="mci-nc-go">Look Up</button>
           </div>
           <div class="mci-nc-status"></div>
