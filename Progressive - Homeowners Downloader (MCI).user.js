@@ -7,6 +7,8 @@
 // @match        https://policy.americanstrategic.com/Policy/History.aspx*
 // @grant        none
 // @run-at       document-idle
+// @updateURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Progressive%20-%20Homeowners%20Downloader%20(MCI).user.js
+// @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/Progressive%20-%20Homeowners%20Downloader%20(MCI).user.js
 // ==/UserScript==
 
 (() => {
