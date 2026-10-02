@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         Master Menu 2 (MCI)
 // @namespace    mci-tools
-// @version      6.0.18
+// @version      6.0.19
 // @description  MCI slide-out toolbox (config-driven UI). Easier to maintain + add buttons without bloating HTML.
 // @match        https://app.qqcatalyst.com/*
 // @match        https://*.qqcatalyst.com/*
 // @match        https://portal.agentexchange.com/*
 // @match        https://www.agentexchange.com/*
+// @match        https://policy.americanstrategic.com/*
 // @match        https://*.agentexchange.com/*
 // @match        https://customerdatamanagement.agentexchange.com/*
 // @match        https://natgenagency.com/*
@@ -58,7 +59,8 @@
 
   const IS_PROG =
     /quoting\.foragentsonly\.com/i.test(HOST) ||
-    /foragentsonly\.com/i.test(HOST);
+    /foragentsonly\.com/i.test(HOST) ||
+    /americanstrategic\.com/i.test(HOST);
 
   const IS_ERIE =
     /agentexchange\.com|portal\.agentexchange\.com|customerdatamanagement\.agentexchange\.com/.test(HOST);
