@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NC Property Lookup (MCI)
 // @namespace    mci-tools
-// @version      1.2.42
+// @version      1.2.43
 // @description  NC property lookup with statewide parcel matching plus county-specific enrichment.
 // @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/NC%20Property%20Lookup%20(MCI).user.js
 // @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/NC%20Property%20Lookup%20(MCI).user.js
@@ -48,7 +48,7 @@
   // Shared dedicated-window marker. Companion MCI userscripts use this
   // window name to stay out of the NC Property popup.
   const POPUP_NAME = 'mciNcPropertyLookupWindow';
-  const POPUP_WIDTH = 620;
+  const POPUP_WIDTH = 550;
   const POPUP_HEIGHT = 800;
   let ncPropertyPopup = null;
   let pendingSelectedText = '';
@@ -4869,7 +4869,7 @@
         }
         #${UI_ID} .mci-nc-match{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#627487}
         #${UI_ID} .mci-nc-address{font-weight:700;color:#123a63;margin-top:2px}
-        #${UI_ID} .mci-nc-head-actions{display:flex;gap:6px;align-items:center}
+        #${UI_ID} .mci-nc-head-actions{display:flex;gap:6px;align-items:center;white-space: nowrap}
         #${UI_ID} .mci-nc-link,#${UI_ID} .mci-nc-raw{
           border:1px solid #a9b8c5;border-radius:5px;background:white;padding:5px 8px;
           cursor:pointer;font-size:11px;text-decoration:none;color:#23445d;
