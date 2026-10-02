@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NC Property Lookup (MCI)
 // @namespace    mci-tools
-// @version      1.2.43
+// @version      1.2.45
 // @description  NC property lookup with statewide parcel matching plus county-specific enrichment.
 // @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/NC%20Property%20Lookup%20(MCI).user.js
 // @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/NC%20Property%20Lookup%20(MCI).user.js
@@ -12,7 +12,9 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_info
 // @connect      services.nconemap.gov
+// @connect      gis.personcountync.gov
 // @connect      services.wake.gov
 // @connect      services1.arcgis.com
 // @connect      gis.harnett.org
@@ -4423,6 +4425,49 @@
     };
   }
 
+  // Person County publishes residential building fields directly on its parcels.
+  // Do not treat Structure_Class (an assessment class) as dwelling style,
+  // or total Building_Area as residential living area.
+  async function enrichPerson(feature, lookupResult) {
+    const pt = lookupPointForFeature(feature, lookupResult);
+    const url = 'https://gis.personcountync.gov/arcgis/rest/services/Tax/BitekParcelInfo/MapServer/1/query';
+    const source = 'Person County GIS';
+    const fields = 'PIN,TaxMapParcel,Site_Address,Residential_Year_Built,Residential_Floor_Area';
+    const firePromise = pt ? statewideFireInfo(pt).catch(() => null) : Promise.resolve(null);
+    const parcelPromise = (async () => {
+      const attrs = feature.attributes || {};
+      // Prefer the statewide parcel identifier to avoid choosing an adjacent lot.
+      const pin = String(attrs.parno || '').trim();
+      if (pin) {
+        const safePin = pin.replace(/'/g, "''");
+        const byPin = await queryWhere(url, "PIN = '" + safePin + "'", fields).catch(() => null);
+        if (byPin && byPin.features && byPin.features.length === 1) {
+          return byPin.features[0].attributes || {};
+        }
+      }
+      if (!pt) return null;
+      const byPoint = await queryPoint(url, pt, fields).catch(() => null);
+      const matches = (byPoint && byPoint.features) || [];
+      // Leave ambiguous overlapping parcels blank rather than choose arbitrarily.
+      return matches.length === 1 ? (matches[0].attributes || {}) : null;
+    })();
+    const [parcel, fire] = await Promise.all([parcelPromise, firePromise]);
+    const a = parcel || {};
+    const year = Number(a.Residential_Year_Built);
+    const area = Number(a.Residential_Floor_Area);
+    return {
+      ...(fire || {}),
+      source,
+      countySiteUrl: 'https://open-persongis.hub.arcgis.com/',
+      taxRecordUrl: 'https://www.bttaxpayerportal.com/ITSPublicPR',
+      yearBuilt: year > 0 ? year : '',
+      yearBuiltSource: year > 0 ? source + ' — Residential Year Built' : '',
+      squareFeet: area > 0 ? area : '',
+      squareFeetSource: area > 0 ? source + ' — Residential Floor Area' : '',
+      raw: { personParcel: parcel, statewideFire: fire ? fire.raw : null }
+    };
+  }
+
   async function enrichGenericNcCounty(feature, lookupResult) {
     const pt = lookupPointForFeature(feature, lookupResult);
     const stateFire = await statewideFireInfo(pt).catch(() => null);
@@ -4451,6 +4496,7 @@
     if (/Sampson/i.test(county)) return enrichSampson(feature, lookupResult);
     if (/Moore/i.test(county)) return enrichMoore(feature, lookupResult);
     if (/Warren/i.test(county)) return enrichWarren(feature, lookupResult);
+    if (/Person/i.test(county)) return enrichPerson(feature, lookupResult);
     return enrichGenericNcCounty(feature, lookupResult);
   }
 
@@ -4475,6 +4521,7 @@
   }
 
   function taxRecordLinkForCounty(name) {
+    if (/Person/i.test(name)) return 'https://www.bttaxpayerportal.com/ITSPublicPR';
     if (/Wake/i.test(name)) {
       return 'https://services.wake.gov/realestate/';
     }
@@ -4494,6 +4541,7 @@
   }
 
   function sourceLinkForCounty(name) {
+    if (/Person/i.test(name)) return 'https://open-persongis.hub.arcgis.com/';
     if (/Wake/i.test(name)) return 'https://services.wake.gov/realestate/';
     if (/Harnett/i.test(name)) return 'https://gis.harnett.org/gisviewer/';
     if (/Chatham/i.test(name)) return 'https://gisservices.chathamcountync.gov/landinformation/';
@@ -4841,20 +4889,27 @@
           font-size:12px !important;opacity:1 !important;margin-top:2px;
           color:#eaf6ff !important;
         }
-        #${UI_ID} .mci-nc-close{
-          width:31px;height:31px;border:1px solid rgba(255,255,255,.35) !important;
-          border-radius:6px;cursor:pointer;
-          background:rgba(0,0,0,.18) !important;color:#fff !important;font-size:20px !important;
-          line-height:1;
+        #${UI_ID} .mci-nc-google{
+          width:31px;height:31px;border:1px solid #d6dde3 !important;
+          border-radius:6px;cursor:pointer;background:#fff !important;
+          display:flex;align-items:center;justify-content:center;padding:5px;
         }
-        #${UI_ID} .mci-nc-close:hover{
-          background:rgba(255,255,255,.18) !important;
-        }
+        #${UI_ID} .mci-nc-google:hover:not(:disabled){background:#edf3f8 !important}
+        #${UI_ID} .mci-nc-google:disabled{opacity:.45;cursor:default}
+        #${UI_ID} .mci-nc-google svg{width:20px;height:20px;display:block}
         #${UI_ID} .mci-nc-body{padding:15px}
         #${UI_ID} .mci-nc-search{display:flex;gap:8px}
+        #${UI_ID} .mci-nc-input-wrap{position:relative;flex:1;min-width:0}
         #${UI_ID} .mci-nc-input{
-          flex:1;border:1px solid #aebbc7;border-radius:6px;padding:10px 11px;font-size:14px;
+          width:100%;border:1px solid #aebbc7;border-radius:6px;padding:10px 35px 10px 11px;font-size:14px;
         }
+        #${UI_ID} .mci-nc-clear{
+          position:absolute;right:5px;top:50%;transform:translateY(-50%);
+          width:25px;height:25px;padding:0;border:0;border-radius:4px;
+          background:transparent;color:#697986;font-size:20px;line-height:1;cursor:pointer;
+        }
+        #${UI_ID} .mci-nc-clear:hover{background:#e5ebf0;color:#1f2933}
+        #${UI_ID} .mci-nc-clear[hidden]{display:none !important}
         #${UI_ID} .mci-nc-go{
           border:0;border-radius:6px;background:#1873b9;color:white;font-weight:700;
           padding:0 18px;cursor:pointer;
@@ -4942,19 +4997,29 @@
         <div class="mci-nc-foot">
           <span
             class="mci-nc-version"
-            title="Highlighted-address prefill build from v1.2.36 baseline. Address matching uses NC OneMap's statewide geocoder. Wake, Harnett, Chatham, Johnston, Durham, Orange, Lee, Nash, Wilson, Vance, Granville, Franklin, Edgecombe, Cumberland, Sampson, Moore and Warren have dedicated county enrichment. Harnett now also checks its approved 5/6-mile fire-insurance districts for protection-class resolution. Warren uses the county's direct BTTax POST workflow and falls back to the Tax Record link if the report card cannot be read. Other NC counties use current NC OSFM fire-station and fire-district fallback data. Other NC counties still use the statewide parcel record while we add their official data adapters. Fields marked Not Found are intentionally left blank rather than guessed."
+            title="Highlighted-address prefill build from v1.2.36 baseline. Address matching uses NC OneMap's statewide geocoder. Wake, Harnett, Chatham, Johnston, Durham, Orange, Lee, Nash, Wilson, Vance, Granville, Franklin, Edgecombe, Cumberland, Sampson, Moore, Warren and Person have dedicated county enrichment. Harnett now also checks its approved 5/6-mile fire-insurance districts for protection-class resolution. Warren uses the county's direct BTTax POST workflow and falls back to the Tax Record link if the report card cannot be read. Other NC counties use current NC OSFM fire-station and fire-district fallback data. Other NC counties still use the statewide parcel record while we add their official data adapters. Fields marked Not Found are intentionally left blank rather than guessed."
           >
-            v1.2.40
+            v${GM_info.script.version}
           </span>
         </div>
           <div class="mci-nc-title">MCI - NC Property Lookup</div>
-          <button class="mci-nc-close" title="Close">×</button>
+          <button type="button" class="mci-nc-google" title="Search this address on Google" aria-label="Search this address on Google" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.39-.18-2.05H12v3.88h5.38a4.6 4.6 0 0 1-1.99 3.02v2.51h3.23c1.89-1.74 2.98-4.3 2.98-7.36z"/>
+              <path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.62-2.41l-3.23-2.51c-.9.6-2.04.96-3.39.96-2.6 0-4.81-1.76-5.6-4.12H3.06v2.59A10 10 0 0 0 12 22z"/>
+              <path fill="#FBBC05" d="M6.4 13.92a6 6 0 0 1 0-3.84V7.49H3.06a10 10 0 0 0 0 9.02z"/>
+              <path fill="#EA4335" d="M12 5.96c1.47 0 2.79.5 3.83 1.5l2.87-2.87A9.6 9.6 0 0 0 12 2a10 10 0 0 0-8.94 5.49l3.34 2.59C7.19 7.72 9.4 5.96 12 5.96z"/>
+            </svg>
+          </button>
         </div>
 
         <!-- Body Section -->
         <div class="mci-nc-body">
           <div class="mci-nc-search">
-            <input class="mci-nc-input" type="text" placeholder="9704 Fayetteville Rd, Raleigh, NC 27603">
+            <div class="mci-nc-input-wrap">
+              <input class="mci-nc-input" type="text" placeholder="9704 Fayetteville Rd, Raleigh, NC 27603">
+              <button type="button" class="mci-nc-clear" title="Clear address" aria-label="Clear address" hidden>×</button>
+            </div>
             <button class="mci-nc-go">Look Up</button>
           </div>
           <div class="mci-nc-status"></div>
@@ -4968,6 +5033,25 @@
 
     const input = wrap.querySelector('.mci-nc-input');
     const go = wrap.querySelector('.mci-nc-go');
+    const clearButton = wrap.querySelector('.mci-nc-clear');
+    const googleButton = wrap.querySelector('.mci-nc-google');
+    function updateSearchControls() {
+      clearButton.hidden = !input.value.length;
+      googleButton.disabled = !input.value.trim();
+    }
+    input.addEventListener('input', updateSearchControls);
+    input.addEventListener('change', updateSearchControls);
+    clearButton.addEventListener('click', () => {
+      input.value = '';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.focus();
+    });
+    googleButton.addEventListener('click', () => {
+      const query = input.value.trim();
+      if (query) window.open('https://www.google.com/search?q=' + encodeURIComponent(query), '_blank', 'noopener,noreferrer');
+    });
+    updateSearchControls();
     const status = wrap.querySelector('.mci-nc-status');
 
     function applyPrefill(text) {
@@ -5108,7 +5192,7 @@
       }
     });
 
-    wrap.querySelector('.mci-nc-close').addEventListener('click', close);
+
     wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
     go.addEventListener('click', run);
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
