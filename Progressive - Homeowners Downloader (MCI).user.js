@@ -154,13 +154,13 @@
 
   function getPolicyNumber() {
     const urlPolicy = new URL(location.href).searchParams.get('PolicyID');
-    if (urlPolicy) return clean(urlPolicy);
+    if (urlPolicy) return clean(urlPolicy).replace(/^PGR/i, '');
 
     const inputs = [...document.querySelectorAll('input[readonly][value]')];
     for (let i = 0; i < inputs.length - 1; i++) {
       if (clean(inputs[i].value).toLowerCase() === 'policyid:') {
         const value = clean(inputs[i + 1]?.value);
-        if (value) return value;
+        if (value) return value.replace(/^PGR/i, '');
       }
     }
 
