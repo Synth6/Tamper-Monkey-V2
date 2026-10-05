@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         MCI - QQ Catalyst NatGen File Renamer
 // @namespace    https://middlecreekins.com/
-// @version      1.0.2
+// @version      1.0.3
 // @description  Rename selected NatGen carrier-download files on the QQ Catalyst Files tab using MCI's readable naming rules.
+// @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/QQ_Catalyst_NatGen_Renamer.user.js
+// @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/QQ_Catalyst_NatGen_Renamer.user.js
 // @match        https://app.qqcatalyst.com/*
 // @grant        none
 // @run-at       document-idle
