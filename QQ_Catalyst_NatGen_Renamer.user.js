@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MCI - QQ Catalyst NatGen File Renamer
 // @namespace    https://middlecreekins.com/
-// @version      1.0.3
+// @version      1.0.6
 // @description  Rename selected NatGen carrier-download files on the QQ Catalyst Files tab using MCI's readable naming rules.
 // @updateURL    https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/QQ_Catalyst_NatGen_Renamer.user.js
 // @downloadURL  https://raw.githubusercontent.com/Synth6/Tamper-Monkey-V2/main/QQ_Catalyst_NatGen_Renamer.user.js
@@ -188,37 +188,31 @@
         const style = document.createElement('style');
         style.id = `${SCRIPT_ID}-style`;
         style.textContent = `
-            /* Match QQ's own Add File / Add Folder controls instead of inserting
-               a normal button into the floated icon toolbar. */
+            /* Keep the renamer out of QQ's native toolbar entirely.
+               Place it directly before QQ's "Files" heading instead. */
             #mci-natgen-rename-btn {
-                float: left !important;
-                position: relative !important;
-                width: 32px !important;
-                min-width: 32px !important;
-                height: 32px !important;
-                margin: 0 3px 0 2px !important;
-                padding: 0 !important;
-                border: 0 !important;
-                background: transparent !important;
-                color: #72c94b !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                width: 18px !important;
+                height: 18px !important;
+                margin-right: 5px !important;
+                vertical-align: -1px !important;
                 cursor: pointer !important;
-                box-sizing: border-box !important;
-                vertical-align: top !important;
-                overflow: visible !important;
+                color: #4f9f35 !important;
+                border-radius: 3px !important;
             }
             #mci-natgen-rename-btn .mci-pencil {
-                position: absolute !important;
-                left: 7px !important;
-                top: 7px !important;
-                font-size: 17px !important;
-                line-height: 17px !important;
+                font-size: 14px !important;
+                line-height: 14px !important;
                 color: inherit !important;
                 pointer-events: none !important;
             }
-            #mci-natgen-rename-btn:hover:not(:disabled) {
-                color: #9ee278 !important;
+            #mci-natgen-rename-btn:hover:not(.mci-disabled) {
+                color: #72bf44 !important;
+                background: rgba(114, 191, 68, .10) !important;
             }
-            #mci-natgen-rename-btn:disabled {
+            #mci-natgen-rename-btn.mci-disabled {
                 opacity: .38 !important;
                 cursor: default !important;
             }
@@ -503,7 +497,9 @@
         const btn = document.getElementById('mci-natgen-rename-btn');
         if (!btn) return;
         const selected = getSelectedRows();
-        btn.disabled = selected.length === 0;
+        const disabled = selected.length === 0;
+        btn.classList.toggle('mci-disabled', disabled);
+        btn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
         btn.title = selected.length
             ? `Rename selected NatGen file${selected.length === 1 ? '' : 's'}`
             : 'Select one or more files, then rename NatGen files';
@@ -518,10 +514,12 @@
         showPreview(buildRenamePlan(rows));
     }
 
-    function findToolbar() {
+    function findFilesHeading() {
         const manager = getFileManager();
         if (!manager) return null;
-        return manager.querySelector('.listHeader');
+
+        // QQ's visible Files heading immediately above the toolbar.
+        return manager.querySelector('form#DocumentsImagesList > h2');
     }
 
     function injectButton() {
@@ -530,28 +528,33 @@
             return true;
         }
 
-        const toolbar = findToolbar();
-        if (!toolbar) return false;
+        const heading = findFilesHeading();
+        if (!heading) return false;
 
-        const btn = document.createElement('button');
-        btn.type = 'button';
+        const btn = document.createElement('span');
         btn.id = 'mci-natgen-rename-btn';
-        btn.disabled = true;
+        btn.className = 'mci-disabled';
         btn.title = 'Select one or more files, then rename NatGen files';
+        btn.setAttribute('role', 'button');
+        btn.setAttribute('tabindex', '0');
         btn.setAttribute('aria-label', 'Rename selected NatGen files');
+        btn.setAttribute('aria-disabled', 'true');
         btn.innerHTML = '<i class="fa fa-pencil mci-pencil" aria-hidden="true"></i>';
-        btn.addEventListener('click', onRenameClick);
 
-        // QQ's searchHolder is a sibling of .listHeader, not a child of it.
-        // Keep the pencil inside the black icon toolbar immediately after QQ's
-        // Add Folder icon. The button is floated/sized like QQ's native controls so
-        // it occupies its own slot instead of overlapping the neighboring icons.
-        const addFolder = toolbar.querySelector('#addNewFolderIcon');
-        if (addFolder) {
-            addFolder.insertAdjacentElement('afterend', btn);
-        } else {
-            toolbar.appendChild(btn);
-        }
+        const activateRename = (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (btn.classList.contains('mci-disabled')) return;
+            onRenameClick();
+        };
+
+        btn.addEventListener('click', activateRename);
+        btn.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') activateRename(event);
+        });
+
+        // Put the pencil directly BEFORE the word "Files".
+        heading.insertBefore(btn, heading.firstChild);
         refreshButtonState();
         return true;
     }
