@@ -4,7 +4,7 @@
 // Not authorized for redistribution or resale.
 // @name         QQ Catalyst - Carrier Extractor
 // @namespace    qqc-tools
-// @version      1.8.4
+// @version      1.8.5
 // @description  Extract from carriers and build QQC payload. Alt+Q: Extractor.
 // @match        https://natgenagency.com/*
 // @match        https://*.natgenagency.com/*
@@ -1697,6 +1697,86 @@
   }
 
   // ---------- Extractors (NatGen + Erie) ----------
+  function isNatGenPolicyNamedInsured() {
+    return /natgenagency\.com$/i.test(location.hostname) &&
+      /\/Policy\/PolicyNamedInsured\.aspx$/i.test(location.pathname) &&
+      !!S('#ctl00_MainContent_ucInsuredNamed_txtInsFirstName');
+  }
+
+  function extractNatGenPolicyNamedInsured() {
+    const gv = id => (S('#' + id)?.value || '').trim();
+    const selectedValue = id => {
+      const el = S('#' + id);
+      if (!el) return '';
+      return (el.value || '').trim();
+    };
+    const selectedText = id => {
+      const el = S('#' + id);
+      if (!el) return '';
+      const opt = el.selectedOptions?.[0] || el.options?.[el.selectedIndex];
+      return (opt?.textContent || '').trim();
+    };
+
+    const prefix = 'ctl00_MainContent_ucInsuredNamed_';
+    const firstName = gv(prefix + 'txtInsFirstName');
+    const middleName = gv(prefix + 'txtInsMiddleName');
+    const lastName = gv(prefix + 'txtInsLastName');
+    let suffix = selectedValue(prefix + 'ddlInsSuffix');
+    if (/^(?:none|select|0)$/i.test(suffix)) suffix = '';
+
+    const p1 = gv(prefix + 'ucPhonesV2_PhoneNumber1_txtPhone1');
+    const p2 = gv(prefix + 'ucPhonesV2_PhoneNumber1_txtPhone2');
+    const p3 = gv(prefix + 'ucPhonesV2_PhoneNumber1_txtPhone3');
+    const primaryPhone = `${p1}${p2}${p3}`.replace(/[^\d]/g, '').slice(0, 10);
+    const phoneKindRaw = selectedText(prefix + 'ucPhonesV2_PhoneNumber1_ddlPhoneType');
+    const phoneKind = /^(?:select|none)$/i.test(phoneKindRaw) ? '' : phoneKindRaw;
+
+    const primaryEmail = gv(prefix + 'txtInsEmail').toLowerCase();
+    const dob = toMMDDYYYY(gv(prefix + 'txtInsDOB'));
+
+    const ssnParts = [
+      gv(prefix + 'txtSocialSecurityNum1'),
+      gv(prefix + 'txtSocialSecurityNum2'),
+      gv(prefix + 'txtSocialSecurityNum3')
+    ];
+    const ssnRaw = ssnParts.join('');
+    const ssn = ssnRaw && !/[x*]/i.test(ssnRaw) && ssnRaw.replace(/\D/g, '').length === 9
+      ? ssnRaw.replace(/\D/g, '')
+      : '';
+
+    const zip5 = gv(prefix + 'txtInsZip');
+    const zip4 = gv(prefix + 'txtInsZip2');
+    const zip = zip5 && zip4 ? `${zip5}-${zip4}` : zip5;
+
+    return sanitizePayloadObject({
+      carrier: 'NatGen',
+      source: 'natgen-policy-named-insured',
+      sourceUrl: location.href,
+      policyNumber: T(S('#ctl00_lblHeaderPageTitleTop')).replace(/\s+/g, ' ').trim(),
+      effectiveDate: toMMDDYYYY(gv(prefix + 'txtDateEff')),
+      firstName: toNameCase(firstName),
+      middleName: toNameCase(middleName),
+      lastName: toNameCase(lastName),
+      suffix,
+      primaryPhone,
+      phoneType: formatPhone(primaryPhone),
+      phoneKind,
+      primaryEmail,
+      dob,
+      ssn,
+      contactType: 'Customers',
+      customerType: 'Personal',
+      status: 'Active',
+      address: {
+        line1: gv(prefix + 'txtInsAdr'),
+        line2: gv(prefix + 'txtInsAdr2'),
+        city: gv(prefix + 'txtInsCity'),
+        state: selectedValue(prefix + 'ddlInsState'),
+        zip
+      }
+    });
+  }
+
   function isNatGenNamedInsured() {
     return /natgenagency\.com$/i.test(location.hostname) && /QuoteNamedInsured\.aspx$/i.test(location.pathname);
   }
@@ -3279,6 +3359,7 @@ function extractProgressiveCommercialAuto() {
     if (isProgressiveCommercialAuto()) return extractProgressiveCommercialAuto();
     if (isProgressiveFAO()) return extractProgressiveFAO();
     if (isNatGenHomeownersQuote()) return extractNatGenHomeownersQuote();
+    if (isNatGenPolicyNamedInsured()) return extractNatGenPolicyNamedInsured();
     if (isNatGenNamedInsured()) return extractNatGenNamedInsured();
     if (isNatGenSummary()) return extractNatGenSummary();
     if (isEriePLW()) return await extractEriePLW();
